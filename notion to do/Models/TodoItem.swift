@@ -15,7 +15,7 @@ final class TodoItem {
     var isCompleted: Bool = false
     var indentLevel: Int = 0          // 0-3，最多 4 层
     var sortOrder: Double = 0         // 用于拖拽排序
-    var parentId: UUID? = nil         // 父任务 ID（逻辑层级）
+
     var dayDate: Date = Date()        // 所属日期（只保留年月日）
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
@@ -26,7 +26,6 @@ final class TodoItem {
         isCompleted: Bool = false,
         indentLevel: Int = 0,
         sortOrder: Double = 0,
-        parentId: UUID? = nil,
         dayDate: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -36,7 +35,6 @@ final class TodoItem {
         self.isCompleted = isCompleted
         self.indentLevel = min(max(indentLevel, 0), 3) // 限制 0-3
         self.sortOrder = sortOrder
-        self.parentId = parentId
         self.dayDate = Calendar.current.startOfDay(for: dayDate)
         self.createdAt = createdAt
         self.updatedAt = updatedAt

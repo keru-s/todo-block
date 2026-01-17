@@ -39,6 +39,13 @@ final class TodoStore {
         loadFromDatabase()
     }
     
+    /// 用于测试：重置状态
+    func reset() {
+        todoItemsCache.removeAll()
+        daySectionsCache.removeAll()
+        refreshTrigger += 1
+    }
+    
     private func loadFromDatabase() {
         guard let modelContext = modelContext else { return }
         

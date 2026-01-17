@@ -14,10 +14,7 @@ struct MenuBarView: View {
     private var store: TodoStore { TodoStore.shared }
     
     // 状态管理
-    @State private var focusedItemId: UUID?
-    @State private var selectedItemIds: Set<UUID> = []
-    @State private var lastSelectedId: UUID?
-    @State private var isDragSelecting: Bool = false
+    @State private var selectionManager = SelectionManager()
     
     private var todayItems: [TodoItem] {
         store.todayItems()
@@ -49,25 +46,26 @@ struct MenuBarView: View {
                             TodoItemView(
                                 item: item,
                                 allItems: todayItems,
-                                focusedItemId: $focusedItemId,
-                                isSelected: selectedItemIds.contains(item.id),
-                                hasMultipleSelection: selectedItemIds.count > 1,
+                                focusedItemId: $selectionManager.focusedItemId,
+                                isSelected: selectionManager.selectedItemIds.contains(item.id),
+                                hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
                                 onSelect: { shiftPressed in
-                                    handleSelect(item: item, shiftPressed: shiftPressed)
+                                    selectionManager.handleSelect(item: item, allItems: todayItems, shiftPressed: shiftPressed)
                                 },
                                 onFocus: { shiftPressed in
-                                    handleSelect(item: item, shiftPressed: shiftPressed)
+                                    selectionManager.handleSelect(item: item, allItems: todayItems, shiftPressed: shiftPressed)
                                 },
                                 onEnterPressed: { createNewItemAfter(item) },
                                 onDeletePressed: {
-                                    if selectedItemIds.count > 1 {
-                                        deleteSelectedItems()
-                                    } else {
-                                        deleteItemAndMoveFocus(item)
+                                    if selectionManager.selectedItemIds.contains(item.id) {
+                                        selectionManager.deleteSelectedItems(store: store) { _ in
+                                            // 菜单栏只显示今日，所以上下文总是 todayItems
+                                            return todayItems
+                                        }
                                     }
                                 },
-                                onMoveUp: { moveFocusUp(from: item) },
-                                onMoveDown: { moveFocusDown(from: item) }
+                                onMoveUp: { selectionManager.moveFocusUp(from: item, allItems: todayItems) },
+                                onMoveDown: { selectionManager.moveFocusDown(from: item, allItems: todayItems) }
                             )
                             .id(item.id)
                         }
@@ -94,8 +92,8 @@ struct MenuBarView: View {
                 
                 Spacer()
                 
-                if selectedItemIds.count > 1 {
-                    Text("已选 \(selectedItemIds.count) 项")
+                if selectionManager.selectedItemIds.count > 1 {
+                    Text("已选 \(selectionManager.selectedItemIds.count) 项")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .padding(.trailing, 8)
@@ -121,11 +119,9 @@ struct MenuBarView: View {
                 store.initialize(with: modelContext)
             }
         }
-        // 点击空白处取消选择
         .onTapGesture {
-            if selectedItemIds.count > 1 {
-                selectedItemIds.removeAll()
-            }
+            // 点击空白处取消选择
+            selectionManager.clearSelection()
         }
     }
     
@@ -155,26 +151,7 @@ struct MenuBarView: View {
     private func addTodayItem() {
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(dayDate: Date())
-        focusedItemId = newItem.id
-        selectedItemIds = [newItem.id]
-        lastSelectedId = newItem.id
-    }
-    
-    private func handleSelect(item: TodoItem, shiftPressed: Bool) {
-        if shiftPressed, let lastId = lastSelectedId {
-            let items = todayItems
-            if let startIndex = items.firstIndex(where: { $0.id == lastId }),
-               let endIndex = items.firstIndex(where: { $0.id == item.id }) {
-                let range = min(startIndex, endIndex)...max(startIndex, endIndex)
-                for i in range {
-                    selectedItemIds.insert(items[i].id)
-                }
-            }
-        } else {
-            selectedItemIds = [item.id]
-            lastSelectedId = item.id
-        }
-        focusedItemId = item.id
+        selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
     
     private func createNewItemAfter(_ item: TodoItem) {
@@ -184,93 +161,7 @@ struct MenuBarView: View {
             afterItem: item,
             indentLevel: item.indentLevel
         )
-        focusedItemId = newItem.id
-        selectedItemIds = [newItem.id]
-        lastSelectedId = newItem.id
-    }
-    
-    private func deleteItemAndMoveFocus(_ item: TodoItem) {
-        let items = todayItems
-        var nextFocusId: UUID? = nil
-        
-        if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
-            if currentIndex > 0 {
-                nextFocusId = items[currentIndex - 1].id
-            } else if items.count > 1 {
-                nextFocusId = items[1].id
-            }
-        }
-        
-        store.deleteItem(item)
-        focusedItemId = nextFocusId
-        if let nextId = nextFocusId {
-            selectedItemIds = [nextId]
-            lastSelectedId = nextId
-        } else {
-            selectedItemIds.removeAll()
-        }
-    }
-    
-    private func deleteSelectedItems() {
-        guard !selectedItemIds.isEmpty else { return }
-        let itemsToDelete = selectedItemIds.compactMap { id in
-            store.todoItemsCache[id]
-        }
-        
-        // 计算删除后的焦点
-        var nextFocusId: UUID? = nil
-        if let firstItem = itemsToDelete.first {
-            let items = todayItems
-            if let firstIndex = items.firstIndex(where: { $0.id == firstItem.id }) {
-                // 尝试找上面的
-                for i in stride(from: firstIndex - 1, through: 0, by: -1) {
-                    if !selectedItemIds.contains(items[i].id) {
-                        nextFocusId = items[i].id
-                        break
-                    }
-                }
-                // 没上面的找下面的
-                if nextFocusId == nil {
-                    for i in (firstIndex + 1)..<items.count {
-                        if !selectedItemIds.contains(items[i].id) {
-                            nextFocusId = items[i].id
-                            break
-                        }
-                    }
-                }
-            }
-        }
-        
-        for item in itemsToDelete {
-            store.deleteItem(item)
-        }
-        
-        selectedItemIds.removeAll()
-        focusedItemId = nextFocusId
-        if let nextId = nextFocusId {
-            selectedItemIds = [nextId]
-            lastSelectedId = nextId
-        }
-    }
-    
-    private func moveFocusUp(from item: TodoItem) {
-        let items = todayItems
-        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
-              currentIndex > 0 else { return }
-        let targetId = items[currentIndex - 1].id
-        focusedItemId = targetId
-        selectedItemIds = [targetId]
-        lastSelectedId = targetId
-    }
-    
-    private func moveFocusDown(from item: TodoItem) {
-        let items = todayItems
-        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
-              currentIndex + 1 < items.count else { return }
-        let targetId = items[currentIndex + 1].id
-        focusedItemId = targetId
-        selectedItemIds = [targetId]
-        lastSelectedId = targetId
+        selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 }
 

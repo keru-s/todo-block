@@ -10,11 +10,8 @@ import SwiftData
 
 struct DaySectionView: View {
     @Bindable var section: DaySection
-    @Binding var focusedItemId: UUID?
-    @Binding var selectedItemIds: Set<UUID>
-    @Binding var lastSelectedId: UUID?
+    @Bindable var selectionManager: SelectionManager
     var onItemCreated: ((UUID) -> Void)?
-    var onDeleteSelected: () -> Void
     
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
@@ -37,27 +34,32 @@ struct DaySectionView: View {
                     TodoItemView(
                         item: item,
                         allItems: todoItems,
-                        focusedItemId: $focusedItemId,
-                        isSelected: selectedItemIds.contains(item.id),
-                        hasMultipleSelection: selectedItemIds.count > 1,
+                        focusedItemId: $selectionManager.focusedItemId,
+                        isSelected: selectionManager.selectedItemIds.contains(item.id),
+                        hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
                         onSelect: { shiftPressed in
-                            handleSelect(item: item, shiftPressed: shiftPressed)
+                            selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
                         },
                         onFocus: { shiftPressed in
-                            // TextField 获取焦点时，同步选择状态
-                            handleSelect(item: item, shiftPressed: shiftPressed)
+                            selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
                         },
                         onEnterPressed: { createNewItemAfter(item) },
-                        onDeletePressed: { 
-                            // 多选时直接删除所有选中项
-                            if selectedItemIds.count > 1 {
-                                onDeleteSelected()
-                            } else {
-                                deleteItemAndMoveFocus(item)
+                        onDeletePressed: {
+                            // 调用 Manager 的删除逻辑
+                            // 我们需要给 Manager 提供上下文，这里只处理当前 Section 的删除
+                            // 但如果跨 Section 多选呢？目前 SelectionManager 设计是通用的
+                            // 此时我们先简单处理：如果是多选且包含此项，则交给 Manager 删除选中项
+                            // 如果是单选（Backsapce 删除空行），也交给 Manager
+                            
+                            // 修正：TodoItemView 的 onDeletePressed 在 Backspace 且空或者是多选删除时触发
+                            if selectionManager.selectedItemIds.contains(item.id) {
+                                selectionManager.deleteSelectedItems(store: store) { date in
+                                    store.items(for: date)
+                                }
                             }
                         },
-                        onMoveUp: { moveFocusUp(from: item) },
-                        onMoveDown: { moveFocusDown(from: item) }
+                        onMoveUp: { selectionManager.moveFocusUp(from: item, allItems: todoItems) },
+                        onMoveDown: { selectionManager.moveFocusDown(from: item, allItems: todoItems) }
                     )
                     .id(item.id)
                 }
@@ -94,27 +96,6 @@ struct DaySectionView: View {
         .padding(.bottom, 4)
     }
     
-    // MARK: - 选择操作
-    
-    private func handleSelect(item: TodoItem, shiftPressed: Bool) {
-        if shiftPressed, let lastId = lastSelectedId {
-            // Shift+Click: 范围选择
-            let items = todoItems
-            if let startIndex = items.firstIndex(where: { $0.id == lastId }),
-               let endIndex = items.firstIndex(where: { $0.id == item.id }) {
-                let range = min(startIndex, endIndex)...max(startIndex, endIndex)
-                for i in range {
-                    selectedItemIds.insert(items[i].id)
-                }
-            }
-        } else {
-            // 普通点击：单选
-            selectedItemIds = [item.id]
-            lastSelectedId = item.id
-        }
-        focusedItemId = item.id
-    }
-    
     // MARK: - 操作方法
     
     private func createNewItemAfter(_ item: TodoItem) {
@@ -123,55 +104,9 @@ struct DaySectionView: View {
             afterItem: item,
             indentLevel: item.indentLevel
         )
-        focusedItemId = newItem.id
-        selectedItemIds = [newItem.id]
-        lastSelectedId = newItem.id
+        // 使用 manager 更新选中与焦点
+        selectionManager.handleSelect(item: newItem, allItems: store.items(for: section.date), shiftPressed: false)
         onItemCreated?(newItem.id)
-    }
-    
-    private func deleteItemAndMoveFocus(_ item: TodoItem) {
-        let currentItems = todoItems
-        guard let currentIndex = currentItems.firstIndex(where: { $0.id == item.id }) else {
-            store.deleteItem(item)
-            return
-        }
-        
-        var nextFocusId: UUID? = nil
-        if currentIndex > 0 {
-            nextFocusId = currentItems[currentIndex - 1].id
-        } else if currentItems.count > 1 {
-            nextFocusId = currentItems[1].id
-        }
-        
-        focusedItemId = nextFocusId
-        if let nextId = nextFocusId {
-            selectedItemIds = [nextId]
-            lastSelectedId = nextId
-        } else {
-            selectedItemIds.removeAll()
-        }
-        
-        store.deleteItem(item)
-    }
-    
-    private func moveFocusUp(from item: TodoItem) {
-        let items = todoItems
-        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
-              currentIndex > 0 else { return }
-        let targetId = items[currentIndex - 1].id
-        focusedItemId = targetId
-        selectedItemIds = [targetId]
-        lastSelectedId = targetId
-    }
-    
-    private func moveFocusDown(from item: TodoItem) {
-        let items = todoItems
-        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
-              currentIndex + 1 < items.count else { return }
-        let targetId = items[currentIndex + 1].id
-        focusedItemId = targetId
-        selectedItemIds = [targetId]
-        lastSelectedId = targetId
     }
 }
 
@@ -186,10 +121,7 @@ struct DaySectionView: View {
     
     return DaySectionView(
         section: section,
-        focusedItemId: .constant(nil),
-        selectedItemIds: .constant([]),
-        lastSelectedId: .constant(nil),
-        onDeleteSelected: {}
+        selectionManager: SelectionManager()
     )
     .modelContainer(container)
     .padding()
