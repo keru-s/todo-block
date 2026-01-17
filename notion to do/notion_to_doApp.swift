@@ -12,7 +12,8 @@ import SwiftData
 struct notion_to_doApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            TodoItem.self,
+            DaySection.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -27,6 +28,13 @@ struct notion_to_doApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(sharedModelContainer)
+        
+        // 菜单栏组件
+        MenuBarExtra("待办", systemImage: "checklist") {
+            MenuBarView()
+        }
+        .menuBarExtraStyle(.window)
         .modelContainer(sharedModelContainer)
     }
 }
