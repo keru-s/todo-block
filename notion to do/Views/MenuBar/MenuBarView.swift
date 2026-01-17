@@ -10,6 +10,7 @@ import SwiftData
 
 struct MenuBarView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
     
     private var store: TodoStore { TodoStore.shared }
     
@@ -100,10 +101,8 @@ struct MenuBarView: View {
                 }
                 
                 Button("打开应用") {
+                    openWindow(id: "mainWindow")
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("notion") || $0.isKeyWindow == false }) {
-                        window.makeKeyAndOrderFront(nil)
-                    }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))

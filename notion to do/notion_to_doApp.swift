@@ -25,7 +25,7 @@ struct notion_to_doApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "mainWindow") {
             ContentView()
                 .onAppear {
                     // 初始化 TodoStore 单例
