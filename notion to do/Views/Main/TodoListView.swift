@@ -18,6 +18,7 @@ struct TodoListView: View {
     
     @State private var focusedItemId: UUID?
     @State private var dataService: TodoDataService?
+    @State private var scrollProxy: ScrollViewProxy?
     
     private var daySections: [DaySection] {
         let calendar = Calendar.current
@@ -38,7 +39,10 @@ struct TodoListView: View {
                                 DaySectionView(
                                     section: section,
                                     dataService: dataService,
-                                    focusedItemId: $focusedItemId
+                                    focusedItemId: $focusedItemId,
+                                    onItemCreated: { itemId in
+                                        scrollToItem(itemId, proxy: proxy)
+                                    }
                                 )
                                 .id(section.id)
                             }
@@ -49,7 +53,7 @@ struct TodoListView: View {
                 
                 // 底部添加按钮
                 HStack {
-                    Button(action: addTodaySection) {
+                    Button(action: { addTodaySection(proxy: proxy) }) {
                         HStack {
                             Image(systemName: "plus")
                             Text("添加一个今日待办")
@@ -65,17 +69,34 @@ struct TodoListView: View {
                 }
                 .background(Color(NSColor.windowBackgroundColor))
             }
+            // 焦点变化时自动滚动
+            .onChange(of: focusedItemId) { _, newValue in
+                if let itemId = newValue {
+                    scrollToItem(itemId, proxy: proxy)
+                }
+            }
+            .onAppear {
+                scrollProxy = proxy
+            }
         }
         .onAppear {
             dataService = TodoDataService(modelContext: modelContext)
         }
     }
     
-    private func addTodaySection() {
+    private func addTodaySection(proxy: ScrollViewProxy) {
         guard let dataService = dataService else { return }
         let section = dataService.getOrCreateTodaySection()
         let newItem = dataService.createTodoItem(dayDate: section.date)
         focusedItemId = newItem.id
+    }
+    
+    private func scrollToItem(_ itemId: UUID, proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                proxy.scrollTo(itemId, anchor: .center)
+            }
+        }
     }
 }
 

@@ -12,6 +12,7 @@ struct DaySectionView: View {
     @Bindable var section: DaySection
     var dataService: TodoDataService
     @Binding var focusedItemId: UUID?
+    var onItemCreated: ((UUID) -> Void)?  // 回调：通知创建了新项目
     
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
@@ -39,6 +40,7 @@ struct DaySectionView: View {
                         onMoveUp: { moveFocusUp(from: index) },
                         onMoveDown: { moveFocusDown(from: index) }
                     )
+                    .id(item.id)  // 为每个待办项设置 id 用于滚动
                 }
             }
         }
@@ -82,6 +84,7 @@ struct DaySectionView: View {
             indentLevel: item.indentLevel
         )
         focusedItemId = newItem.id
+        onItemCreated?(newItem.id)  // 通知父视图滚动
     }
     
     private func deleteItemAndMoveFocus(_ item: TodoItem, at index: Int) {
