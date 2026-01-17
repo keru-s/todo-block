@@ -85,16 +85,22 @@ struct DaySectionView: View {
     }
     
     private func deleteItemAndMoveFocus(_ item: TodoItem, at index: Int) {
-        // 先移动焦点到上一个项目
+        let currentItems = todoItems
+        
+        // 计算焦点目标（在删除前）
+        var nextFocusId: UUID? = nil
         if index > 0 {
-            focusedItemId = todoItems[index - 1].id
-        } else if todoItems.count > 1 {
-            focusedItemId = todoItems[1].id
-        } else {
-            focusedItemId = nil
+            nextFocusId = currentItems[index - 1].id
+        } else if currentItems.count > 1 && index + 1 < currentItems.count {
+            nextFocusId = currentItems[index + 1].id
         }
         
-        dataService.deleteTodoItem(item)
+        // 先设置焦点，再异步删除，避免同步问题
+        focusedItemId = nextFocusId
+        
+        DispatchQueue.main.async {
+            self.dataService.deleteTodoItem(item)
+        }
     }
     
     private func moveFocusUp(from index: Int) {
