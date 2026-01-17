@@ -13,13 +13,19 @@ struct MenuBarView: View {
     
     private var store: TodoStore { TodoStore.shared }
     
+    // 状态管理
+    @State private var focusedItemId: UUID?
+    @State private var selectedItemIds: Set<UUID> = []
+    @State private var lastSelectedId: UUID?
+    @State private var isDragSelecting: Bool = false
+    
     private var todayItems: [TodoItem] {
         store.todayItems()
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // 标题
+        VStack(alignment: .leading, spacing: 0) {
+            // 标题栏
             HStack {
                 Text("今日待办")
                     .font(.system(size: 14, weight: .semibold))
@@ -30,37 +36,51 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
+            .padding(.bottom, 8)
             
             Divider()
             
             if todayItems.isEmpty {
-                VStack {
-                    Text("今天没有待办事项")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 13))
-                    
-                    Button("添加待办") {
-                        addTodayItem()
-                    }
-                    .buttonStyle(.link)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+                emptyStateView
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(todayItems) { item in
-                            MenuBarItemRow(item: item)
+                            TodoItemView(
+                                item: item,
+                                allItems: todayItems,
+                                focusedItemId: $focusedItemId,
+                                isSelected: selectedItemIds.contains(item.id),
+                                hasMultipleSelection: selectedItemIds.count > 1,
+                                onSelect: { shiftPressed in
+                                    handleSelect(item: item, shiftPressed: shiftPressed)
+                                },
+                                onFocus: { shiftPressed in
+                                    handleSelect(item: item, shiftPressed: shiftPressed)
+                                },
+                                onEnterPressed: { createNewItemAfter(item) },
+                                onDeletePressed: {
+                                    if selectedItemIds.count > 1 {
+                                        deleteSelectedItems()
+                                    } else {
+                                        deleteItemAndMoveFocus(item)
+                                    }
+                                },
+                                onMoveUp: { moveFocusUp(from: item) },
+                                onMoveDown: { moveFocusDown(from: item) }
+                            )
+                            .id(item.id)
                         }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                 }
-                .frame(maxHeight: 300)
+                .frame(minHeight: 50, maxHeight: 350)
             }
             
             Divider()
             
-            // 底部操作
+            // 底部操作栏
             HStack {
                 Button(action: addTodayItem) {
                     HStack(spacing: 4) {
@@ -74,6 +94,13 @@ struct MenuBarView: View {
                 
                 Spacer()
                 
+                if selectedItemIds.count > 1 {
+                    Text("已选 \(selectedItemIds.count) 项")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 8)
+                }
+                
                 Button("打开应用") {
                     NSApp.activate(ignoringOtherApps: true)
                     if let window = NSApp.windows.first(where: { $0.title.contains("notion") || $0.isKeyWindow == false }) {
@@ -85,15 +112,36 @@ struct MenuBarView: View {
                 .foregroundColor(.blue)
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.vertical, 8)
         }
-        .frame(width: 280)
+        .frame(width: 320)
+        .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
-            // 确保 TodoStore 已初始化
             if store.todoItemsCache.isEmpty {
                 store.initialize(with: modelContext)
             }
         }
+        // 点击空白处取消选择
+        .onTapGesture {
+            if selectedItemIds.count > 1 {
+                selectedItemIds.removeAll()
+            }
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack {
+            Text("今天没有待办事项")
+                .foregroundColor(.secondary)
+                .font(.system(size: 13))
+            
+            Button("添加待办") {
+                addTodayItem()
+            }
+            .buttonStyle(.link)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
     }
     
     private var formattedToday: String {
@@ -102,40 +150,127 @@ struct MenuBarView: View {
         return formatter.string(from: Date())
     }
     
+    // MARK: - 逻辑操作
+    
     private func addTodayItem() {
         _ = store.getOrCreateTodaySection()
-        _ = store.createItem(dayDate: Date())
+        let newItem = store.createItem(dayDate: Date())
+        focusedItemId = newItem.id
+        selectedItemIds = [newItem.id]
+        lastSelectedId = newItem.id
     }
-}
-
-struct MenuBarItemRow: View {
-    @Bindable var item: TodoItem
     
-    private var store: TodoStore { TodoStore.shared }
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: toggleComplete) {
-                Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 14))
-                    .foregroundColor(item.isCompleted ? .green : .gray)
+    private func handleSelect(item: TodoItem, shiftPressed: Bool) {
+        if shiftPressed, let lastId = lastSelectedId {
+            let items = todayItems
+            if let startIndex = items.firstIndex(where: { $0.id == lastId }),
+               let endIndex = items.firstIndex(where: { $0.id == item.id }) {
+                let range = min(startIndex, endIndex)...max(startIndex, endIndex)
+                for i in range {
+                    selectedItemIds.insert(items[i].id)
+                }
             }
-            .buttonStyle(.plain)
-            
-            Text(item.title.isEmpty ? "待办事项" : item.title)
-                .font(.system(size: 13))
-                .strikethrough(item.isCompleted, color: .gray)
-                .foregroundColor(item.isCompleted ? .gray : .primary)
-                .lineLimit(1)
-            
-            Spacer()
+        } else {
+            selectedItemIds = [item.id]
+            lastSelectedId = item.id
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
+        focusedItemId = item.id
     }
     
-    private func toggleComplete() {
-        store.toggleComplete(item)
+    private func createNewItemAfter(_ item: TodoItem) {
+        // 创建新项
+        let newItem = store.createItem(
+            dayDate: Date(),
+            afterItem: item,
+            indentLevel: item.indentLevel
+        )
+        focusedItemId = newItem.id
+        selectedItemIds = [newItem.id]
+        lastSelectedId = newItem.id
+    }
+    
+    private func deleteItemAndMoveFocus(_ item: TodoItem) {
+        let items = todayItems
+        var nextFocusId: UUID? = nil
+        
+        if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
+            if currentIndex > 0 {
+                nextFocusId = items[currentIndex - 1].id
+            } else if items.count > 1 {
+                nextFocusId = items[1].id
+            }
+        }
+        
+        store.deleteItem(item)
+        focusedItemId = nextFocusId
+        if let nextId = nextFocusId {
+            selectedItemIds = [nextId]
+            lastSelectedId = nextId
+        } else {
+            selectedItemIds.removeAll()
+        }
+    }
+    
+    private func deleteSelectedItems() {
+        guard !selectedItemIds.isEmpty else { return }
+        let itemsToDelete = selectedItemIds.compactMap { id in
+            store.todoItemsCache[id]
+        }
+        
+        // 计算删除后的焦点
+        var nextFocusId: UUID? = nil
+        if let firstItem = itemsToDelete.first {
+            let items = todayItems
+            if let firstIndex = items.firstIndex(where: { $0.id == firstItem.id }) {
+                // 尝试找上面的
+                for i in stride(from: firstIndex - 1, through: 0, by: -1) {
+                    if !selectedItemIds.contains(items[i].id) {
+                        nextFocusId = items[i].id
+                        break
+                    }
+                }
+                // 没上面的找下面的
+                if nextFocusId == nil {
+                    for i in (firstIndex + 1)..<items.count {
+                        if !selectedItemIds.contains(items[i].id) {
+                            nextFocusId = items[i].id
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        
+        for item in itemsToDelete {
+            store.deleteItem(item)
+        }
+        
+        selectedItemIds.removeAll()
+        focusedItemId = nextFocusId
+        if let nextId = nextFocusId {
+            selectedItemIds = [nextId]
+            lastSelectedId = nextId
+        }
+    }
+    
+    private func moveFocusUp(from item: TodoItem) {
+        let items = todayItems
+        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
+              currentIndex > 0 else { return }
+        let targetId = items[currentIndex - 1].id
+        focusedItemId = targetId
+        selectedItemIds = [targetId]
+        lastSelectedId = targetId
+    }
+    
+    private func moveFocusDown(from item: TodoItem) {
+        let items = todayItems
+        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
+              currentIndex + 1 < items.count else { return }
+        let targetId = items[currentIndex + 1].id
+        focusedItemId = targetId
+        selectedItemIds = [targetId]
+        lastSelectedId = targetId
     }
 }
 

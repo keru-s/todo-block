@@ -152,6 +152,12 @@ struct TodoItemView: View {
             onDownArrow: onMoveDown
         )
         .id(refreshId)
+        .onChange(of: item.title) { _, newValue in
+            // 实时响应外部（如菜单栏）的修改
+            if editingText != newValue {
+                editingText = newValue
+            }
+        }
         .onChange(of: editingText) { _, newValue in
             item.title = newValue
             store.scheduleSave()

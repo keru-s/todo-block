@@ -20,6 +20,9 @@ final class TodoStore {
     private(set) var todoItemsCache: [UUID: TodoItem] = [:]
     private(set) var daySectionsCache: [UUID: DaySection] = [:]
     
+    /// 刷新触发器：每次数据变化时递增，强制依赖它的视图刷新
+    private(set) var refreshTrigger: Int = 0
+    
     // MARK: - 私有属性
     
     private var modelContext: ModelContext?
@@ -60,6 +63,9 @@ final class TodoStore {
     
     /// 获取某日的所有待办事项（按 sortOrder 排序）
     func items(for date: Date) -> [TodoItem] {
+        // 引用 refreshTrigger 以建立 Observable 依赖
+        _ = refreshTrigger
+        
         let startOfDay = Calendar.current.startOfDay(for: date)
         return todoItemsCache.values
             .filter { Calendar.current.isDate($0.dayDate, inSameDayAs: startOfDay) }
@@ -68,7 +74,10 @@ final class TodoStore {
     
     /// 获取今日待办
     func todayItems() -> [TodoItem] {
-        items(for: Date())
+        // 引用 refreshTrigger 以建立 Observable 依赖
+        _ = refreshTrigger
+        
+        return items(for: Date())
     }
     
     /// 获取某月的所有 DaySection
@@ -238,6 +247,9 @@ final class TodoStore {
     // MARK: - 异步保存
     
     func scheduleSave() {
+        // 立即触发视图刷新
+        refreshTrigger += 1
+        
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(Int(saveDebounceInterval * 1000)))
