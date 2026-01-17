@@ -12,10 +12,16 @@ struct TodoItemView: View {
     @Bindable var item: TodoItem
     let allItems: [TodoItem]
     @Binding var focusedItemId: UUID?
+    var isSelected: Bool = false
+    var hasMultipleSelection: Bool = false  // 是否处于多选状态
+    
+    // 选择回调
+    var onSelect: (Bool) -> Void = { _ in }  // 参数：是否按住 Shift
+    var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
     
     // 回调
     var onEnterPressed: () -> Void
-    var onDeleteEmpty: () -> Void
+    var onDeletePressed: () -> Void  // 改名：多选时删除全部
     var onMoveUp: () -> Void
     var onMoveDown: () -> Void
     
@@ -50,9 +56,17 @@ struct TodoItemView: View {
             textFieldView
         }
         .padding(.vertical, 4)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture()
+                .modifiers(.shift)
+                .onEnded { _ in
+                    onSelect(true)  // Shift+Click
+                }
+        )
         .onTapGesture {
-            focusedItemId = item.id
+            onSelect(false)  // 普通点击
         }
         .onChange(of: focusedItemId) { oldValue, newValue in
             if newValue == item.id {
@@ -119,6 +133,7 @@ struct TodoItemView: View {
             placeholder: "待办事项",
             isCompleted: item.isCompleted,
             shouldFocus: $shouldFocus,
+            hasMultipleSelection: hasMultipleSelection,
             onTab: {
                 item.indent()
                 store.scheduleSave()
@@ -128,7 +143,11 @@ struct TodoItemView: View {
                 store.scheduleSave()
             },
             onReturn: onEnterPressed,
-            onBackspaceEmpty: onDeleteEmpty,
+            onBackspace: onDeletePressed,
+            onFocus: { shiftPressed in
+                // TextField 获取焦点时，同步选择状态
+                onFocus(shiftPressed)
+            },
             onUpArrow: onMoveUp,
             onDownArrow: onMoveDown
         )
@@ -153,11 +172,13 @@ struct CustomTextField: NSViewRepresentable {
     var placeholder: String
     var isCompleted: Bool
     @Binding var shouldFocus: Bool
+    var hasMultipleSelection: Bool = false  // 多选状态
     
     var onTab: () -> Void
     var onShiftTab: () -> Void
     var onReturn: () -> Void
-    var onBackspaceEmpty: () -> Void
+    var onBackspace: () -> Void
+    var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
     var onUpArrow: () -> Void
     var onDownArrow: () -> Void
     
@@ -173,12 +194,20 @@ struct CustomTextField: NSViewRepresentable {
         textField.customCoordinator = context.coordinator
         textField.allowsEditingTextAttributes = true
         
+        // 点击时立即调用 onFocus，传递 Shift 状态
+        textField.onMouseDown = { [self] shiftPressed in
+            self.onFocus(shiftPressed)
+        }
+        
         applyStyle(to: textField)
         
         return textField
     }
     
     func updateNSView(_ nsView: NSTextField, context: Context) {
+        // 更新 coordinator 的多选状态
+        context.coordinator.hasMultipleSelection = hasMultipleSelection
+        
         let isEditing = nsView.currentEditor() != nil
         
         if !isEditing && nsView.stringValue != text {
@@ -223,9 +252,11 @@ struct CustomTextField: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CustomTextField
+        var hasMultipleSelection: Bool = false
         
         init(_ parent: CustomTextField) {
             self.parent = parent
+            self.hasMultipleSelection = parent.hasMultipleSelection
         }
         
         func controlTextDidChange(_ obj: Notification) {
@@ -238,6 +269,7 @@ struct CustomTextField: NSViewRepresentable {
         func controlTextDidBeginEditing(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 applyEditorStyle(textField: textField)
+                // 注意：选择状态同步已在 mouseDown 中处理
             }
         }
         
@@ -273,8 +305,10 @@ struct CustomTextField: NSViewRepresentable {
             }
             
             if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
-                if parent.text.isEmpty {
-                    parent.onBackspaceEmpty()
+                // 多选状态下：直接删除所有选中项
+                // 单选状态下：只有文本为空时才删除
+                if hasMultipleSelection || parent.text.isEmpty {
+                    parent.onBackspace()
                     return true
                 }
                 return false
@@ -307,6 +341,14 @@ struct CustomTextField: NSViewRepresentable {
 
 class CustomNSTextField: NSTextField {
     weak var customCoordinator: CustomTextField.Coordinator?
+    var onMouseDown: ((Bool) -> Void)?  // 参数：是否按住 Shift
+    
+    override func mouseDown(with event: NSEvent) {
+        // 点击时立即调用回调，传递 Shift 状态
+        let shiftPressed = event.modifierFlags.contains(.shift)
+        onMouseDown?(shiftPressed)
+        super.mouseDown(with: event)
+    }
 }
 
 #Preview {
@@ -323,7 +365,7 @@ class CustomNSTextField: NSTextField {
         allItems: [item],
         focusedItemId: .constant(item.id),
         onEnterPressed: {},
-        onDeleteEmpty: {},
+        onDeletePressed: {},
         onMoveUp: {},
         onMoveDown: {}
     )
