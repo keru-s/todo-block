@@ -27,12 +27,20 @@ struct notion_to_doApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    // 初始化 TodoStore 单例
+                    TodoStore.shared.initialize(with: sharedModelContainer.mainContext)
+                }
         }
         .modelContainer(sharedModelContainer)
         
         // 菜单栏组件
         MenuBarExtra("待办", systemImage: "checklist") {
             MenuBarView()
+                .onAppear {
+                    // 确保菜单栏也初始化 TodoStore
+                    TodoStore.shared.initialize(with: sharedModelContainer.mainContext)
+                }
         }
         .menuBarExtraStyle(.window)
         .modelContainer(sharedModelContainer)

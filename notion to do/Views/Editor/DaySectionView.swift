@@ -10,16 +10,17 @@ import SwiftData
 
 struct DaySectionView: View {
     @Bindable var section: DaySection
-    var dataService: TodoDataService
     @Binding var focusedItemId: UUID?
-    var onItemCreated: ((UUID) -> Void)?  // 回调：通知创建了新项目
+    var onItemCreated: ((UUID) -> Void)?
     
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
     @FocusState private var isTitleFocused: Bool
     
+    private var store: TodoStore { TodoStore.shared }
+    
     private var todoItems: [TodoItem] {
-        dataService.fetchTodoItems(for: section.date)
+        store.items(for: section.date)
     }
     
     var body: some View {
@@ -29,18 +30,17 @@ struct DaySectionView: View {
             
             // 待办事项列表
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(todoItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(todoItems) { item in
                     TodoItemView(
                         item: item,
                         allItems: todoItems,
-                        dataService: dataService,
                         focusedItemId: $focusedItemId,
                         onEnterPressed: { createNewItemAfter(item) },
-                        onDeleteEmpty: { deleteItemAndMoveFocus(item, at: index) },
-                        onMoveUp: { moveFocusUp(from: index) },
-                        onMoveDown: { moveFocusDown(from: index) }
+                        onDeleteEmpty: { deleteItemAndMoveFocus(item) },
+                        onMoveUp: { moveFocusUp(from: item) },
+                        onMoveDown: { moveFocusDown(from: item) }
                     )
-                    .id(item.id)  // 为每个待办项设置 id 用于滚动
+                    .id(item.id)
                 }
             }
         }
@@ -56,7 +56,7 @@ struct DaySectionView: View {
                     .onSubmit {
                         section.title = editingTitle
                         isEditingTitle = false
-                        dataService.scheduleSave()
+                        store.scheduleSave()
                     }
                     .onExitCommand {
                         isEditingTitle = false
@@ -78,44 +78,50 @@ struct DaySectionView: View {
     // MARK: - 操作方法
     
     private func createNewItemAfter(_ item: TodoItem) {
-        let newItem = dataService.createTodoItem(
+        let newItem = store.createItem(
             dayDate: section.date,
             afterItem: item,
             indentLevel: item.indentLevel
         )
         focusedItemId = newItem.id
-        onItemCreated?(newItem.id)  // 通知父视图滚动
+        onItemCreated?(newItem.id)
     }
     
-    private func deleteItemAndMoveFocus(_ item: TodoItem, at index: Int) {
+    private func deleteItemAndMoveFocus(_ item: TodoItem) {
+        // 动态获取当前数组和位置
         let currentItems = todoItems
+        guard let currentIndex = currentItems.firstIndex(where: { $0.id == item.id }) else {
+            store.deleteItem(item)
+            return
+        }
         
         // 计算焦点目标（在删除前）
         var nextFocusId: UUID? = nil
-        if index > 0 {
-            nextFocusId = currentItems[index - 1].id
-        } else if currentItems.count > 1 && index + 1 < currentItems.count {
-            nextFocusId = currentItems[index + 1].id
+        if currentIndex > 0 {
+            nextFocusId = currentItems[currentIndex - 1].id
+        } else if currentItems.count > 1 {
+            nextFocusId = currentItems[1].id
         }
         
-        // 先设置焦点，再异步删除，避免同步问题
+        // 先设置焦点
         focusedItemId = nextFocusId
         
-        DispatchQueue.main.async {
-            self.dataService.deleteTodoItem(item)
-        }
+        // 从缓存删除（即时响应）
+        store.deleteItem(item)
     }
     
-    private func moveFocusUp(from index: Int) {
-        if index > 0 {
-            focusedItemId = todoItems[index - 1].id
-        }
+    private func moveFocusUp(from item: TodoItem) {
+        let items = todoItems
+        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
+              currentIndex > 0 else { return }
+        focusedItemId = items[currentIndex - 1].id
     }
     
-    private func moveFocusDown(from index: Int) {
-        if index < todoItems.count - 1 {
-            focusedItemId = todoItems[index + 1].id
-        }
+    private func moveFocusDown(from item: TodoItem) {
+        let items = todoItems
+        guard let currentIndex = items.firstIndex(where: { $0.id == item.id }),
+              currentIndex + 1 < items.count else { return }
+        focusedItemId = items[currentIndex + 1].id
     }
 }
 
@@ -126,11 +132,10 @@ struct DaySectionView: View {
     let section = DaySection(date: Date(), title: "01-17")
     container.mainContext.insert(section)
     
-    let dataService = TodoDataService(modelContext: container.mainContext)
+    TodoStore.shared.initialize(with: container.mainContext)
     
     return DaySectionView(
         section: section,
-        dataService: dataService,
         focusedItemId: .constant(nil)
     )
     .modelContainer(container)

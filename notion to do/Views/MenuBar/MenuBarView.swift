@@ -10,15 +10,11 @@ import SwiftData
 
 struct MenuBarView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \TodoItem.sortOrder) private var allTodoItems: [TodoItem]
     
-    @State private var dataService: TodoDataService?
+    private var store: TodoStore { TodoStore.shared }
     
     private var todayItems: [TodoItem] {
-        let today = Calendar.current.startOfDay(for: Date())
-        return allTodoItems.filter { item in
-            Calendar.current.isDate(item.dayDate, inSameDayAs: today)
-        }
+        store.todayItems()
     }
     
     var body: some View {
@@ -54,7 +50,7 @@ struct MenuBarView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(todayItems) { item in
-                            MenuBarItemRow(item: item, dataService: dataService)
+                            MenuBarItemRow(item: item)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -93,7 +89,10 @@ struct MenuBarView: View {
         }
         .frame(width: 280)
         .onAppear {
-            dataService = TodoDataService(modelContext: modelContext)
+            // 确保 TodoStore 已初始化
+            if store.todoItemsCache.isEmpty {
+                store.initialize(with: modelContext)
+            }
         }
     }
     
@@ -104,20 +103,20 @@ struct MenuBarView: View {
     }
     
     private func addTodayItem() {
-        guard let dataService = dataService else { return }
-        _ = dataService.getOrCreateTodaySection()
-        _ = dataService.createTodoItem(dayDate: Date())
+        _ = store.getOrCreateTodaySection()
+        _ = store.createItem(dayDate: Date())
     }
 }
 
 struct MenuBarItemRow: View {
     @Bindable var item: TodoItem
-    var dataService: TodoDataService?
+    
+    private var store: TodoStore { TodoStore.shared }
     
     var body: some View {
         HStack(spacing: 8) {
             Button(action: toggleComplete) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
                     .foregroundColor(item.isCompleted ? .green : .gray)
             }
@@ -136,9 +135,7 @@ struct MenuBarItemRow: View {
     }
     
     private func toggleComplete() {
-        item.isCompleted.toggle()
-        item.updatedAt = Date()
-        dataService?.scheduleSave()
+        store.toggleComplete(item)
     }
 }
 

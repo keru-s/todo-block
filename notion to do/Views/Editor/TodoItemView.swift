@@ -11,7 +11,6 @@ import SwiftData
 struct TodoItemView: View {
     @Bindable var item: TodoItem
     let allItems: [TodoItem]
-    var dataService: TodoDataService
     @Binding var focusedItemId: UUID?
     
     // 回调
@@ -20,10 +19,12 @@ struct TodoItemView: View {
     var onMoveUp: () -> Void
     var onMoveDown: () -> Void
     
+    private var store: TodoStore { TodoStore.shared }
+    
     @State private var isHoveringDragHandle: Bool = false
     @State private var editingText: String = ""
     @State private var shouldFocus: Bool = false
-    @State private var refreshId: UUID = UUID()  // 用于强制刷新
+    @State private var refreshId: UUID = UUID()
     
     private var isFocused: Bool {
         focusedItemId == item.id
@@ -56,7 +57,6 @@ struct TodoItemView: View {
         .onChange(of: focusedItemId) { oldValue, newValue in
             if newValue == item.id {
                 editingText = item.title
-                // 延迟一帧触发焦点
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     shouldFocus = true
                 }
@@ -65,7 +65,6 @@ struct TodoItemView: View {
             }
         }
         .onChange(of: item.isCompleted) { _, _ in
-            // 完成状态变化时强制刷新
             refreshId = UUID()
         }
         .onAppear {
@@ -122,28 +121,28 @@ struct TodoItemView: View {
             shouldFocus: $shouldFocus,
             onTab: {
                 item.indent()
-                dataService.scheduleSave()
+                store.scheduleSave()
             },
             onShiftTab: {
                 item.outdent()
-                dataService.scheduleSave()
+                store.scheduleSave()
             },
             onReturn: onEnterPressed,
             onBackspaceEmpty: onDeleteEmpty,
             onUpArrow: onMoveUp,
             onDownArrow: onMoveDown
         )
-        .id(refreshId)  // 强制刷新
+        .id(refreshId)
         .onChange(of: editingText) { _, newValue in
             item.title = newValue
-            dataService.scheduleSave()
+            store.scheduleSave()
         }
     }
     
     // MARK: - 操作
     
     private func toggleComplete() {
-        dataService.toggleComplete(item, allItems: allItems)
+        store.toggleComplete(item)
     }
 }
 
@@ -172,9 +171,8 @@ struct CustomTextField: NSViewRepresentable {
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 14)
         textField.customCoordinator = context.coordinator
-        textField.allowsEditingTextAttributes = true  // 允许编辑时保持富文本属性
+        textField.allowsEditingTextAttributes = true
         
-        // 初始化样式
         applyStyle(to: textField)
         
         return textField
@@ -183,15 +181,12 @@ struct CustomTextField: NSViewRepresentable {
     func updateNSView(_ nsView: NSTextField, context: Context) {
         let isEditing = nsView.currentEditor() != nil
         
-        // 更新文本（仅在非编辑状态或文本不同时）
         if !isEditing && nsView.stringValue != text {
             nsView.stringValue = text
         }
         
-        // 始终更新样式
         applyStyle(to: nsView)
         
-        // 处理焦点
         if shouldFocus {
             DispatchQueue.main.async {
                 if let window = nsView.window {
@@ -206,7 +201,6 @@ struct CustomTextField: NSViewRepresentable {
         let currentText = textField.stringValue
         
         if isCompleted {
-            // 已完成状态：灰色 + 中划线
             let attributedString = NSMutableAttributedString(string: currentText)
             let range = NSRange(location: 0, length: currentText.count)
             attributedString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
@@ -214,7 +208,6 @@ struct CustomTextField: NSViewRepresentable {
             attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
             textField.attributedStringValue = attributedString
         } else {
-            // 未完成状态：正常颜色，无中划线
             let attributedString = NSMutableAttributedString(string: currentText)
             let range = NSRange(location: 0, length: currentText.count)
             attributedString.addAttribute(.strikethroughStyle, value: 0, range: range)
@@ -230,7 +223,6 @@ struct CustomTextField: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CustomTextField
-        private var styleTimer: Timer?
         
         init(_ parent: CustomTextField) {
             self.parent = parent
@@ -239,7 +231,6 @@ struct CustomTextField: NSViewRepresentable {
         func controlTextDidChange(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 parent.text = textField.stringValue
-                // 编辑时实时更新样式
                 applyEditorStyle(textField: textField)
             }
         }
@@ -265,12 +256,10 @@ struct CustomTextField: NSViewRepresentable {
             let range = NSRange(location: 0, length: text.count)
             
             if parent.isCompleted {
-                // 已完成状态：灰色 + 中划线
                 editor.textStorage?.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                 editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
                 editor.insertionPointColor = .gray
             } else {
-                // 未完成状态：正常颜色
                 editor.textStorage?.addAttribute(.strikethroughStyle, value: 0, range: range)
                 editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
                 editor.insertionPointColor = .labelColor
@@ -327,12 +316,11 @@ class CustomNSTextField: NSTextField {
     let item = TodoItem(title: "测试待办事项", indentLevel: 0)
     container.mainContext.insert(item)
     
-    let dataService = TodoDataService(modelContext: container.mainContext)
+    TodoStore.shared.initialize(with: container.mainContext)
     
     return TodoItemView(
         item: item,
         allItems: [item],
-        dataService: dataService,
         focusedItemId: .constant(item.id),
         onEnterPressed: {},
         onDeleteEmpty: {},
