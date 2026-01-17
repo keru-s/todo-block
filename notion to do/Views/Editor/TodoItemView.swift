@@ -172,6 +172,7 @@ struct CustomTextField: NSViewRepresentable {
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 14)
         textField.customCoordinator = context.coordinator
+        textField.allowsEditingTextAttributes = true  // 允许编辑时保持富文本属性
         
         // 初始化样式
         applyStyle(to: textField)
@@ -229,6 +230,7 @@ struct CustomTextField: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CustomTextField
+        private var styleTimer: Timer?
         
         init(_ parent: CustomTextField) {
             self.parent = parent
@@ -237,15 +239,41 @@ struct CustomTextField: NSViewRepresentable {
         func controlTextDidChange(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 parent.text = textField.stringValue
+                // 编辑时实时更新样式
+                applyEditorStyle(textField: textField)
+            }
+        }
+        
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                applyEditorStyle(textField: textField)
             }
         }
         
         func controlTextDidEndEditing(_ obj: Notification) {
-            // 编辑结束时重新应用样式
             if let textField = obj.object as? NSTextField {
                 DispatchQueue.main.async {
                     self.parent.applyStyle(to: textField)
                 }
+            }
+        }
+        
+        private func applyEditorStyle(textField: NSTextField) {
+            guard let editor = textField.currentEditor() as? NSTextView else { return }
+            
+            let text = editor.string
+            let range = NSRange(location: 0, length: text.count)
+            
+            if parent.isCompleted {
+                // 已完成状态：灰色 + 中划线
+                editor.textStorage?.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
+                editor.insertionPointColor = .gray
+            } else {
+                // 未完成状态：正常颜色
+                editor.textStorage?.addAttribute(.strikethroughStyle, value: 0, range: range)
+                editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+                editor.insertionPointColor = .labelColor
             }
         }
         
