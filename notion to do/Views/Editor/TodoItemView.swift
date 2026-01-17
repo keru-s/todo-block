@@ -23,6 +23,7 @@ struct TodoItemView: View {
     @State private var isHoveringDragHandle: Bool = false
     @State private var editingText: String = ""
     @State private var shouldFocus: Bool = false
+    @State private var refreshId: UUID = UUID()  // 用于强制刷新
     
     private var isFocused: Bool {
         focusedItemId == item.id
@@ -62,6 +63,10 @@ struct TodoItemView: View {
             } else if oldValue == item.id {
                 shouldFocus = false
             }
+        }
+        .onChange(of: item.isCompleted) { _, _ in
+            // 完成状态变化时强制刷新
+            refreshId = UUID()
         }
         .onAppear {
             editingText = item.title
@@ -128,6 +133,7 @@ struct TodoItemView: View {
             onUpArrow: onMoveUp,
             onDownArrow: onMoveDown
         )
+        .id(refreshId)  // 强制刷新
         .onChange(of: editingText) { _, newValue in
             item.title = newValue
             dataService.scheduleSave()
@@ -166,36 +172,54 @@ struct CustomTextField: NSViewRepresentable {
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 14)
         textField.customCoordinator = context.coordinator
+        
+        // 初始化样式
+        applyStyle(to: textField)
+        
         return textField
     }
     
     func updateNSView(_ nsView: NSTextField, context: Context) {
-        // 仅在非编辑状态时更新文本，避免光标跳动
-        if nsView.currentEditor() == nil && nsView.stringValue != text {
+        let isEditing = nsView.currentEditor() != nil
+        
+        // 更新文本（仅在非编辑状态或文本不同时）
+        if !isEditing && nsView.stringValue != text {
             nsView.stringValue = text
         }
         
-        // 更新样式
-        if isCompleted {
-            if nsView.currentEditor() == nil {
-                let attributedString = NSMutableAttributedString(string: nsView.stringValue)
-                attributedString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: nsView.stringValue.count))
-                attributedString.addAttribute(.foregroundColor, value: NSColor.gray, range: NSRange(location: 0, length: nsView.stringValue.count))
-                nsView.attributedStringValue = attributedString
-            }
-        } else {
-            nsView.textColor = .labelColor
-        }
+        // 始终更新样式
+        applyStyle(to: nsView)
         
-        // 处理焦点 - 使用 shouldFocus 状态
+        // 处理焦点
         if shouldFocus {
             DispatchQueue.main.async {
                 if let window = nsView.window {
                     window.makeFirstResponder(nsView)
-                    // 重置 shouldFocus
                     self.shouldFocus = false
                 }
             }
+        }
+    }
+    
+    private func applyStyle(to textField: NSTextField) {
+        let currentText = textField.stringValue
+        
+        if isCompleted {
+            // 已完成状态：灰色 + 中划线
+            let attributedString = NSMutableAttributedString(string: currentText)
+            let range = NSRange(location: 0, length: currentText.count)
+            attributedString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            attributedString.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
+            attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
+            textField.attributedStringValue = attributedString
+        } else {
+            // 未完成状态：正常颜色，无中划线
+            let attributedString = NSMutableAttributedString(string: currentText)
+            let range = NSRange(location: 0, length: currentText.count)
+            attributedString.addAttribute(.strikethroughStyle, value: 0, range: range)
+            attributedString.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+            attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
+            textField.attributedStringValue = attributedString
         }
     }
     
@@ -213,6 +237,15 @@ struct CustomTextField: NSViewRepresentable {
         func controlTextDidChange(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 parent.text = textField.stringValue
+            }
+        }
+        
+        func controlTextDidEndEditing(_ obj: Notification) {
+            // 编辑结束时重新应用样式
+            if let textField = obj.object as? NSTextField {
+                DispatchQueue.main.async {
+                    self.parent.applyStyle(to: textField)
+                }
             }
         }
         
