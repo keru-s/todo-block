@@ -1,6 +1,6 @@
 //
 //  TodoStore.swift
-//  notion to do
+//  todo block
 //
 //  Created by Claude on 2026/1/17.
 //
@@ -142,6 +142,18 @@ final class TodoStore {
         return newSection
     }
     
+    /// 删除 DaySection
+    func deleteSection(_ section: DaySection) {
+        // 从缓存移除
+        daySectionsCache.removeValue(forKey: section.id)
+        
+        // 从数据库删除
+        modelContext?.delete(section)
+        
+        refreshTrigger += 1
+        scheduleSave()
+    }
+    
     // MARK: - TodoItem 操作
     
     /// 创建新的待办事项
@@ -248,6 +260,64 @@ final class TodoStore {
         }
         
         item.updatedAt = Date()
+        scheduleSave()
+    }
+    
+    /// 移动待办事项及其子项到新位置
+    func moveItemWithChildren(_ item: TodoItem, toDate: Date, afterItem: TodoItem?, newIndentLevel: Int) {
+        let sourceDate = item.dayDate
+        let sourceItems = items(for: sourceDate)
+        
+        // 找到被拖拽项及其所有子项
+        guard let itemIndex = sourceItems.firstIndex(where: { $0.id == item.id }) else {
+            return
+        }
+        
+        var itemsToMove = [item]
+        let baseIndent = item.indentLevel
+        
+        // 收集所有子项（indentLevel > baseIndent 的连续项）
+        for i in (itemIndex + 1)..<sourceItems.count {
+            let child = sourceItems[i]
+            if child.indentLevel > baseIndent {
+                itemsToMove.append(child)
+            } else {
+                break  // 遇到同级或更高级别项，停止
+            }
+        }
+        
+        // 计算缩进差异
+        let indentDelta = newIndentLevel - baseIndent
+        
+        // 计算新的 sortOrder
+        let newDate = Calendar.current.startOfDay(for: toDate)
+        let targetItems = items(for: newDate).filter { movingItem in
+            !itemsToMove.contains { $0.id == movingItem.id }
+        }
+        
+        var baseSortOrder: Double
+        if let afterItem = afterItem,
+           let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id }) {
+            if afterIndex + 1 < targetItems.count {
+                let nextItem = targetItems[afterIndex + 1]
+                baseSortOrder = (afterItem.sortOrder + nextItem.sortOrder) / 2
+            } else {
+                baseSortOrder = afterItem.sortOrder + 1000
+            }
+        } else if let firstItem = targetItems.first {
+            baseSortOrder = firstItem.sortOrder - 1000
+        } else {
+            baseSortOrder = 1000
+        }
+        
+        // 移动所有项
+        for (offset, movingItem) in itemsToMove.enumerated() {
+            movingItem.dayDate = newDate
+            movingItem.sortOrder = baseSortOrder + Double(offset) * 0.001  // 保持相对顺序
+            movingItem.indentLevel = max(0, min(3, movingItem.indentLevel + indentDelta))
+            movingItem.updatedAt = Date()
+        }
+        
         scheduleSave()
     }
     

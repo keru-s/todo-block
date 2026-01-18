@@ -1,14 +1,14 @@
 //
-//  notion_to_doTests.swift
-//  notion to doTests
+//  todo_blockTests.swift
+//  todo blockTests
 //
 //  Created by 宋科儒 on 2026/1/17.
 //
 
 import Testing
-@testable import notion_to_do
+@testable import todo_block
 
-struct notion_to_doTests {
+struct todo_blockTests {
 
     @Test func example() async throws {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.

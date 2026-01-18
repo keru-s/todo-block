@@ -45,6 +45,13 @@
 - [x] 项目编译通过
 - [ ] 手动功能测试
 
+## 阶段八：UI/UX 设计
+- [x] 设计应用图标 (Liquid Glass 风格)
+- [/] 筛选并确定最终图标
+
 ## 后续优化项
 
 - [ ] 多行文本自适应高度（需使用 NSTextView 替代 NSTextField）
+
+## 阶段九：重构与维护
+- [x] 项目重命名 "notion to do" -> "todo block"

@@ -1,13 +1,13 @@
 //
 //  TodoStoreTests.swift
-//  notion to doTests
+//  todo blockTests
 //
 //  Created by Claude on 2026/1/17.
 //
 
 import XCTest
 import SwiftData
-@testable import notion_to_do
+@testable import todo_block
 
 @MainActor
 final class TodoStoreTests: XCTestCase {

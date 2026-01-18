@@ -1,6 +1,6 @@
 //
 //  DaySectionView.swift
-//  notion to do
+//  todo block
 //
 //  Created by Claude on 2026/1/17.
 //
@@ -24,6 +24,8 @@ struct DaySectionView: View {
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
     @State private var dropState: TodoListDropState = .none
+    @State private var showDatePicker: Bool = false
+    @State private var selectedDate: Date = Date()
     @FocusState private var isTitleFocused: Bool
     
     private var store: TodoStore { TodoStore.shared }
@@ -43,49 +45,71 @@ struct DaySectionView: View {
             // 待办事项列表（带拖拽支持）
             todoListView
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.accentColor.opacity(0.05))
+        )
+        .onAppear {
+            selectedDate = section.date
+        }
     }
     
     // MARK: - 待办列表视图
     
     private var todoListView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(todoItems.enumerated()), id: \.element.id) { index, item in
-                VStack(spacing: 0) {
-                    // 插入线（在当前项上方）
-                    if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == index {
-                        insertionIndicator(indentLevel: indentLevel)
+            if todoItems.isEmpty {
+                // 空列表时显示添加按钮
+                Button(action: addNewItem) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle")
+                        Text("添加待办")
                     }
-                    
-                    TodoItemView(
-                        item: item,
-                        allItems: todoItems,
-                        focusedItemId: $selectionManager.focusedItemId,
-                        isSelected: selectionManager.selectedItemIds.contains(item.id),
-                        hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
-                        onSelect: { shiftPressed in
-                            selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
-                        },
-                        onFocus: { shiftPressed in
-                            selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
-                        },
-                        onEnterPressed: { createNewItemAfter(item) },
-                        onDeletePressed: {
-                            if selectionManager.selectedItemIds.contains(item.id) {
-                                selectionManager.deleteSelectedItems(store: store) { date in
-                                    store.items(for: date)
-                                }
-                            }
-                        },
-                        onMoveUp: { selectionManager.moveFocusUp(from: item, allItems: todoItems) },
-                        onMoveDown: { selectionManager.moveFocusDown(from: item, allItems: todoItems) }
-                    )
-                    .id(item.id)
+                    .font(.system(size: 14))
+                    .foregroundColor(.accentColor)
                 }
-            }
-            
-            // 插入线（在列表末尾）
-            if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == todoItems.count {
-                insertionIndicator(indentLevel: indentLevel)
+                .buttonStyle(.plain)
+                .padding(.vertical, 8)
+            } else {
+                ForEach(Array(todoItems.enumerated()), id: \.element.id) { index, item in
+                    VStack(spacing: 0) {
+                        // 插入线（在当前项上方）
+                        if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == index {
+                            insertionIndicator(indentLevel: indentLevel)
+                        }
+                        
+                        TodoItemView(
+                            item: item,
+                            allItems: todoItems,
+                            focusedItemId: $selectionManager.focusedItemId,
+                            isSelected: selectionManager.selectedItemIds.contains(item.id),
+                            hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
+                            onSelect: { shiftPressed in
+                                selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
+                            },
+                            onFocus: { shiftPressed in
+                                selectionManager.handleSelect(item: item, allItems: todoItems, shiftPressed: shiftPressed)
+                            },
+                            onEnterPressed: { createNewItemAfter(item) },
+                            onDeletePressed: {
+                                if selectionManager.selectedItemIds.contains(item.id) {
+                                    selectionManager.deleteSelectedItems(store: store) { date in
+                                        store.items(for: date)
+                                    }
+                                }
+                            },
+                            onMoveUp: { selectionManager.moveFocusUp(from: item, allItems: todoItems) },
+                            onMoveDown: { selectionManager.moveFocusDown(from: item, allItems: todoItems) }
+                        )
+                        .id(item.id)
+                    }
+                }
+                
+                // 插入线（在列表末尾）
+                if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == todoItems.count {
+                    insertionIndicator(indentLevel: indentLevel)
+                }
             }
         }
         .onDrop(of: [.text], delegate: TodoDropDelegate(
@@ -123,35 +147,94 @@ struct DaySectionView: View {
     // MARK: - 标题视图
     
     private var titleView: some View {
-        Group {
-            if isEditingTitle {
-                TextField("日期标题", text: $editingTitle)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .bold))
-                    .focused($isTitleFocused)
-                    .onSubmit {
-                        section.title = editingTitle
-                        isEditingTitle = false
-                        store.scheduleSave()
+        HStack {
+            Text(section.title)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.primary)
+                .onTapGesture {
+                    selectedDate = section.date
+                    showDatePicker = true
+                }
+                .popover(isPresented: $showDatePicker) {
+                    VStack(spacing: 12) {
+                        DatePicker(
+                            "选择日期",
+                            selection: $selectedDate,
+                            displayedComponents: .date
+                        )
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                        
+                        HStack {
+                            Button("取消") {
+                                showDatePicker = false
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Spacer()
+                            
+                            Button("确认") {
+                                updateSectionDate(to: selectedDate)
+                                showDatePicker = false
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding(.horizontal)
                     }
-                    .onExitCommand {
-                        isEditingTitle = false
-                    }
-            } else {
-                Text(section.title)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.primary)
-                    .onTapGesture {
-                        editingTitle = section.title
-                        isEditingTitle = true
-                        isTitleFocused = true
-                    }
-            }
+                    .padding()
+                    .frame(width: 300)
+                }
+            
+            Spacer()
         }
         .padding(.bottom, 4)
     }
     
     // MARK: - 操作方法
+    
+    private func updateSectionDate(to newDate: Date) {
+        let oldDate = section.date
+        let newDateStart = Calendar.current.startOfDay(for: newDate)
+        
+        // 如果日期没变，直接返回
+        guard newDateStart != oldDate else { return }
+        
+        // 检查目标日期是否已有 Section
+        if let existingSection = store.daySectionsCache.values.first(where: { 
+            Calendar.current.isDate($0.date, inSameDayAs: newDateStart) && $0.id != section.id 
+        }) {
+            // 目标日期已有 Section，将当前待办移动到已有 Section
+            let itemsToMove = store.items(for: oldDate)
+            for item in itemsToMove {
+                item.dayDate = existingSection.date
+                item.updatedAt = Date()
+            }
+            
+            // 删除当前 Section
+            store.deleteSection(section)
+        } else {
+            // 目标日期没有 Section，更新当前 Section
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MM-dd"
+            section.title = formatter.string(from: newDateStart)
+            section.date = newDateStart
+            
+            // 同步更新所有待办的 dayDate
+            let itemsToUpdate = store.items(for: oldDate)
+            for item in itemsToUpdate {
+                item.dayDate = newDateStart
+                item.updatedAt = Date()
+            }
+        }
+        
+        store.scheduleSave()
+    }
+    
+    private func addNewItem() {
+        let newItem = store.createItem(dayDate: section.date)
+        selectionManager.handleSelect(item: newItem, allItems: store.items(for: section.date), shiftPressed: false)
+        onItemCreated?(newItem.id)
+    }
     
     private func createNewItemAfter(_ item: TodoItem) {
         let newItem = store.createItem(
@@ -266,11 +349,8 @@ struct TodoDropDelegate: DropDelegate {
             afterItem = nil
         }
         
-        // 更新缩进层级
-        draggedItem.indentLevel = indentLevel
-        
-        // 移动项目
-        store.moveItem(draggedItem, toDate: targetDate, afterItem: afterItem)
+        // 移动项目及其子项
+        store.moveItemWithChildren(draggedItem, toDate: targetDate, afterItem: afterItem, newIndentLevel: indentLevel)
     }
 }
 

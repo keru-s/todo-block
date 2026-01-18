@@ -1,6 +1,6 @@
 //
 //  TodoItemView.swift
-//  notion to do
+//  todo block
 //
 //  Created by Claude on 2026/1/17.
 //

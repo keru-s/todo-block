@@ -12,37 +12,37 @@
 			containerPortal = A85080C32F1B280900D28EC9 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A85080CA2F1B280900D28EC9;
-			remoteInfo = "notion to do";
+			remoteInfo = "todo block";
 		};
 		A85080E52F1B280A00D28EC9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A85080C32F1B280900D28EC9 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A85080CA2F1B280900D28EC9;
-			remoteInfo = "notion to do";
+			remoteInfo = "todo block";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A85080CB2F1B280900D28EC9 /* notion to do.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "notion to do.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A85080DA2F1B280A00D28EC9 /* notion to doTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "notion to doTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A85080E42F1B280A00D28EC9 /* notion to doUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "notion to doUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A85080CB2F1B280900D28EC9 /* todo block.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "todo block.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A85080DA2F1B280A00D28EC9 /* todo blockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "todo blockTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A85080E42F1B280A00D28EC9 /* todo blockUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "todo blockUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A85080CD2F1B280900D28EC9 /* notion to do */ = {
+		A85080CD2F1B280900D28EC9 /* todo block */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "notion to do";
+			path = "todo block";
 			sourceTree = "<group>";
 		};
-		A85080DD2F1B280A00D28EC9 /* notion to doTests */ = {
+		A85080DD2F1B280A00D28EC9 /* todo blockTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "notion to doTests";
+			path = "todo blockTests";
 			sourceTree = "<group>";
 		};
-		A85080E72F1B280A00D28EC9 /* notion to doUITests */ = {
+		A85080E72F1B280A00D28EC9 /* todo blockUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "notion to doUITests";
+			path = "todo blockUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +75,9 @@
 		A85080C22F1B280800D28EC9 = {
 			isa = PBXGroup;
 			children = (
-				A85080CD2F1B280900D28EC9 /* notion to do */,
-				A85080DD2F1B280A00D28EC9 /* notion to doTests */,
-				A85080E72F1B280A00D28EC9 /* notion to doUITests */,
+				A85080CD2F1B280900D28EC9 /* todo block */,
+				A85080DD2F1B280A00D28EC9 /* todo blockTests */,
+				A85080E72F1B280A00D28EC9 /* todo blockUITests */,
 				A85080CC2F1B280900D28EC9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,9 +85,9 @@
 		A85080CC2F1B280900D28EC9 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A85080CB2F1B280900D28EC9 /* notion to do.app */,
-				A85080DA2F1B280A00D28EC9 /* notion to doTests.xctest */,
-				A85080E42F1B280A00D28EC9 /* notion to doUITests.xctest */,
+				A85080CB2F1B280900D28EC9 /* todo block.app */,
+				A85080DA2F1B280A00D28EC9 /* todo blockTests.xctest */,
+				A85080E42F1B280A00D28EC9 /* todo blockUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A85080CA2F1B280900D28EC9 /* notion to do */ = {
+		A85080CA2F1B280900D28EC9 /* todo block */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A85080EE2F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to do" */;
+			buildConfigurationList = A85080EE2F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo block" */;
 			buildPhases = (
 				A85080C72F1B280900D28EC9 /* Sources */,
 				A85080C82F1B280900D28EC9 /* Frameworks */,
@@ -108,18 +108,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A85080CD2F1B280900D28EC9 /* notion to do */,
+				A85080CD2F1B280900D28EC9 /* todo block */,
 			);
-			name = "notion to do";
+			name = "todo block";
 			packageProductDependencies = (
 			);
-			productName = "notion to do";
-			productReference = A85080CB2F1B280900D28EC9 /* notion to do.app */;
+			productName = "todo block";
+			productReference = A85080CB2F1B280900D28EC9 /* todo block.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A85080D92F1B280A00D28EC9 /* notion to doTests */ = {
+		A85080D92F1B280A00D28EC9 /* todo blockTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A85080F12F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to doTests" */;
+			buildConfigurationList = A85080F12F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo blockTests" */;
 			buildPhases = (
 				A85080D62F1B280A00D28EC9 /* Sources */,
 				A85080D72F1B280A00D28EC9 /* Frameworks */,
@@ -131,18 +131,18 @@
 				A85080DC2F1B280A00D28EC9 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A85080DD2F1B280A00D28EC9 /* notion to doTests */,
+				A85080DD2F1B280A00D28EC9 /* todo blockTests */,
 			);
-			name = "notion to doTests";
+			name = "todo blockTests";
 			packageProductDependencies = (
 			);
-			productName = "notion to doTests";
-			productReference = A85080DA2F1B280A00D28EC9 /* notion to doTests.xctest */;
+			productName = "todo blockTests";
+			productReference = A85080DA2F1B280A00D28EC9 /* todo blockTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		A85080E32F1B280A00D28EC9 /* notion to doUITests */ = {
+		A85080E32F1B280A00D28EC9 /* todo blockUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A85080F42F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to doUITests" */;
+			buildConfigurationList = A85080F42F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo blockUITests" */;
 			buildPhases = (
 				A85080E02F1B280A00D28EC9 /* Sources */,
 				A85080E12F1B280A00D28EC9 /* Frameworks */,
@@ -154,13 +154,13 @@
 				A85080E62F1B280A00D28EC9 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A85080E72F1B280A00D28EC9 /* notion to doUITests */,
+				A85080E72F1B280A00D28EC9 /* todo blockUITests */,
 			);
-			name = "notion to doUITests";
+			name = "todo blockUITests";
 			packageProductDependencies = (
 			);
-			productName = "notion to doUITests";
-			productReference = A85080E42F1B280A00D28EC9 /* notion to doUITests.xctest */;
+			productName = "todo blockUITests";
+			productReference = A85080E42F1B280A00D28EC9 /* todo blockUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,12 +186,13 @@
 					};
 				};
 			};
-			buildConfigurationList = A85080C62F1B280900D28EC9 /* Build configuration list for PBXProject "notion to do" */;
-			developmentRegion = en;
+			buildConfigurationList = A85080C62F1B280900D28EC9 /* Build configuration list for PBXProject "todo block" */;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = A85080C22F1B280800D28EC9;
 			minimizedProjectReferenceProxies = 1;
@@ -200,9 +201,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A85080CA2F1B280900D28EC9 /* notion to do */,
-				A85080D92F1B280A00D28EC9 /* notion to doTests */,
-				A85080E32F1B280A00D28EC9 /* notion to doUITests */,
+				A85080CA2F1B280900D28EC9 /* todo block */,
+				A85080D92F1B280A00D28EC9 /* todo blockTests */,
+				A85080E32F1B280A00D28EC9 /* todo blockUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +259,12 @@
 /* Begin PBXTargetDependency section */
 		A85080DC2F1B280A00D28EC9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A85080CA2F1B280900D28EC9 /* notion to do */;
+			target = A85080CA2F1B280900D28EC9 /* todo block */;
 			targetProxy = A85080DB2F1B280A00D28EC9 /* PBXContainerItemProxy */;
 		};
 		A85080E62F1B280A00D28EC9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A85080CA2F1B280900D28EC9 /* notion to do */;
+			target = A85080CA2F1B280900D28EC9 /* todo block */;
 			targetProxy = A85080E52F1B280A00D28EC9 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -409,7 +410,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "insight.notion-to-do";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.insight.to-do-block";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -441,7 +442,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "insight.notion-to-do";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.insight.to-do-block";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -470,7 +471,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/notion to do.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/notion to do";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/todo block.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/todo block";
 			};
 			name = Debug;
 		};
@@ -491,7 +492,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/notion to do.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/notion to do";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/todo block.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/todo block";
 			};
 			name = Release;
 		};
@@ -510,7 +511,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "notion to do";
+				TEST_TARGET_NAME = "todo block";
 			};
 			name = Debug;
 		};
@@ -529,14 +530,14 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "notion to do";
+				TEST_TARGET_NAME = "todo block";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A85080C62F1B280900D28EC9 /* Build configuration list for PBXProject "notion to do" */ = {
+		A85080C62F1B280900D28EC9 /* Build configuration list for PBXProject "todo block" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A85080EC2F1B280A00D28EC9 /* Debug */,
@@ -545,7 +546,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A85080EE2F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to do" */ = {
+		A85080EE2F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo block" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A85080EF2F1B280A00D28EC9 /* Debug */,
@@ -554,7 +555,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A85080F12F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to doTests" */ = {
+		A85080F12F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo blockTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A85080F22F1B280A00D28EC9 /* Debug */,
@@ -563,7 +564,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A85080F42F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "notion to doUITests" */ = {
+		A85080F42F1B280A00D28EC9 /* Build configuration list for PBXNativeTarget "todo blockUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A85080F52F1B280A00D28EC9 /* Debug */,

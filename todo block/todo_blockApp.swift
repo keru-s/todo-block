@@ -1,6 +1,6 @@
 //
-//  notion_to_doApp.swift
-//  notion to do
+//  todo_blockApp.swift
+//  todo block
 //
 //  Created by 宋科儒 on 2026/1/17.
 //
@@ -9,13 +9,13 @@ import SwiftUI
 import SwiftData
 
 @main
-struct notion_to_doApp: App {
+struct todo_blockApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             TodoItem.self,
             DaySection.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
