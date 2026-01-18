@@ -1,0 +1,59 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "extended-srgb:0.34510,0.33725,0.83922,1.00000",
+      "extended-srgb:0.00000,0.78039,0.74510,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0.7
+      }
+    }
+  },
+  "groups" : [
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "image-name" : "todo 2.svg",
+          "name" : "todo 2",
+          "position" : {
+            "scale" : 4,
+            "translation-in-points" : [
+              20,
+              24
+            ]
+          }
+        }
+      ],
+      "lighting-specializations" : [
+        {
+          "value" : "combined"
+        },
+        {
+          "idiom" : "square",
+          "value" : "individual"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

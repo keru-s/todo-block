@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <defs>
+    <style>
+      /* 定义通用的样式变量，方便修改 */
+      .checkbox-stroke { fill: none; stroke: #C5C5C5; stroke-width: 1.5; }
+      .checkbox-fill-green { fill: #4CD964; }
+      .checkmark-path { fill: none; stroke: white; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .text-line-placeholder { fill: #E1E1E1; rx: 3; ry: 3; height: 6; }
+    </style>
+  </defs>
+
+  <g transform="translate(0, 5)">
+    <rect class="checkbox-stroke" x="5" y="0" width="14" height="14" rx="3" />
+    <rect class="text-line-placeholder" x="25" y="4" width="65" />
+  </g>
+
+  <g transform="translate(20, 25)">
+    <rect class="checkbox-stroke" x="5" y="0" width="14" height="14" rx="3" />
+    <rect class="text-line-placeholder" x="25" y="4" width="45" />
+  </g>
+
+  <g transform="translate(40, 50)">
+    <rect class="checkbox-fill-green" x="1.5" y="0" width="14" height="14" rx="3" />
+    <path class="checkmark-path" d="M8.5 7 L11 9.5 L15.5 4.5" transform="translate(-3.5, 0)"/>
+    <rect class="text-line-placeholder" x="25" y="4" width="25" />
+  </g>
+
+    <g transform="translate(0, 75)">
+    <rect class="checkbox-stroke" x="5" y="0" width="14" height="14" rx="3" />
+    <rect class="text-line-placeholder" x="25" y="4" width="65" />
+  </g>
+
+</svg>
