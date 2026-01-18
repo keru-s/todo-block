@@ -9,6 +9,13 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+// MARK: - 拖拽状态（通用）
+
+enum TodoListDropState: Equatable {
+    case none
+    case insertAt(index: Int, indentLevel: Int)
+}
+
 struct DaySectionView: View {
     @Bindable var section: DaySection
     @Bindable var selectionManager: SelectionManager
@@ -16,7 +23,7 @@ struct DaySectionView: View {
     
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
-    @State private var dropState: DropState = .none
+    @State private var dropState: TodoListDropState = .none
     @FocusState private var isTitleFocused: Bool
     
     private var store: TodoStore { TodoStore.shared }
@@ -27,13 +34,6 @@ struct DaySectionView: View {
     
     private let indentWidth: CGFloat = 24
     private let itemHeight: CGFloat = 28  // 每个 item 的高度（含 padding）
-    
-    // MARK: - 拖拽状态
-    
-    enum DropState: Equatable {
-        case none
-        case insertAt(index: Int, indentLevel: Int)
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -89,7 +89,7 @@ struct DaySectionView: View {
             }
         }
         .onDrop(of: [.text], delegate: TodoDropDelegate(
-            section: section,
+            targetDate: section.date,
             todoItems: todoItems,
             store: store,
             dropState: $dropState,
@@ -167,10 +167,10 @@ struct DaySectionView: View {
 // MARK: - 拖拽代理
 
 struct TodoDropDelegate: DropDelegate {
-    let section: DaySection
+    let targetDate: Date
     let todoItems: [TodoItem]
     let store: TodoStore
-    @Binding var dropState: DaySectionView.DropState
+    @Binding var dropState: TodoListDropState
     let indentWidth: CGFloat
     let itemHeight: CGFloat
     
@@ -270,7 +270,7 @@ struct TodoDropDelegate: DropDelegate {
         draggedItem.indentLevel = indentLevel
         
         // 移动项目
-        store.moveItem(draggedItem, toDate: section.date, afterItem: afterItem)
+        store.moveItem(draggedItem, toDate: targetDate, afterItem: afterItem)
     }
 }
 
