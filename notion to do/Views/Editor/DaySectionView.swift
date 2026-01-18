@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct DaySectionView: View {
     @Bindable var section: DaySection
@@ -15,6 +16,7 @@ struct DaySectionView: View {
     
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
+    @State private var dropState: DropState = .none
     @FocusState private var isTitleFocused: Bool
     
     private var store: TodoStore { TodoStore.shared }
@@ -23,14 +25,37 @@ struct DaySectionView: View {
         store.items(for: section.date)
     }
     
+    private let indentWidth: CGFloat = 24
+    private let itemHeight: CGFloat = 28  // 每个 item 的高度（含 padding）
+    
+    // MARK: - 拖拽状态
+    
+    enum DropState: Equatable {
+        case none
+        case insertAt(index: Int, indentLevel: Int)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // 日期标题
             titleView
             
-            // 待办事项列表
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(todoItems) { item in
+            // 待办事项列表（带拖拽支持）
+            todoListView
+        }
+    }
+    
+    // MARK: - 待办列表视图
+    
+    private var todoListView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(todoItems.enumerated()), id: \.element.id) { index, item in
+                VStack(spacing: 0) {
+                    // 插入线（在当前项上方）
+                    if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == index {
+                        insertionIndicator(indentLevel: indentLevel)
+                    }
+                    
                     TodoItemView(
                         item: item,
                         allItems: todoItems,
@@ -45,13 +70,6 @@ struct DaySectionView: View {
                         },
                         onEnterPressed: { createNewItemAfter(item) },
                         onDeletePressed: {
-                            // 调用 Manager 的删除逻辑
-                            // 我们需要给 Manager 提供上下文，这里只处理当前 Section 的删除
-                            // 但如果跨 Section 多选呢？目前 SelectionManager 设计是通用的
-                            // 此时我们先简单处理：如果是多选且包含此项，则交给 Manager 删除选中项
-                            // 如果是单选（Backsapce 删除空行），也交给 Manager
-                            
-                            // 修正：TodoItemView 的 onDeletePressed 在 Backspace 且空或者是多选删除时触发
                             if selectionManager.selectedItemIds.contains(item.id) {
                                 selectionManager.deleteSelectedItems(store: store) { date in
                                     store.items(for: date)
@@ -64,8 +82,45 @@ struct DaySectionView: View {
                     .id(item.id)
                 }
             }
+            
+            // 插入线（在列表末尾）
+            if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == todoItems.count {
+                insertionIndicator(indentLevel: indentLevel)
+            }
         }
+        .onDrop(of: [.text], delegate: TodoDropDelegate(
+            section: section,
+            todoItems: todoItems,
+            store: store,
+            dropState: $dropState,
+            indentWidth: indentWidth,
+            itemHeight: itemHeight
+        ))
     }
+    
+    // MARK: - 插入线指示器
+    
+    private func insertionIndicator(indentLevel: Int) -> some View {
+        HStack(spacing: 0) {
+            // 左侧缩进空间（拖拽句柄宽度 + 缩进）
+            Spacer()
+                .frame(width: 20 + CGFloat(indentLevel) * indentWidth)
+            
+            // 红色圆点
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 6, height: 6)
+            
+            // 红色线条
+            Rectangle()
+                .fill(Color.accentColor)
+                .frame(height: 2)
+        }
+        .frame(height: 4)
+        .transition(.opacity)
+    }
+    
+    // MARK: - 标题视图
     
     private var titleView: some View {
         Group {
@@ -104,9 +159,118 @@ struct DaySectionView: View {
             afterItem: item,
             indentLevel: item.indentLevel
         )
-        // 使用 manager 更新选中与焦点
         selectionManager.handleSelect(item: newItem, allItems: store.items(for: section.date), shiftPressed: false)
         onItemCreated?(newItem.id)
+    }
+}
+
+// MARK: - 拖拽代理
+
+struct TodoDropDelegate: DropDelegate {
+    let section: DaySection
+    let todoItems: [TodoItem]
+    let store: TodoStore
+    @Binding var dropState: DaySectionView.DropState
+    let indentWidth: CGFloat
+    let itemHeight: CGFloat
+    
+    func dropEntered(info: DropInfo) {
+        updateDropState(info: info)
+    }
+    
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropState(info: info)
+        return DropProposal(operation: .move)
+    }
+    
+    func dropExited(info: DropInfo) {
+        dropState = .none
+    }
+    
+    func performDrop(info: DropInfo) -> Bool {
+        guard case .insertAt(let insertIndex, let indentLevel) = dropState else {
+            dropState = .none
+            return false
+        }
+        
+        // 获取拖拽的 item ID
+        let providers = info.itemProviders(for: [.text])
+        guard let provider = providers.first else {
+            dropState = .none
+            return false
+        }
+        
+        provider.loadObject(ofClass: NSString.self) { data, error in
+            guard let idString = data as? String,
+                  let draggedId = UUID(uuidString: idString) else {
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self.performMove(draggedId: draggedId, toIndex: insertIndex, indentLevel: indentLevel)
+            }
+        }
+        
+        dropState = .none
+        return true
+    }
+    
+    // MARK: - 私有方法
+    
+    private func updateDropState(info: DropInfo) {
+        let y = info.location.y
+        let x = info.location.x
+        
+        // 计算插入位置（基于 Y 坐标）
+        let insertIndex = min(max(0, Int(y / itemHeight)), todoItems.count)
+        
+        // 计算缩进层级（基于 X 坐标）
+        // 基准 X 位置是拖拽句柄宽度（20）
+        let baseX: CGFloat = 20
+        let relativeX = max(0, x - baseX)
+        var indentLevel = Int(relativeX / indentWidth)
+        
+        // 限制缩进层级：
+        // 1. 不能超过前一项的 indentLevel + 1
+        // 2. 最大为 3
+        if insertIndex > 0 {
+            let prevItem = todoItems[insertIndex - 1]
+            indentLevel = min(indentLevel, prevItem.indentLevel + 1)
+        } else {
+            indentLevel = 0  // 第一项只能是顶级
+        }
+        indentLevel = min(indentLevel, 3)
+        
+        dropState = .insertAt(index: insertIndex, indentLevel: indentLevel)
+    }
+    
+    private func performMove(draggedId: UUID, toIndex: Int, indentLevel: Int) {
+        guard let draggedItem = store.todoItemsCache[draggedId] else {
+            return
+        }
+        
+        // 计算 afterItem
+        let afterItem: TodoItem?
+        if toIndex > 0 {
+            // 需要考虑如果拖拽的是列表中的项，索引可能需要调整
+            let filteredItems = todoItems.filter { $0.id != draggedId }
+            let adjustedIndex = min(toIndex - 1, filteredItems.count - 1)
+            if adjustedIndex >= 0 && adjustedIndex < filteredItems.count {
+                afterItem = filteredItems[adjustedIndex]
+            } else if !filteredItems.isEmpty {
+                afterItem = filteredItems.last
+            } else {
+                afterItem = nil
+            }
+        } else {
+            afterItem = nil
+        }
+        
+        // 更新缩进层级
+        draggedItem.indentLevel = indentLevel
+        
+        // 移动项目
+        store.moveItem(draggedItem, toDate: section.date, afterItem: afterItem)
     }
 }
 

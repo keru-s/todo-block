@@ -89,7 +89,7 @@ struct MenuBarView: View {
                     .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.pink)
+                .foregroundColor(.accentColor)
                 
                 Spacer()
                 

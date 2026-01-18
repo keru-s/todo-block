@@ -54,7 +54,7 @@ struct TodoListView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.pink)
+                    .foregroundColor(.accentColor)
                     .font(.system(size: 14, weight: .medium))
                     .padding(.horizontal)
                     .padding(.vertical, 12)

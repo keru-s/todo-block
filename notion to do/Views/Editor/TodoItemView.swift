@@ -40,14 +40,14 @@ struct TodoItemView: View {
     
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            // 拖拽句柄
-            dragHandle
-            
-            // 缩进
+            // 缩进（在拖拽句柄之前，使句柄跟随缩进）
             if item.indentLevel > 0 {
                 Spacer()
                     .frame(width: CGFloat(item.indentLevel) * indentWidth)
             }
+            
+            // 拖拽句柄
+            dragHandle
             
             // 勾选框
             checkboxView
@@ -58,6 +58,9 @@ struct TodoItemView: View {
         .padding(.vertical, 4)
         .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
+        .draggable(item.id.uuidString) {
+            dragPreview
+        }
         .simultaneousGesture(
             TapGesture()
                 .modifiers(.shift)
@@ -107,13 +110,22 @@ struct TodoItemView: View {
             .onHover { hovering in
                 isHoveringDragHandle = hovering
             }
-            .draggable(item.id.uuidString) {
-                Text(item.title.isEmpty ? "待办事项" : item.title)
-                    .padding(8)
-                    .background(Color.white)
-                    .cornerRadius(4)
-                    .shadow(radius: 2)
-            }
+    }
+    
+    private var dragPreview: some View {
+        HStack(spacing: 4) {
+            Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
+                .font(.system(size: 14))
+                .foregroundColor(item.isCompleted ? .green : .gray)
+            Text(item.title.isEmpty ? "待办事项" : item.title)
+                .font(.system(size: 14))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(6)
+        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
     }
     
     private var checkboxView: some View {
