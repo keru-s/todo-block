@@ -1,0 +1,56 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must end with \r
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Xcode
+## Build generated
+build/
+DerivedData/
+
+## User settings
+xcuserdata/
+
+## compatibility with XCode 8 and earlier (ignoring these won't hurt)
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.pbxuser
+
+## Xcode 8 and earlier
+*.xcscmblueprint
+*.xccheckout
+
+## Compatibility with Xcode 3 and earlier (ignoring these won't hurt)
+*.moved-aside
+*.pro
+*.essd
+
+## Swift Package Manager
+.build/
+
+# Other
+*.os_build_search_paths
+*.xcuserstate
