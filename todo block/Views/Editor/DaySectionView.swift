@@ -53,21 +53,6 @@ struct DaySectionView: View {
         .onAppear {
             selectedDate = section.date
         }
-        .onChange(of: store.refreshTrigger) { _, _ in
-            // 当数据变化时，检查焦点 item 是否还存在
-            if let focusedId = selectionManager.focusedItemId,
-                !todoItems.contains(where: { $0.id == focusedId })
-            {
-                // 焦点 item 被删除了，转移到最后一个 item
-                if let lastItem = todoItems.last {
-                    selectionManager.focusedItemId = lastItem.id
-                    selectionManager.selectedItemIds = [lastItem.id]
-                } else {
-                    selectionManager.focusedItemId = nil
-                    selectionManager.selectedItemIds = []
-                }
-            }
-        }
     }
 
     // MARK: - 待办列表视图
