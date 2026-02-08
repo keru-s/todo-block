@@ -149,11 +149,19 @@ struct TodoItemView: View {
             hasMultipleSelection: hasMultipleSelection,
             cursorPosition: cursorPosition,
             onTab: {
+                let oldIndent = item.indentLevel
                 item.indent()
+                if item.indentLevel != oldIndent {
+                    store.registerIndentChange(itemId: item.id, oldIndent: oldIndent)
+                }
                 store.scheduleSave()
             },
             onShiftTab: {
+                let oldIndent = item.indentLevel
                 item.outdent()
+                if item.indentLevel != oldIndent {
+                    store.registerIndentChange(itemId: item.id, oldIndent: oldIndent)
+                }
                 store.scheduleSave()
             },
             onReturn: onEnterPressed,
@@ -177,6 +185,7 @@ struct TodoItemView: View {
             }
         }
         .onChange(of: editingText) { _, newValue in
+            // 文本编辑使用 TextField 原生撤销功能，此处只负责同步数据
             item.title = newValue
             store.scheduleSave()
         }

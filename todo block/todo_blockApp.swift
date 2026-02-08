@@ -40,6 +40,38 @@ struct todo_blockApp: App {
                 }
         }
         .modelContainer(sharedModelContainer)
+        .commands {
+            // 完全替换默认的撤销/重做菜单
+            CommandGroup(replacing: .undoRedo) {
+                Button("撤销") {
+                    // 首先尝试触发当前 focused 的 TextField 的撤销
+                    if let window = NSApp.keyWindow,
+                        let firstResponder = window.firstResponder as? NSTextView,
+                        firstResponder.undoManager?.canUndo == true
+                    {
+                        firstResponder.undoManager?.undo()
+                    } else {
+                        // 如果 TextField 无法撤销，则使用应用层撤销
+                        TodoStore.shared.undo()
+                    }
+                }
+                .keyboardShortcut("z", modifiers: .command)
+
+                Button("重做") {
+                    // 首先尝试触发当前 focused 的 TextField 的重做
+                    if let window = NSApp.keyWindow,
+                        let firstResponder = window.firstResponder as? NSTextView,
+                        firstResponder.undoManager?.canRedo == true
+                    {
+                        firstResponder.undoManager?.redo()
+                    } else {
+                        // 如果 TextField 无法重做，则使用应用层重做
+                        TodoStore.shared.redo()
+                    }
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+        }
 
         // 菜单栏组件
         MenuBarExtra("待办", systemImage: "checklist") {
