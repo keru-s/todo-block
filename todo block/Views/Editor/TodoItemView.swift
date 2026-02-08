@@ -239,16 +239,22 @@ struct CustomTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
-        // 更新 coordinator 的多选状态
+        // 更新 coordinator 的引用和状态
+        context.coordinator.parent = self
         context.coordinator.hasMultipleSelection = hasMultipleSelection
 
         let isEditing = nsView.currentEditor() != nil
 
-        if !isEditing && nsView.stringValue != text {
-            nsView.stringValue = text
+        if isEditing {
+            // 编辑状态下：只更新 Field Editor 的样式，不重置内容
+            context.coordinator.applyEditorStyle(textField: nsView)
+        } else {
+            // 非编辑状态下：更新内容和静态外观
+            if nsView.stringValue != text {
+                nsView.stringValue = text
+            }
+            applyStyle(to: nsView)
         }
-
-        applyStyle(to: nsView)
 
         if shouldFocus {
             DispatchQueue.main.async {
@@ -321,7 +327,7 @@ struct CustomTextField: NSViewRepresentable {
             }
         }
 
-        private func applyEditorStyle(textField: NSTextField) {
+        func applyEditorStyle(textField: NSTextField) {
             guard let editor = textField.currentEditor() as? NSTextView else { return }
 
             let text = editor.string
