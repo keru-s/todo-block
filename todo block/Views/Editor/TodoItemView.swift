@@ -5,8 +5,8 @@
 //  Created by Claude on 2026/1/17.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct TodoItemView: View {
     @Bindable var item: TodoItem
@@ -14,30 +14,31 @@ struct TodoItemView: View {
     @Binding var focusedItemId: UUID?
     var isSelected: Bool = false
     var hasMultipleSelection: Bool = false  // 是否处于多选状态
-    
+    var cursorPosition: Int = 0  // 光标位置
+
     // 选择回调
     var onSelect: (Bool) -> Void = { _ in }  // 参数：是否按住 Shift
     var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
-    
+
     // 回调
     var onEnterPressed: () -> Void
     var onDeletePressed: () -> Void  // 改名：多选时删除全部
-    var onMoveUp: () -> Void
-    var onMoveDown: () -> Void
-    
+    var onMoveUp: (Int) -> Void
+    var onMoveDown: (Int) -> Void
+
     private var store: TodoStore { TodoStore.shared }
-    
+
     @State private var isHoveringDragHandle: Bool = false
     @State private var editingText: String = ""
     @State private var shouldFocus: Bool = false
     @State private var refreshId: UUID = UUID()
-    
+
     private var isFocused: Bool {
         focusedItemId == item.id
     }
-    
+
     private let indentWidth: CGFloat = 24
-    
+
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             // 缩进（在拖拽句柄之前，使句柄跟随缩进）
@@ -45,13 +46,13 @@ struct TodoItemView: View {
                 Spacer()
                     .frame(width: CGFloat(item.indentLevel) * indentWidth)
             }
-            
+
             // 拖拽句柄
             dragHandle
-            
+
             // 勾选框
             checkboxView
-            
+
             // 文本编辑区
             textFieldView
         }
@@ -93,9 +94,9 @@ struct TodoItemView: View {
             }
         }
     }
-    
+
     // MARK: - 子视图
-    
+
     private var dragHandle: some View {
         Rectangle()
             .fill(isHoveringDragHandle ? Color.gray.opacity(0.5) : Color.clear)
@@ -111,7 +112,7 @@ struct TodoItemView: View {
                 isHoveringDragHandle = hovering
             }
     }
-    
+
     private var dragPreview: some View {
         HStack(spacing: 4) {
             Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
@@ -127,7 +128,7 @@ struct TodoItemView: View {
         .cornerRadius(6)
         .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
     }
-    
+
     private var checkboxView: some View {
         Button(action: toggleComplete) {
             Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
@@ -138,7 +139,7 @@ struct TodoItemView: View {
         .frame(width: 20, height: 20)
         .padding(.trailing, 6)
     }
-    
+
     private var textFieldView: some View {
         CustomTextField(
             text: $editingText,
@@ -146,6 +147,7 @@ struct TodoItemView: View {
             isCompleted: item.isCompleted,
             shouldFocus: $shouldFocus,
             hasMultipleSelection: hasMultipleSelection,
+            cursorPosition: cursorPosition,
             onTab: {
                 item.indent()
                 store.scheduleSave()
@@ -160,8 +162,12 @@ struct TodoItemView: View {
                 // TextField 获取焦点时，同步选择状态
                 onFocus(shiftPressed)
             },
-            onUpArrow: onMoveUp,
-            onDownArrow: onMoveDown
+            onUpArrow: { position in
+                onMoveUp(position)
+            },
+            onDownArrow: { position in
+                onMoveDown(position)
+            }
         )
         .id(refreshId)
         .onChange(of: item.title) { _, newValue in
@@ -175,9 +181,9 @@ struct TodoItemView: View {
             store.scheduleSave()
         }
     }
-    
+
     // MARK: - 操作
-    
+
     private func toggleComplete() {
         store.toggleComplete(item)
     }
@@ -191,15 +197,16 @@ struct CustomTextField: NSViewRepresentable {
     var isCompleted: Bool
     @Binding var shouldFocus: Bool
     var hasMultipleSelection: Bool = false  // 多选状态
-    
+    var cursorPosition: Int = 0  // 光标位置
+
     var onTab: () -> Void
     var onShiftTab: () -> Void
     var onReturn: () -> Void
     var onBackspace: () -> Void
     var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
-    var onUpArrow: () -> Void
-    var onDownArrow: () -> Void
-    
+    var onUpArrow: (Int) -> Void  // 参数：当前光标位置
+    var onDownArrow: (Int) -> Void  // 参数：当前光标位置
+
     func makeNSView(context: Context) -> NSTextField {
         let textField = CustomNSTextField()
         textField.delegate = context.coordinator
@@ -211,46 +218,52 @@ struct CustomTextField: NSViewRepresentable {
         textField.font = .systemFont(ofSize: 14)
         textField.customCoordinator = context.coordinator
         textField.allowsEditingTextAttributes = true
-        
+
         // 点击时立即调用 onFocus，传递 Shift 状态
         textField.onMouseDown = { [self] shiftPressed in
             self.onFocus(shiftPressed)
         }
-        
+
         applyStyle(to: textField)
-        
+
         return textField
     }
-    
+
     func updateNSView(_ nsView: NSTextField, context: Context) {
         // 更新 coordinator 的多选状态
         context.coordinator.hasMultipleSelection = hasMultipleSelection
-        
+
         let isEditing = nsView.currentEditor() != nil
-        
+
         if !isEditing && nsView.stringValue != text {
             nsView.stringValue = text
         }
-        
+
         applyStyle(to: nsView)
-        
+
         if shouldFocus {
             DispatchQueue.main.async {
                 if let window = nsView.window {
                     window.makeFirstResponder(nsView)
+                    // 设置光标位置而不是全选
+                    if let editor = nsView.currentEditor() as? NSTextView {
+                        let pos = min(self.cursorPosition, self.text.count)
+                        editor.setSelectedRange(NSRange(location: pos, length: 0))
+                    }
                     self.shouldFocus = false
                 }
             }
         }
     }
-    
+
     private func applyStyle(to textField: NSTextField) {
         let currentText = textField.stringValue
-        
+
         if isCompleted {
             let attributedString = NSMutableAttributedString(string: currentText)
             let range = NSRange(location: 0, length: currentText.count)
-            attributedString.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            attributedString.addAttribute(
+                .strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             attributedString.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
             attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
             textField.attributedStringValue = attributedString
@@ -263,34 +276,34 @@ struct CustomTextField: NSViewRepresentable {
             textField.attributedStringValue = attributedString
         }
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CustomTextField
         var hasMultipleSelection: Bool = false
-        
+
         init(_ parent: CustomTextField) {
             self.parent = parent
             self.hasMultipleSelection = parent.hasMultipleSelection
         }
-        
+
         func controlTextDidChange(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 parent.text = textField.stringValue
                 applyEditorStyle(textField: textField)
             }
         }
-        
+
         func controlTextDidBeginEditing(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 applyEditorStyle(textField: textField)
                 // 注意：选择状态同步已在 mouseDown 中处理
             }
         }
-        
+
         func controlTextDidEndEditing(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 DispatchQueue.main.async {
@@ -298,30 +311,35 @@ struct CustomTextField: NSViewRepresentable {
                 }
             }
         }
-        
+
         private func applyEditorStyle(textField: NSTextField) {
             guard let editor = textField.currentEditor() as? NSTextView else { return }
-            
+
             let text = editor.string
             let range = NSRange(location: 0, length: text.count)
-            
+
             if parent.isCompleted {
-                editor.textStorage?.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-                editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
+                editor.textStorage?.addAttribute(
+                    .strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                editor.textStorage?.addAttribute(
+                    .foregroundColor, value: NSColor.gray, range: range)
                 editor.insertionPointColor = .gray
             } else {
                 editor.textStorage?.addAttribute(.strikethroughStyle, value: 0, range: range)
-                editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+                editor.textStorage?.addAttribute(
+                    .foregroundColor, value: NSColor.labelColor, range: range)
                 editor.insertionPointColor = .labelColor
             }
         }
-        
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+
+        func control(
+            _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
+        ) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 parent.onReturn()
                 return true
             }
-            
+
             if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
                 // 多选状态下：直接删除所有选中项
                 // 单选状态下：只有文本为空时才删除
@@ -331,27 +349,39 @@ struct CustomTextField: NSViewRepresentable {
                 }
                 return false
             }
-            
+
             if commandSelector == #selector(NSResponder.insertTab(_:)) {
                 parent.onTab()
                 return true
             }
-            
+
             if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
                 parent.onShiftTab()
                 return true
             }
-            
+
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
-                parent.onUpArrow()
+                // 获取当前光标位置并传递
+                if let editor = textView as? NSTextView {
+                    let location = editor.selectedRange().location
+                    parent.onUpArrow(location)
+                } else {
+                    parent.onUpArrow(0)
+                }
                 return true
             }
-            
+
             if commandSelector == #selector(NSResponder.moveDown(_:)) {
-                parent.onDownArrow()
+                // 获取当前光标位置并传递
+                if let editor = textView as? NSTextView {
+                    let location = editor.selectedRange().location
+                    parent.onDownArrow(location)
+                } else {
+                    parent.onDownArrow(0)
+                }
                 return true
             }
-            
+
             return false
         }
     }
@@ -360,7 +390,7 @@ struct CustomTextField: NSViewRepresentable {
 class CustomNSTextField: NSTextField {
     weak var customCoordinator: CustomTextField.Coordinator?
     var onMouseDown: ((Bool) -> Void)?  // 参数：是否按住 Shift
-    
+
     override func mouseDown(with event: NSEvent) {
         // 点击时立即调用回调，传递 Shift 状态
         let shiftPressed = event.modifierFlags.contains(.shift)
@@ -370,23 +400,34 @@ class CustomNSTextField: NSTextField {
 }
 
 #Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
-    
-    let item = TodoItem(title: "测试待办事项", indentLevel: 0)
-    container.mainContext.insert(item)
-    
-    TodoStore.shared.initialize(with: container.mainContext)
-    
-    return TodoItemView(
-        item: item,
-        allItems: [item],
-        focusedItemId: .constant(item.id),
-        onEnterPressed: {},
-        onDeletePressed: {},
-        onMoveUp: {},
-        onMoveDown: {}
-    )
-    .modelContainer(container)
-    .padding()
+    PreviewContent()
+}
+
+private struct PreviewContent: View {
+    let container: ModelContainer
+    let item: TodoItem
+
+    init() {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
+
+        item = TodoItem(title: "测试待办事项", indentLevel: 0)
+        container.mainContext.insert(item)
+
+        TodoStore.shared.initialize(with: container.mainContext)
+    }
+
+    var body: some View {
+        TodoItemView(
+            item: item,
+            allItems: [item],
+            focusedItemId: .constant(item.id),
+            onEnterPressed: {},
+            onDeletePressed: {},
+            onMoveUp: { _ in },
+            onMoveDown: { _ in }
+        )
+        .modelContainer(container)
+        .padding()
+    }
 }

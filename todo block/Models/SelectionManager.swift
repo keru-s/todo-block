@@ -20,6 +20,9 @@ final class SelectionManager {
     // Shift多选时的锚点
     var lastSelectedId: UUID?
     
+    // 光标位置
+    var cursorPosition: Int = 0
+    
     // MARK: - 选择逻辑
     
     /// 处理点击选择
@@ -58,20 +61,34 @@ final class SelectionManager {
     // MARK: - 焦点移动
     
     /// 移动焦点到上一项
-    func moveFocusUp(from item: TodoItem, allItems: [TodoItem]) {
+    /// - Parameters:
+    ///   - item: 当前 item
+    ///   - allItems: 所有 items
+    ///   - cursorPosition: 光标位置（可选，不传则使用当前保存的位置）
+    func moveFocusUp(from item: TodoItem, allItems: [TodoItem], cursorPosition: Int? = nil) {
         guard let currentIndex = allItems.firstIndex(where: { $0.id == item.id }),
               currentIndex > 0 else { return }
         
         let targetItem = allItems[currentIndex - 1]
+        if let pos = cursorPosition {
+            self.cursorPosition = pos
+        }
         setFocusAndSelect(targetItem)
     }
     
     /// 移动焦点到下一项
-    func moveFocusDown(from item: TodoItem, allItems: [TodoItem]) {
+    /// - Parameters:
+    ///   - item: 当前 item
+    ///   - allItems: 所有 items
+    ///   - cursorPosition: 光标位置（可选，不传则使用当前保存的位置）
+    func moveFocusDown(from item: TodoItem, allItems: [TodoItem], cursorPosition: Int? = nil) {
         guard let currentIndex = allItems.firstIndex(where: { $0.id == item.id }),
               currentIndex + 1 < allItems.count else { return }
         
         let targetItem = allItems[currentIndex + 1]
+        if let pos = cursorPosition {
+            self.cursorPosition = pos
+        }
         setFocusAndSelect(targetItem)
     }
     

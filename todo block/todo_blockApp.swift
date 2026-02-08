@@ -5,8 +5,8 @@
 //  Created by 宋科儒 on 2026/1/17.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 @main
 struct todo_blockApp: App {
@@ -24,6 +24,13 @@ struct todo_blockApp: App {
         }
     }()
 
+    init() {
+        #if DEBUG
+            Bundle(path: "/Applications/InjectionIII.app/Contents/Resources/macOSInjection.bundle")?
+                .load()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup(id: "mainWindow") {
             ContentView()
@@ -33,7 +40,7 @@ struct todo_blockApp: App {
                 }
         }
         .modelContainer(sharedModelContainer)
-        
+
         // 菜单栏组件
         MenuBarExtra("待办", systemImage: "checklist") {
             MenuBarView()

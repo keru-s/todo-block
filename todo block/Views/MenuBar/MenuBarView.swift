@@ -132,8 +132,12 @@ struct MenuBarView: View {
                                 }
                             }
                         },
-                        onMoveUp: { selectionManager.moveFocusUp(from: item, allItems: todayItems) },
-                        onMoveDown: { selectionManager.moveFocusDown(from: item, allItems: todayItems) }
+                        onMoveUp: { position in
+                            selectionManager.moveFocusUp(from: item, allItems: todayItems, cursorPosition: position)
+                        },
+                        onMoveDown: { position in
+                            selectionManager.moveFocusDown(from: item, allItems: todayItems, cursorPosition: position)
+                        }
                     )
                     .id(item.id)
                 }
