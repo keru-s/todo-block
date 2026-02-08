@@ -18,7 +18,7 @@ struct TodoItemView: View {
 
     // 选择回调
     var onSelect: (Bool) -> Void = { _ in }  // 参数：是否按住 Shift
-    var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
+    var onFocus: (Bool, Int?) -> Void = { _, _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift, 光标位置
 
     // 回调
     var onEnterPressed: () -> Void
@@ -158,9 +158,9 @@ struct TodoItemView: View {
             },
             onReturn: onEnterPressed,
             onBackspace: onDeletePressed,
-            onFocus: { shiftPressed in
+            onFocus: { shiftPressed, cursorPosition in
                 // TextField 获取焦点时，同步选择状态
-                onFocus(shiftPressed)
+                onFocus(shiftPressed, cursorPosition)
             },
             onUpArrow: { position in
                 onMoveUp(position)
@@ -203,7 +203,7 @@ struct CustomTextField: NSViewRepresentable {
     var onShiftTab: () -> Void
     var onReturn: () -> Void
     var onBackspace: () -> Void
-    var onFocus: (Bool) -> Void = { _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift
+    var onFocus: (Bool, Int?) -> Void = { _, _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift, 光标位置
     var onUpArrow: (Int) -> Void  // 参数：当前光标位置
     var onDownArrow: (Int) -> Void  // 参数：当前光标位置
 
@@ -219,9 +219,9 @@ struct CustomTextField: NSViewRepresentable {
         textField.customCoordinator = context.coordinator
         textField.allowsEditingTextAttributes = true
 
-        // 点击时立即调用 onFocus，传递 Shift 状态
-        textField.onMouseDown = { [self] shiftPressed in
-            self.onFocus(shiftPressed)
+        // 点击时立即调用 onFocus，传递 Shift 状态和光标位置
+        textField.onMouseDown = { [self] shiftPressed, cursorPosition in
+            self.onFocus(shiftPressed, cursorPosition)
         }
 
         applyStyle(to: textField)
@@ -389,13 +389,23 @@ struct CustomTextField: NSViewRepresentable {
 
 class CustomNSTextField: NSTextField {
     weak var customCoordinator: CustomTextField.Coordinator?
-    var onMouseDown: ((Bool) -> Void)?  // 参数：是否按住 Shift
+    var onMouseDown: ((Bool, Int?) -> Void)?  // 参数：是否按住 Shift, 光标位置
 
     override func mouseDown(with event: NSEvent) {
-        // 点击时立即调用回调，传递 Shift 状态
-        let shiftPressed = event.modifierFlags.contains(.shift)
-        onMouseDown?(shiftPressed)
+        // 先调用 super 让系统处理光标放置
         super.mouseDown(with: event)
+
+        // 获取 Shift 状态
+        let shiftPressed = event.modifierFlags.contains(.shift)
+
+        // 获取当前光标位置
+        var cursorPosition: Int? = nil
+        if let editor = self.currentEditor() as? NSTextView {
+            cursorPosition = editor.selectedRange().location
+        }
+
+        // 调用回调
+        onMouseDown?(shiftPressed, cursorPosition)
     }
 }
 

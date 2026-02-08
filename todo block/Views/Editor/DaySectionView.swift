@@ -92,9 +92,10 @@ struct DaySectionView: View {
                                 selectionManager.handleSelect(
                                     item: item, allItems: todoItems, shiftPressed: shiftPressed)
                             },
-                            onFocus: { shiftPressed in
+                            onFocus: { shiftPressed, cursorPosition in
                                 selectionManager.handleSelect(
-                                    item: item, allItems: todoItems, shiftPressed: shiftPressed)
+                                    item: item, allItems: todoItems, shiftPressed: shiftPressed,
+                                    cursorPosition: cursorPosition)
                             },
                             onEnterPressed: { createNewItemAfter(item) },
                             onDeletePressed: {

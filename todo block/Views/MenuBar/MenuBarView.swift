@@ -5,27 +5,27 @@
 //  Created by Claude on 2026/1/17.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
-    
+
     private var store: TodoStore { TodoStore.shared }
-    
+
     // 状态管理
     @State private var selectionManager = SelectionManager()
     @State private var dropState: TodoListDropState = .none
-    
+
     private var todayItems: [TodoItem] {
         store.todayItems()
     }
-    
+
     private let indentWidth: CGFloat = 24
     private let itemHeight: CGFloat = 28
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 标题栏
@@ -40,9 +40,9 @@ struct MenuBarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 8)
-            
+
             Divider()
-            
+
             if todayItems.isEmpty {
                 emptyStateView
             } else {
@@ -53,9 +53,9 @@ struct MenuBarView: View {
                 }
                 .frame(minHeight: 50, maxHeight: 350)
             }
-            
+
             Divider()
-            
+
             // 底部操作栏
             HStack {
                 Button(action: addTodayItem) {
@@ -67,16 +67,16 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.accentColor)
-                
+
                 Spacer()
-                
+
                 if selectionManager.selectedItemIds.count > 1 {
                     Text("已选 \(selectionManager.selectedItemIds.count) 项")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .padding(.trailing, 8)
                 }
-                
+
                 Button("打开应用") {
                     openWindow(id: "mainWindow")
                     NSApp.activate(ignoringOtherApps: true)
@@ -100,18 +100,20 @@ struct MenuBarView: View {
             selectionManager.clearSelection()
         }
     }
-    
+
     // MARK: - 待办列表（带拖拽支持）
-    
+
     private var todoListView: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(todayItems.enumerated()), id: \.element.id) { index, item in
                 VStack(spacing: 0) {
                     // 插入线（在当前项上方）
-                    if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == index {
+                    if case .insertAt(let insertIndex, let indentLevel) = dropState,
+                        insertIndex == index
+                    {
                         insertionIndicator(indentLevel: indentLevel)
                     }
-                    
+
                     TodoItemView(
                         item: item,
                         allItems: todayItems,
@@ -119,10 +121,13 @@ struct MenuBarView: View {
                         isSelected: selectionManager.selectedItemIds.contains(item.id),
                         hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
                         onSelect: { shiftPressed in
-                            selectionManager.handleSelect(item: item, allItems: todayItems, shiftPressed: shiftPressed)
+                            selectionManager.handleSelect(
+                                item: item, allItems: todayItems, shiftPressed: shiftPressed)
                         },
-                        onFocus: { shiftPressed in
-                            selectionManager.handleSelect(item: item, allItems: todayItems, shiftPressed: shiftPressed)
+                        onFocus: { shiftPressed, cursorPosition in
+                            selectionManager.handleSelect(
+                                item: item, allItems: todayItems, shiftPressed: shiftPressed,
+                                cursorPosition: cursorPosition)
                         },
                         onEnterPressed: { createNewItemAfter(item) },
                         onDeletePressed: {
@@ -133,42 +138,48 @@ struct MenuBarView: View {
                             }
                         },
                         onMoveUp: { position in
-                            selectionManager.moveFocusUp(from: item, allItems: todayItems, cursorPosition: position)
+                            selectionManager.moveFocusUp(
+                                from: item, allItems: todayItems, cursorPosition: position)
                         },
                         onMoveDown: { position in
-                            selectionManager.moveFocusDown(from: item, allItems: todayItems, cursorPosition: position)
+                            selectionManager.moveFocusDown(
+                                from: item, allItems: todayItems, cursorPosition: position)
                         }
                     )
                     .id(item.id)
                 }
             }
-            
+
             // 插入线（在列表末尾）
-            if case .insertAt(let insertIndex, let indentLevel) = dropState, insertIndex == todayItems.count {
+            if case .insertAt(let insertIndex, let indentLevel) = dropState,
+                insertIndex == todayItems.count
+            {
                 insertionIndicator(indentLevel: indentLevel)
             }
         }
-        .onDrop(of: [.text], delegate: TodoDropDelegate(
-            targetDate: Date(),
-            todoItems: todayItems,
-            store: store,
-            dropState: $dropState,
-            indentWidth: indentWidth,
-            itemHeight: itemHeight
-        ))
+        .onDrop(
+            of: [.text],
+            delegate: TodoDropDelegate(
+                targetDate: Date(),
+                todoItems: todayItems,
+                store: store,
+                dropState: $dropState,
+                indentWidth: indentWidth,
+                itemHeight: itemHeight
+            ))
     }
-    
+
     // MARK: - 插入线指示器
-    
+
     private func insertionIndicator(indentLevel: Int) -> some View {
         HStack(spacing: 0) {
             Spacer()
                 .frame(width: 20 + CGFloat(indentLevel) * indentWidth)
-            
+
             Circle()
                 .fill(Color.accentColor)
                 .frame(width: 6, height: 6)
-            
+
             Rectangle()
                 .fill(Color.accentColor)
                 .frame(height: 2)
@@ -176,13 +187,13 @@ struct MenuBarView: View {
         .frame(height: 4)
         .transition(.opacity)
     }
-    
+
     private var emptyStateView: some View {
         VStack {
             Text("今天没有待办事项")
                 .foregroundColor(.secondary)
                 .font(.system(size: 13))
-            
+
             Button("添加待办") {
                 addTodayItem()
             }
@@ -191,21 +202,21 @@ struct MenuBarView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
     }
-    
+
     private var formattedToday: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd"
         return formatter.string(from: Date())
     }
-    
+
     // MARK: - 逻辑操作
-    
+
     private func addTodayItem() {
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(dayDate: Date())
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
-    
+
     private func createNewItemAfter(_ item: TodoItem) {
         let newItem = store.createItem(
             dayDate: Date(),
