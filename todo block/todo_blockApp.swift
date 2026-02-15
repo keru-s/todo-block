@@ -32,7 +32,7 @@ struct todo_blockApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(id: "mainWindow") {
+        Window("待办", id: "mainWindow") {
             ContentView()
                 .onAppear {
                     // 初始化 TodoStore 单例

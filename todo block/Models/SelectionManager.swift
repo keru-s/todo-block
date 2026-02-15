@@ -8,6 +8,11 @@
 import SwiftData
 import SwiftUI
 
+enum VerticalMoveDirection {
+    case up
+    case down
+}
+
 /// 集中管理多选、焦点移动、删除等逻辑
 @MainActor
 @Observable
@@ -22,6 +27,8 @@ final class SelectionManager {
 
     // 光标位置
     var cursorPosition: Int = 0
+    var preferredHorizontalOffset: CGFloat?
+    var verticalMoveDirection: VerticalMoveDirection?
 
     // MARK: - 选择逻辑
 
@@ -34,6 +41,9 @@ final class SelectionManager {
     func handleSelect(
         item: TodoItem, allItems: [TodoItem], shiftPressed: Bool, cursorPosition: Int? = nil
     ) {
+        preferredHorizontalOffset = nil
+        verticalMoveDirection = nil
+
         if let pos = cursorPosition {
             self.cursorPosition = pos
         }
@@ -72,7 +82,12 @@ final class SelectionManager {
     ///   - item: 当前 item
     ///   - allItems: 所有 items
     ///   - cursorPosition: 光标位置（可选，不传则使用当前保存的位置）
-    func moveFocusUp(from item: TodoItem, allItems: [TodoItem], cursorPosition: Int? = nil) {
+    func moveFocusUp(
+        from item: TodoItem,
+        allItems: [TodoItem],
+        cursorPosition: Int? = nil,
+        preferredHorizontalOffset: CGFloat? = nil
+    ) {
         guard let currentIndex = allItems.firstIndex(where: { $0.id == item.id }),
             currentIndex > 0
         else { return }
@@ -81,7 +96,11 @@ final class SelectionManager {
         if let pos = cursorPosition {
             self.cursorPosition = pos
         }
-        setFocusAndSelect(targetItem)
+        setFocusAndSelect(
+            targetItem,
+            verticalMoveDirection: .up,
+            preferredHorizontalOffset: preferredHorizontalOffset
+        )
     }
 
     /// 移动焦点到下一项
@@ -89,7 +108,12 @@ final class SelectionManager {
     ///   - item: 当前 item
     ///   - allItems: 所有 items
     ///   - cursorPosition: 光标位置（可选，不传则使用当前保存的位置）
-    func moveFocusDown(from item: TodoItem, allItems: [TodoItem], cursorPosition: Int? = nil) {
+    func moveFocusDown(
+        from item: TodoItem,
+        allItems: [TodoItem],
+        cursorPosition: Int? = nil,
+        preferredHorizontalOffset: CGFloat? = nil
+    ) {
         guard let currentIndex = allItems.firstIndex(where: { $0.id == item.id }),
             currentIndex + 1 < allItems.count
         else { return }
@@ -98,19 +122,31 @@ final class SelectionManager {
         if let pos = cursorPosition {
             self.cursorPosition = pos
         }
-        setFocusAndSelect(targetItem)
+        setFocusAndSelect(
+            targetItem,
+            verticalMoveDirection: .down,
+            preferredHorizontalOffset: preferredHorizontalOffset
+        )
     }
 
     /// 直接设置焦点并选中
-    private func setFocusAndSelect(_ item: TodoItem) {
+    private func setFocusAndSelect(
+        _ item: TodoItem,
+        verticalMoveDirection: VerticalMoveDirection? = nil,
+        preferredHorizontalOffset: CGFloat? = nil
+    ) {
         focusedItemId = item.id
         selectedItemIds = [item.id]
         lastSelectedId = item.id
+        self.verticalMoveDirection = verticalMoveDirection
+        self.preferredHorizontalOffset = preferredHorizontalOffset
     }
 
     /// 从外部（如撤销/重做）恢复焦点
     func restoreFocus(to itemId: UUID?) {
         focusedItemId = itemId
+        preferredHorizontalOffset = nil
+        verticalMoveDirection = nil
         if let itemId {
             selectedItemIds = [itemId]
             lastSelectedId = itemId

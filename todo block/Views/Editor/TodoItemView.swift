@@ -15,6 +15,8 @@ struct TodoItemView: View {
     var isSelected: Bool = false
     var hasMultipleSelection: Bool = false  // 是否处于多选状态
     var cursorPosition: Int = 0  // 光标位置
+    var preferredHorizontalOffset: CGFloat? = nil
+    var verticalMoveDirection: VerticalMoveDirection? = nil
 
     // 选择回调
     var onSelect: (Bool) -> Void = { _ in }  // 参数：是否按住 Shift
@@ -23,8 +25,8 @@ struct TodoItemView: View {
     // 回调
     var onEnterPressed: () -> Void
     var onDeletePressed: () -> Void  // 改名：多选时删除全部
-    var onMoveUp: (Int) -> Void
-    var onMoveDown: (Int) -> Void
+    var onMoveUp: (Int, CGFloat?) -> Void
+    var onMoveDown: (Int, CGFloat?) -> Void
 
     private var store: TodoStore { TodoStore.shared }
 
@@ -32,6 +34,7 @@ struct TodoItemView: View {
     @State private var editingText: String = ""
     @State private var shouldFocus: Bool = false
     @State private var refreshId: UUID = UUID()
+    @State private var isComposingText: Bool = false
 
     private var isFocused: Bool {
         focusedItemId == item.id
@@ -40,7 +43,7 @@ struct TodoItemView: View {
     private let indentWidth: CGFloat = 24
 
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             // 缩进（在拖拽句柄之前，使句柄跟随缩进）
             if item.indentLevel > 0 {
                 Spacer()
@@ -141,13 +144,14 @@ struct TodoItemView: View {
     }
 
     private var textFieldView: some View {
-        CustomTextField(
+        CustomTextEditor(
             text: $editingText,
-            placeholder: "待办事项",
             isCompleted: item.isCompleted,
             shouldFocus: $shouldFocus,
             hasMultipleSelection: hasMultipleSelection,
             cursorPosition: cursorPosition,
+            preferredHorizontalOffset: preferredHorizontalOffset,
+            verticalMoveDirection: verticalMoveDirection,
             onTab: {
                 let oldIndent = item.indentLevel
                 item.indent()
@@ -169,16 +173,29 @@ struct TodoItemView: View {
             onReturn: onEnterPressed,
             onBackspace: onDeletePressed,
             onFocus: { shiftPressed, cursorPosition in
-                // TextField 获取焦点时，同步选择状态
+                // TextView 获取焦点时，同步选择状态
                 onFocus(shiftPressed, cursorPosition)
             },
-            onUpArrow: { position in
-                onMoveUp(position)
+            onCompositionChange: { composing in
+                isComposingText = composing
             },
-            onDownArrow: { position in
-                onMoveDown(position)
+            onUpArrow: { position, horizontalOffset in
+                onMoveUp(position, horizontalOffset)
+            },
+            onDownArrow: { position, horizontalOffset in
+                onMoveDown(position, horizontalOffset)
             }
         )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topLeading) {
+            if editingText.isEmpty && isComposingText == false {
+                Text("待办事项")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .padding(.top, 4)
+                    .allowsHitTesting(false)
+            }
+        }
         .id(refreshId)
         .onChange(of: item.title) { _, newValue in
             // 实时响应外部（如菜单栏）的修改
@@ -200,61 +217,69 @@ struct TodoItemView: View {
     }
 }
 
-// MARK: - 自定义 TextField（支持完整键盘控制）
+// MARK: - 自定义 TextEditor（支持多行 + 完整键盘控制）
 
-struct CustomTextField: NSViewRepresentable {
+struct CustomTextEditor: NSViewRepresentable {
     @Binding var text: String
-    var placeholder: String
     var isCompleted: Bool
     @Binding var shouldFocus: Bool
     var hasMultipleSelection: Bool = false  // 多选状态
     var cursorPosition: Int = 0  // 光标位置
+    var preferredHorizontalOffset: CGFloat? = nil
+    var verticalMoveDirection: VerticalMoveDirection? = nil
 
     var onTab: () -> Void
     var onShiftTab: () -> Void
     var onReturn: () -> Void
     var onBackspace: () -> Void
-    var onFocus: (Bool, Int?) -> Void = { _, _ in }  // TextField 获取焦点时调用，参数：是否按住 Shift, 光标位置
-    var onUpArrow: (Int) -> Void  // 参数：当前光标位置
-    var onDownArrow: (Int) -> Void  // 参数：当前光标位置
+    var onFocus: (Bool, Int?) -> Void = { _, _ in }  // TextView 获取焦点时调用，参数：是否按住 Shift, 光标位置
+    var onCompositionChange: (Bool) -> Void = { _ in }
+    var onUpArrow: (Int, CGFloat?) -> Void  // 参数：当前光标位置、水平偏移
+    var onDownArrow: (Int, CGFloat?) -> Void  // 参数：当前光标位置、水平偏移
 
-    func makeNSView(context: Context) -> NSTextField {
-        let textField = CustomNSTextField()
-        textField.delegate = context.coordinator
-        textField.stringValue = text
-        textField.placeholderString = placeholder
-        textField.isBordered = false
-        textField.backgroundColor = .clear
-        textField.focusRingType = .none
-        textField.font = .systemFont(ofSize: 14)
-        textField.customCoordinator = context.coordinator
-        textField.allowsEditingTextAttributes = true
+    func makeNSView(context: Context) -> CustomNSTextView {
+        let textView = CustomNSTextView()
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.font = .systemFont(ofSize: 14)
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = false
+        textView.usesFindPanel = false
+        textView.textContainerInset = NSSize(width: 0, height: 3)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.lineBreakMode = .byWordWrapping
+        textView.textContainer?.widthTracksTextView = true
+        textView.customCoordinator = context.coordinator
 
-        // 点击时立即调用 onFocus，传递 Shift 状态和光标位置
-        textField.onMouseDown = { [self] shiftPressed, cursorPosition in
+        textView.onMouseDown = { [self] shiftPressed, cursorPosition in
             self.onFocus(shiftPressed, cursorPosition)
         }
+        textView.onCompositionChange = { [self] composing in
+            self.onCompositionChange(composing)
+        }
 
-        applyStyle(to: textField)
+        applyStyle(to: textView)
 
-        return textField
+        return textView
     }
 
-    func updateNSView(_ nsView: NSTextField, context: Context) {
-        // 更新 coordinator 的引用和状态
+    func updateNSView(_ nsView: CustomNSTextView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.hasMultipleSelection = hasMultipleSelection
+        onCompositionChange(nsView.isComposingText)
 
-        let isEditing = nsView.currentEditor() != nil
-
-        if isEditing {
-            // 编辑状态下：只更新 Field Editor 的样式，不重置内容
-            context.coordinator.applyEditorStyle(textField: nsView)
-        } else {
-            // 非编辑状态下：更新内容和静态外观
-            if nsView.stringValue != text {
-                nsView.stringValue = text
-            }
+        if context.coordinator.isApplyingProgrammaticText == false,
+            nsView.isComposingText == false,
+            nsView.string != text
+        {
+            context.coordinator.isApplyingProgrammaticText = true
+            nsView.string = text
+            context.coordinator.isApplyingProgrammaticText = false
+        }
+        if nsView.isComposingText == false {
             applyStyle(to: nsView)
         }
 
@@ -262,97 +287,105 @@ struct CustomTextField: NSViewRepresentable {
             DispatchQueue.main.async {
                 if let window = nsView.window {
                     window.makeFirstResponder(nsView)
-                    // 设置光标位置而不是全选
-                    if let editor = nsView.currentEditor() as? NSTextView {
-                        let pos = min(self.cursorPosition, self.text.count)
-                        editor.setSelectedRange(NSRange(location: pos, length: 0))
+                    if let direction = self.verticalMoveDirection,
+                        let horizontalOffset = self.preferredHorizontalOffset
+                    {
+                        let pos = nsView.closestCharacterIndexForVerticalMove(
+                            horizontalOffset: horizontalOffset,
+                            direction: direction
+                        )
+                        nsView.setSelectedRange(NSRange(location: pos, length: 0))
+                    } else {
+                        let textLength = (nsView.string as NSString).length
+                        let pos = min(self.cursorPosition, textLength)
+                        nsView.setSelectedRange(NSRange(location: pos, length: 0))
                     }
                     self.shouldFocus = false
                 }
             }
         }
+
+        DispatchQueue.main.async {
+            nsView.invalidateIntrinsicContentSize()
+        }
     }
 
-    private func applyStyle(to textField: NSTextField) {
-        let currentText = textField.stringValue
+    private func applyStyle(to textView: NSTextView) {
+        let currentText = textView.string
+        let range = NSRange(location: 0, length: currentText.count)
 
-        if isCompleted {
-            let attributedString = NSMutableAttributedString(string: currentText)
-            let range = NSRange(location: 0, length: currentText.count)
-            attributedString.addAttribute(
-                .strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-            attributedString.addAttribute(.foregroundColor, value: NSColor.gray, range: range)
-            attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
-            textField.attributedStringValue = attributedString
-        } else {
-            let attributedString = NSMutableAttributedString(string: currentText)
-            let range = NSRange(location: 0, length: currentText.count)
-            attributedString.addAttribute(.strikethroughStyle, value: 0, range: range)
-            attributedString.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
-            attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 14), range: range)
-            textField.attributedStringValue = attributedString
-        }
+        textView.textStorage?.beginEditing()
+        textView.textStorage?.setAttributes(
+            [
+                .font: NSFont.systemFont(ofSize: 14),
+                .foregroundColor: isCompleted ? NSColor.gray : NSColor.labelColor,
+                .strikethroughStyle: isCompleted ? NSUnderlineStyle.single.rawValue : 0,
+            ],
+            range: range
+        )
+        textView.textStorage?.endEditing()
+        textView.insertionPointColor = isCompleted ? .gray : .labelColor
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: CustomTextField
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: CustomTextEditor
         var hasMultipleSelection: Bool = false
+        var isApplyingProgrammaticText: Bool = false
 
-        init(_ parent: CustomTextField) {
+        init(_ parent: CustomTextEditor) {
             self.parent = parent
             self.hasMultipleSelection = parent.hasMultipleSelection
         }
 
-        func controlTextDidChange(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
-                parent.text = textField.stringValue
-                applyEditorStyle(textField: textField)
-            }
+        func textDidChange(_ notification: Notification) {
+            guard isApplyingProgrammaticText == false,
+                let textView = notification.object as? NSTextView
+            else { return }
+            parent.text = textView.string
+            parent.onCompositionChange((textView as? CustomNSTextView)?.isComposingText == true)
         }
 
-        func controlTextDidBeginEditing(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
-                applyEditorStyle(textField: textField)
-                // 注意：选择状态同步已在 mouseDown 中处理
-            }
-        }
-
-        func controlTextDidEndEditing(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
-                DispatchQueue.main.async {
-                    self.parent.applyStyle(to: textField)
+        func textDidBeginEditing(_ notification: Notification) {
+            if let textView = notification.object as? CustomNSTextView {
+                parent.onCompositionChange(textView.isComposingText)
+                if textView.isComposingText == false {
+                    parent.applyStyle(to: textView)
                 }
             }
         }
 
-        func applyEditorStyle(textField: NSTextField) {
-            guard let editor = textField.currentEditor() as? NSTextView else { return }
-
-            let text = editor.string
-            let range = NSRange(location: 0, length: text.count)
-
-            if parent.isCompleted {
-                editor.textStorage?.addAttribute(
-                    .strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-                editor.textStorage?.addAttribute(
-                    .foregroundColor, value: NSColor.gray, range: range)
-                editor.insertionPointColor = .gray
-            } else {
-                editor.textStorage?.addAttribute(.strikethroughStyle, value: 0, range: range)
-                editor.textStorage?.addAttribute(
-                    .foregroundColor, value: NSColor.labelColor, range: range)
-                editor.insertionPointColor = .labelColor
+        func textDidEndEditing(_ notification: Notification) {
+            if let textView = notification.object as? CustomNSTextView {
+                parent.onCompositionChange(false)
+                DispatchQueue.main.async {
+                    if textView.isComposingText == false {
+                        self.parent.applyStyle(to: textView)
+                    }
+                }
             }
         }
 
-        func control(
-            _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
-        ) -> Bool {
+        func handleCommand(in textView: NSTextView, commandSelector: Selector) -> Bool {
+            // 输入法组合输入阶段，交给系统处理，避免吞拼音/候选词
+            if let customTextView = textView as? CustomNSTextView, customTextView.isComposingText {
+                return false
+            }
+
+            if commandSelector == #selector(NSResponder.insertLineBreak(_:)) {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+                return true
+            }
+
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                if modifiers.contains(.shift) {
+                    textView.insertNewlineIgnoringFieldEditor(nil)
+                    return true
+                }
                 parent.onReturn()
                 return true
             }
@@ -378,51 +411,211 @@ struct CustomTextField: NSViewRepresentable {
             }
 
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
-                // 获取当前光标位置并传递
-                if let editor = textView as? NSTextView {
-                    let location = editor.selectedRange().location
-                    parent.onUpArrow(location)
-                } else {
-                    parent.onUpArrow(0)
+                let location = textView.selectedRange().location
+                if isOnFirstVisualLine(in: textView) {
+                    let horizontalOffset = preferredHorizontalOffsetInWindow(in: textView)
+                    parent.onUpArrow(location, horizontalOffset)
+                    return true
                 }
-                return true
+                return false
             }
 
             if commandSelector == #selector(NSResponder.moveDown(_:)) {
-                // 获取当前光标位置并传递
-                if let editor = textView as? NSTextView {
-                    let location = editor.selectedRange().location
-                    parent.onDownArrow(location)
-                } else {
-                    parent.onDownArrow(0)
+                let location = textView.selectedRange().location
+                if isOnLastVisualLine(in: textView) {
+                    let horizontalOffset = preferredHorizontalOffsetInWindow(in: textView)
+                    parent.onDownArrow(location, horizontalOffset)
+                    return true
                 }
-                return true
+                return false
             }
 
             return false
         }
+
+        private func isOnFirstVisualLine(in textView: NSTextView) -> Bool {
+            guard let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else { return true }
+
+            layoutManager.ensureLayout(for: textContainer)
+
+            let selectedLocation = textView.selectedRange().location
+            let nsText = textView.string as NSString
+            if nsText.length == 0 { return true }
+
+            let characterIndex = min(max(0, selectedLocation), nsText.length - 1)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+
+            var lineRange = NSRange(location: 0, length: 0)
+            _ = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineRange)
+            return lineRange.location == 0
+        }
+
+        private func isOnLastVisualLine(in textView: NSTextView) -> Bool {
+            guard let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else { return true }
+
+            layoutManager.ensureLayout(for: textContainer)
+
+            let selectedLocation = textView.selectedRange().location
+            let nsText = textView.string as NSString
+            if nsText.length == 0 { return true }
+
+            let characterIndex = min(max(0, selectedLocation), nsText.length - 1)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+
+            var lineRange = NSRange(location: 0, length: 0)
+            _ = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineRange)
+            return NSMaxRange(lineRange) >= layoutManager.numberOfGlyphs
+        }
+
+        private func preferredHorizontalOffset(in textView: NSTextView) -> CGFloat {
+            guard let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else { return 0 }
+
+            layoutManager.ensureLayout(for: textContainer)
+
+            let selectedLocation = textView.selectedRange().location
+            let nsText = textView.string as NSString
+            if nsText.length == 0 { return 0 }
+
+            let characterIndex = min(max(0, selectedLocation), nsText.length)
+
+            if characterIndex == nsText.length {
+                let lastGlyph = max(0, layoutManager.numberOfGlyphs - 1)
+                let lastRect = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: lastGlyph, length: 1),
+                    in: textContainer
+                )
+                return lastRect.maxX
+            }
+
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+            let rect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyphIndex, length: 1),
+                in: textContainer
+            )
+            return rect.minX
+        }
+
+        private func preferredHorizontalOffsetInWindow(in textView: NSTextView) -> CGFloat {
+            let localX = preferredHorizontalOffset(in: textView) + textView.textContainerInset.width
+            guard let textViewAsView = textView as? NSView else { return localX }
+            let pointInWindow = textViewAsView.convert(NSPoint(x: localX, y: 0), to: nil)
+            return pointInWindow.x
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            handleCommand(in: textView, commandSelector: commandSelector)
+        }
     }
 }
 
-class CustomNSTextField: NSTextField {
-    weak var customCoordinator: CustomTextField.Coordinator?
+class CustomNSTextView: NSTextView {
+    weak var customCoordinator: CustomTextEditor.Coordinator?
     var onMouseDown: ((Bool, Int?) -> Void)?  // 参数：是否按住 Shift, 光标位置
+    var onCompositionChange: ((Bool) -> Void)?
+    var isComposingText: Bool {
+        hasMarkedText()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let layoutManager = layoutManager, let textContainer = textContainer else {
+            return NSSize(width: NSView.noIntrinsicMetric, height: 28)
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let contentHeight = layoutManager.usedRect(for: textContainer).height
+        let minHeight: CGFloat = 22
+        return NSSize(
+            width: NSView.noIntrinsicMetric,
+            height: max(minHeight, ceil(contentHeight + textContainerInset.height * 2))
+        )
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        invalidateIntrinsicContentSize()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        invalidateIntrinsicContentSize()
+    }
 
     override func mouseDown(with event: NSEvent) {
-        // 先调用 super 让系统处理光标放置
         super.mouseDown(with: event)
 
-        // 获取 Shift 状态
         let shiftPressed = event.modifierFlags.contains(.shift)
-
-        // 获取当前光标位置
         var cursorPosition: Int? = nil
-        if let editor = self.currentEditor() as? NSTextView {
-            cursorPosition = editor.selectedRange().location
+        cursorPosition = selectedRange().location
+
+        onMouseDown?(shiftPressed, cursorPosition)
+    }
+
+    override func setMarkedText(
+        _ string: Any,
+        selectedRange: NSRange,
+        replacementRange: NSRange
+    ) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onCompositionChange?(true)
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onCompositionChange?(false)
+    }
+
+    override func doCommand(by commandSelector: Selector) {
+        if let handled = customCoordinator?.handleCommand(in: self, commandSelector: commandSelector),
+            handled
+        {
+            return
+        }
+        super.doCommand(by: commandSelector)
+    }
+
+    func closestCharacterIndexForVerticalMove(
+        horizontalOffset: CGFloat,
+        direction: VerticalMoveDirection
+    ) -> Int {
+        guard let layoutManager = layoutManager,
+            let textContainer = textContainer
+        else { return 0 }
+
+        layoutManager.ensureLayout(for: textContainer)
+
+        let textLength = (string as NSString).length
+        if textLength == 0 || layoutManager.numberOfGlyphs == 0 {
+            return 0
         }
 
-        // 调用回调
-        onMouseDown?(shiftPressed, cursorPosition)
+        let targetGlyph: Int
+        switch direction {
+        case .up:
+            targetGlyph = max(0, layoutManager.numberOfGlyphs - 1)
+        case .down:
+            targetGlyph = 0
+        }
+
+        var lineRange = NSRange(location: 0, length: 0)
+        let lineRect = layoutManager.lineFragmentUsedRect(
+            forGlyphAt: targetGlyph,
+            effectiveRange: &lineRange,
+            withoutAdditionalLayout: true
+        )
+
+        let localPointFromWindow = convert(NSPoint(x: horizontalOffset, y: 0), from: nil)
+        let point = NSPoint(
+            x: localPointFromWindow.x,
+            y: lineRect.midY + textContainerInset.height
+        )
+
+        let index = characterIndexForInsertion(at: point)
+        return min(max(0, index), textLength)
     }
 }
 
@@ -451,8 +644,8 @@ private struct PreviewContent: View {
             focusedItemId: .constant(item.id),
             onEnterPressed: {},
             onDeletePressed: {},
-            onMoveUp: { _ in },
-            onMoveDown: { _ in }
+            onMoveUp: { _, _ in },
+            onMoveDown: { _, _ in }
         )
         .modelContainer(container)
         .padding()

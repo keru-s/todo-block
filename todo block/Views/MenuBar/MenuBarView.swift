@@ -103,6 +103,9 @@ struct MenuBarView: View {
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
             selectionManager.restoreFocus(to: itemId)
         }
+        .onChange(of: todayItems.map(\.id)) { _, _ in
+            dropState = .none
+        }
     }
 
     // MARK: - 待办列表（带拖拽支持）
@@ -124,6 +127,9 @@ struct MenuBarView: View {
                         focusedItemId: $selectionManager.focusedItemId,
                         isSelected: selectionManager.selectedItemIds.contains(item.id),
                         hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
+                        cursorPosition: selectionManager.cursorPosition,
+                        preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
+                        verticalMoveDirection: selectionManager.verticalMoveDirection,
                         onSelect: { shiftPressed in
                             selectionManager.handleSelect(
                                 item: item, allItems: todayItems, shiftPressed: shiftPressed)
@@ -141,13 +147,21 @@ struct MenuBarView: View {
                                 }
                             }
                         },
-                        onMoveUp: { position in
+                        onMoveUp: { position, horizontalOffset in
                             selectionManager.moveFocusUp(
-                                from: item, allItems: todayItems, cursorPosition: position)
+                                from: item,
+                                allItems: todayItems,
+                                cursorPosition: position,
+                                preferredHorizontalOffset: horizontalOffset
+                            )
                         },
-                        onMoveDown: { position in
+                        onMoveDown: { position, horizontalOffset in
                             selectionManager.moveFocusDown(
-                                from: item, allItems: todayItems, cursorPosition: position)
+                                from: item,
+                                allItems: todayItems,
+                                cursorPosition: position,
+                                preferredHorizontalOffset: horizontalOffset
+                            )
                         }
                     )
                     .id(item.id)

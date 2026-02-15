@@ -29,6 +29,7 @@ Temporary Items
 ## Build generated
 build/
 DerivedData/
+.derivedData/
 
 ## User settings
 xcuserdata/

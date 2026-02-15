@@ -53,6 +53,9 @@ struct DaySectionView: View {
         .onAppear {
             selectedDate = section.date
         }
+        .onChange(of: todoItems.map(\.id)) { _, _ in
+            dropState = .none
+        }
     }
 
     // MARK: - 待办列表视图
@@ -88,6 +91,8 @@ struct DaySectionView: View {
                             isSelected: selectionManager.selectedItemIds.contains(item.id),
                             hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
                             cursorPosition: selectionManager.cursorPosition,
+                            preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
+                            verticalMoveDirection: selectionManager.verticalMoveDirection,
                             onSelect: { shiftPressed in
                                 selectionManager.handleSelect(
                                     item: item, allItems: todoItems, shiftPressed: shiftPressed)
@@ -105,13 +110,21 @@ struct DaySectionView: View {
                                     }
                                 }
                             },
-                            onMoveUp: { position in
+                            onMoveUp: { position, horizontalOffset in
                                 selectionManager.moveFocusUp(
-                                    from: item, allItems: todoItems, cursorPosition: position)
+                                    from: item,
+                                    allItems: todoItems,
+                                    cursorPosition: position,
+                                    preferredHorizontalOffset: horizontalOffset
+                                )
                             },
-                            onMoveDown: { position in
+                            onMoveDown: { position, horizontalOffset in
                                 selectionManager.moveFocusDown(
-                                    from: item, allItems: todoItems, cursorPosition: position)
+                                    from: item,
+                                    allItems: todoItems,
+                                    cursorPosition: position,
+                                    preferredHorizontalOffset: horizontalOffset
+                                )
                             }
                         )
                         .id(item.id)
@@ -324,8 +337,17 @@ struct TodoDropDelegate: DropDelegate {
         let y = info.location.y
         let x = info.location.x
 
-        // 计算插入位置（基于 Y 坐标）
-        let insertIndex = min(max(0, Int(y / itemHeight)), todoItems.count)
+        // 计算插入位置（基于每个 item 的估算高度，兼容多行）
+        var insertIndex = todoItems.count
+        var accumulatedHeight: CGFloat = 0
+        for (index, item) in todoItems.enumerated() {
+            let estimatedHeight = estimatedItemHeight(for: item)
+            if y < accumulatedHeight + estimatedHeight / 2 {
+                insertIndex = index
+                break
+            }
+            accumulatedHeight += estimatedHeight
+        }
 
         // 计算缩进层级（基于 X 坐标）
         // 基准 X 位置是拖拽句柄宽度（20）
@@ -345,6 +367,12 @@ struct TodoDropDelegate: DropDelegate {
         indentLevel = min(indentLevel, 3)
 
         dropState = .insertAt(index: insertIndex, indentLevel: indentLevel)
+    }
+
+    private func estimatedItemHeight(for item: TodoItem) -> CGFloat {
+        let explicitLineCount = max(1, item.title.components(separatedBy: "\n").count)
+        let multiLineHeight = CGFloat(explicitLineCount) * 20 + 8
+        return max(itemHeight, multiLineHeight)
     }
 
     private func performMove(draggedId: UUID, toIndex: Int, indentLevel: Int) {
