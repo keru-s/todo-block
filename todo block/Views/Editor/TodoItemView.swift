@@ -27,6 +27,7 @@ struct TodoItemView: View {
     var onDeletePressed: () -> Void  // 改名：多选时删除全部
     var onMoveUp: (Int, CGFloat?) -> Void
     var onMoveDown: (Int, CGFloat?) -> Void
+    var onActivateInteraction: () -> Void = {}
 
     private var store: TodoStore { TodoStore.shared }
 
@@ -62,17 +63,16 @@ struct TodoItemView: View {
         .padding(.vertical, 4)
         .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
-        .draggable(item.id.uuidString) {
-            dragPreview
-        }
         .simultaneousGesture(
             TapGesture()
                 .modifiers(.shift)
                 .onEnded { _ in
+                    onActivateInteraction()
                     onSelect(true)  // Shift+Click
                 }
         )
         .onTapGesture {
+            onActivateInteraction()
             onSelect(false)  // 普通点击
         }
         .onChange(of: focusedItemId) { oldValue, newValue in
@@ -113,6 +113,9 @@ struct TodoItemView: View {
             }
             .onHover { hovering in
                 isHoveringDragHandle = hovering
+            }
+            .draggable(item.id.uuidString) {
+                dragPreview
             }
     }
 
@@ -174,6 +177,7 @@ struct TodoItemView: View {
             onBackspace: onDeletePressed,
             onFocus: { shiftPressed, cursorPosition in
                 // TextView 获取焦点时，同步选择状态
+                onActivateInteraction()
                 onFocus(shiftPressed, cursorPosition)
             },
             onCompositionChange: { composing in

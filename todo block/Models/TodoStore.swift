@@ -432,7 +432,10 @@ final class TodoStore {
         for (offset, movingItem) in itemsToMove.enumerated() {
             movingItem.dayDate = newDate
             movingItem.sortOrder = baseSortOrder + Double(offset) * 0.001  // 保持相对顺序
-            movingItem.indentLevel = max(0, min(3, movingItem.indentLevel + indentDelta))
+            movingItem.indentLevel = max(
+                0,
+                min(TodoItem.maxIndentLevel, movingItem.indentLevel + indentDelta)
+            )
             movingItem.updatedAt = Date()
         }
 

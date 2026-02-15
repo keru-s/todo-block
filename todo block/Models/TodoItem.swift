@@ -10,10 +10,12 @@ import SwiftData
 
 @Model
 final class TodoItem {
+    static let maxIndentLevel = 4
+
     @Attribute(.unique) var id: UUID = UUID()
     var title: String = ""
     var isCompleted: Bool = false
-    var indentLevel: Int = 0          // 0-3，最多 4 层
+    var indentLevel: Int = 0          // 0-4，最多 5 层（顶层为 0）
     var sortOrder: Double = 0         // 用于拖拽排序
 
     var dayDate: Date = Date()        // 所属日期（只保留年月日）
@@ -33,7 +35,7 @@ final class TodoItem {
         self.id = id
         self.title = title
         self.isCompleted = isCompleted
-        self.indentLevel = min(max(indentLevel, 0), 3) // 限制 0-3
+        self.indentLevel = min(max(indentLevel, 0), Self.maxIndentLevel)
         self.sortOrder = sortOrder
         self.dayDate = Calendar.current.startOfDay(for: dayDate)
         self.createdAt = createdAt
@@ -44,7 +46,7 @@ final class TodoItem {
     
     /// 增加缩进层级
     func indent() {
-        if indentLevel < 3 {
+        if indentLevel < Self.maxIndentLevel {
             indentLevel += 1
             updatedAt = Date()
         }

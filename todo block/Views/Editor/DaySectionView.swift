@@ -16,14 +16,24 @@ enum TodoListDropState: Equatable {
     case insertAt(index: Int, indentLevel: Int)
 }
 
+struct TodoDropItemFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 struct DaySectionView: View {
     @Bindable var section: DaySection
     @Bindable var selectionManager: SelectionManager
     var onItemCreated: ((UUID) -> Void)?
+    var onInteraction: (() -> Void)?
 
     @State private var isEditingTitle: Bool = false
     @State private var editingTitle: String = ""
     @State private var dropState: TodoListDropState = .none
+    @State private var itemFrames: [UUID: CGRect] = [:]
     @State private var showDatePicker: Bool = false
     @State private var selectedDate: Date = Date()
     @FocusState private var isTitleFocused: Bool
@@ -94,10 +104,12 @@ struct DaySectionView: View {
                             preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
                             verticalMoveDirection: selectionManager.verticalMoveDirection,
                             onSelect: { shiftPressed in
+                                onInteraction?()
                                 selectionManager.handleSelect(
                                     item: item, allItems: todoItems, shiftPressed: shiftPressed)
                             },
                             onFocus: { shiftPressed, cursorPosition in
+                                onInteraction?()
                                 selectionManager.handleSelect(
                                     item: item, allItems: todoItems, shiftPressed: shiftPressed,
                                     cursorPosition: cursorPosition)
@@ -125,8 +137,19 @@ struct DaySectionView: View {
                                     cursorPosition: position,
                                     preferredHorizontalOffset: horizontalOffset
                                 )
+                            },
+                            onActivateInteraction: {
+                                onInteraction?()
                             }
                         )
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TodoDropItemFramePreferenceKey.self,
+                                    value: [item.id: proxy.frame(in: .named("todo-list-drop-area"))]
+                                )
+                            }
+                        }
                         .id(item.id)
                     }
                 }
@@ -146,9 +169,14 @@ struct DaySectionView: View {
                 todoItems: todoItems,
                 store: store,
                 dropState: $dropState,
+                itemFrames: itemFrames,
                 indentWidth: indentWidth,
                 itemHeight: itemHeight
             ))
+        .coordinateSpace(name: "todo-list-drop-area")
+        .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
+            itemFrames = value
+        }
     }
 
     // MARK: - 插入线指示器
@@ -276,6 +304,7 @@ struct DaySectionView: View {
             item: newItem, allItems: store.items(for: section.date), shiftPressed: false)
         onItemCreated?(newItem.id)
     }
+
 }
 
 // MARK: - 拖拽代理
@@ -285,6 +314,7 @@ struct TodoDropDelegate: DropDelegate {
     let todoItems: [TodoItem]
     let store: TodoStore
     @Binding var dropState: TodoListDropState
+    let itemFrames: [UUID: CGRect]
     let indentWidth: CGFloat
     let itemHeight: CGFloat
 
@@ -337,16 +367,28 @@ struct TodoDropDelegate: DropDelegate {
         let y = info.location.y
         let x = info.location.x
 
-        // 计算插入位置（基于每个 item 的估算高度，兼容多行）
+        // 优先基于真实行高计算插入位置，命中更准确。
         var insertIndex = todoItems.count
-        var accumulatedHeight: CGFloat = 0
-        for (index, item) in todoItems.enumerated() {
-            let estimatedHeight = estimatedItemHeight(for: item)
-            if y < accumulatedHeight + estimatedHeight / 2 {
-                insertIndex = index
-                break
+        let hasCompleteFrames = todoItems.allSatisfy { itemFrames[$0.id] != nil }
+        if hasCompleteFrames {
+            for (index, item) in todoItems.enumerated() {
+                guard let frame = itemFrames[item.id] else { continue }
+                if y < frame.midY {
+                    insertIndex = index
+                    break
+                }
             }
-            accumulatedHeight += estimatedHeight
+        } else {
+            // 回退到估算高度，避免首帧 frame 尚未稳定时无法拖拽。
+            var accumulatedHeight: CGFloat = 0
+            for (index, item) in todoItems.enumerated() {
+                let estimatedHeight = estimatedItemHeight(for: item)
+                if y < accumulatedHeight + estimatedHeight / 2 {
+                    insertIndex = index
+                    break
+                }
+                accumulatedHeight += estimatedHeight
+            }
         }
 
         // 计算缩进层级（基于 X 坐标）
@@ -357,14 +399,14 @@ struct TodoDropDelegate: DropDelegate {
 
         // 限制缩进层级：
         // 1. 不能超过前一项的 indentLevel + 1
-        // 2. 最大为 3
+        // 2. 最大为 TodoItem.maxIndentLevel
         if insertIndex > 0 {
             let prevItem = todoItems[insertIndex - 1]
             indentLevel = min(indentLevel, prevItem.indentLevel + 1)
         } else {
             indentLevel = 0  // 第一项只能是顶级
         }
-        indentLevel = min(indentLevel, 3)
+        indentLevel = min(indentLevel, TodoItem.maxIndentLevel)
 
         dropState = .insertAt(index: insertIndex, indentLevel: indentLevel)
     }
@@ -380,26 +422,56 @@ struct TodoDropDelegate: DropDelegate {
             return
         }
 
-        // 计算 afterItem
-        let afterItem: TodoItem?
-        if toIndex > 0 {
-            // 需要考虑如果拖拽的是列表中的项，索引可能需要调整
-            let filteredItems = todoItems.filter { $0.id != draggedId }
-            let adjustedIndex = min(toIndex - 1, filteredItems.count - 1)
-            if adjustedIndex >= 0 && adjustedIndex < filteredItems.count {
-                afterItem = filteredItems[adjustedIndex]
-            } else if !filteredItems.isEmpty {
-                afterItem = filteredItems.last
-            } else {
-                afterItem = nil
+        let normalizedToIndex = min(max(toIndex, 0), todoItems.count)
+        var remainingItems = todoItems
+        var movingItemIds = Set<UUID>()
+
+        // 同日移动时，需要按“被拖拽项 + 连续子项”整体从目标列表中剔除后再计算插入位置。
+        if Calendar.current.isDate(draggedItem.dayDate, inSameDayAs: targetDate),
+            let draggedIndex = todoItems.firstIndex(where: { $0.id == draggedId })
+        {
+            let baseIndent = todoItems[draggedIndex].indentLevel
+            movingItemIds.insert(draggedId)
+
+            var nextIndex = draggedIndex + 1
+            while nextIndex < todoItems.count {
+                let candidate = todoItems[nextIndex]
+                if candidate.indentLevel > baseIndent {
+                    movingItemIds.insert(candidate.id)
+                    nextIndex += 1
+                } else {
+                    break
+                }
             }
+
+            remainingItems.removeAll { movingItemIds.contains($0.id) }
+        }
+
+        let removedBeforeInsert = todoItems.prefix(normalizedToIndex).reduce(into: 0) { count, item in
+            if movingItemIds.contains(item.id) {
+                count += 1
+            }
+        }
+        let adjustedInsertIndex = min(
+            max(0, normalizedToIndex - removedBeforeInsert),
+            remainingItems.count
+        )
+        let afterItem = adjustedInsertIndex > 0 ? remainingItems[adjustedInsertIndex - 1] : nil
+
+        var clampedIndentLevel = min(max(indentLevel, 0), TodoItem.maxIndentLevel)
+        if let afterItem {
+            clampedIndentLevel = min(clampedIndentLevel, afterItem.indentLevel + 1)
         } else {
-            afterItem = nil
+            clampedIndentLevel = 0
         }
 
         // 移动项目及其子项
         store.moveItemWithChildren(
-            draggedItem, toDate: targetDate, afterItem: afterItem, newIndentLevel: indentLevel)
+            draggedItem,
+            toDate: targetDate,
+            afterItem: afterItem,
+            newIndentLevel: clampedIndentLevel
+        )
     }
 }
 

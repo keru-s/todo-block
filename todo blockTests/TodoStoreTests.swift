@@ -77,11 +77,18 @@ final class TodoStoreTests: XCTestCase {
         
         item.indent()
         item.indent()
-        item.indent() // max 3
-        XCTAssertEqual(item.indentLevel, 3)
+        item.indent()
+        item.indent() // max 4
+        XCTAssertEqual(item.indentLevel, TodoItem.maxIndentLevel)
         
         item.outdent()
-        XCTAssertEqual(item.indentLevel, 2)
+        XCTAssertEqual(item.indentLevel, TodoItem.maxIndentLevel - 1)
+    }
+
+    func testCreateItemIndentLevelIsClampedToMaxLevel() {
+        let store = TodoStore.shared
+        let item = store.createItem(dayDate: Date(), indentLevel: 100)
+        XCTAssertEqual(item.indentLevel, TodoItem.maxIndentLevel)
     }
     
     func testCompleteToggle() {

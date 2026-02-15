@@ -65,6 +65,40 @@ final class SelectionManagerTests: XCTestCase {
         XCTAssertTrue(selectionManager.selectedItemIds.contains(items[1].id))
         XCTAssertTrue(selectionManager.selectedItemIds.contains(items[2].id))
     }
+
+    @MainActor
+    func testLongPressDragSelectionForward() {
+        selectionManager.beginDragSelection(item: items[1], allItems: items)
+        selectionManager.updateDragSelection(to: items[4], allItems: items)
+
+        XCTAssertEqual(selectionManager.selectedItemIds.count, 4)
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[1].id))
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[2].id))
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[3].id))
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[4].id))
+        XCTAssertEqual(selectionManager.focusedItemId, items[4].id)
+    }
+
+    @MainActor
+    func testLongPressDragSelectionBackward() {
+        selectionManager.beginDragSelection(item: items[4], allItems: items)
+        selectionManager.updateDragSelection(to: items[2], allItems: items)
+
+        XCTAssertEqual(selectionManager.selectedItemIds.count, 3)
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[2].id))
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[3].id))
+        XCTAssertTrue(selectionManager.selectedItemIds.contains(items[4].id))
+        XCTAssertEqual(selectionManager.focusedItemId, items[2].id)
+    }
+
+    @MainActor
+    func testEndLongPressDragSelection() {
+        selectionManager.beginDragSelection(item: items[0], allItems: items)
+        selectionManager.endDragSelection()
+        selectionManager.updateDragSelection(to: items[3], allItems: items)
+
+        XCTAssertEqual(selectionManager.selectedItemIds, Set([items[0].id]))
+    }
     
     @MainActor
     func testClearSelection() {
