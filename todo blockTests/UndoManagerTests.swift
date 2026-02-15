@@ -41,6 +41,22 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testUndoCreateItemRequestsPreviousFocus() {
+        let store = TodoStore.shared
+        let date = Date()
+
+        let first = store.createItem(title: "First", dayDate: date)
+        store.undoManager.clear()
+
+        _ = store.createItem(title: "Second", dayDate: date, afterItem: first)
+        XCTAssertEqual(store.items(for: date).count, 2)
+
+        let undone = store.undo()
+        XCTAssertTrue(undone)
+        XCTAssertEqual(store.items(for: date).count, 1)
+        XCTAssertEqual(store.focusRequestId, first.id)
+    }
+
     // MARK: - 测试撤销删除
 
     func testUndoDeleteItem() {
@@ -131,13 +147,17 @@ final class UndoManagerTests: XCTestCase {
         // 增加缩进
         let oldIndent = item.indentLevel
         item.indentLevel = 1  // 手动设置缩进
-        store.registerIndentChange(itemId: item.id, oldIndent: oldIndent)
+        store.registerIndentChange(itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
 
         XCTAssertEqual(item.indentLevel, 1)
 
         // 撤销
         store.undo()
         XCTAssertEqual(item.indentLevel, 0)
+
+        // 重做
+        store.redo()
+        XCTAssertEqual(item.indentLevel, 1)
     }
 
     // MARK: - 测试撤销栈限制
@@ -192,5 +212,22 @@ final class UndoManagerTests: XCTestCase {
 
         store.undo()
         XCTAssertEqual(store.items(for: date).count, 0)
+    }
+
+    func testRedoToggleComplete() {
+        let store = TodoStore.shared
+        let date = Date()
+
+        let item = store.createItem(title: "Toggle Redo", dayDate: date)
+        store.undoManager.clear()
+
+        store.toggleComplete(item)
+        XCTAssertTrue(item.isCompleted)
+
+        store.undo()
+        XCTAssertFalse(item.isCompleted)
+
+        store.redo()
+        XCTAssertTrue(item.isCompleted)
     }
 }

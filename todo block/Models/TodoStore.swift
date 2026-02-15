@@ -50,6 +50,7 @@ final class TodoStore {
     func reset() {
         todoItemsCache.removeAll()
         daySectionsCache.removeAll()
+        focusRequestId = nil
         undoManager.clear()
         refreshTrigger += 1
     }
@@ -88,13 +89,21 @@ final class TodoStore {
     }
 
     /// 注册缩进变化（供视图层调用）
-    func registerIndentChange(itemId: UUID, oldIndent: Int) {
-        undoManager.registerIndentChange(itemId: itemId, oldIndent: oldIndent, store: self)
+    func registerIndentChange(itemId: UUID, oldIndent: Int, newIndent: Int) {
+        undoManager.registerIndentChange(
+            itemId: itemId, oldIndent: oldIndent, newIndent: newIndent, store: self)
     }
 
     /// 注册标题变化（供视图层调用）
-    func registerTitleChange(itemId: UUID, oldTitle: String) {
-        undoManager.registerTitleChange(itemId: itemId, oldTitle: oldTitle, store: self)
+    func registerTitleChange(itemId: UUID, oldTitle: String, newTitle: String) {
+        undoManager.registerTitleChange(
+            itemId: itemId, oldTitle: oldTitle, newTitle: newTitle, store: self)
+    }
+
+    /// 触发一次焦点恢复请求（用于撤销/重做后的光标恢复）
+    func requestFocus(_ itemId: UUID?) {
+        focusRequestId = nil
+        focusRequestId = itemId
     }
 
     private func loadFromDatabase() {
@@ -327,8 +336,15 @@ final class TodoStore {
         }
 
         // 注册撤销
+        let childNewStates = childStates.map { ($0.0, newState) }
         undoManager.registerToggleComplete(
-            itemId: item.id, oldState: oldState, childStates: childStates, store: self)
+            itemId: item.id,
+            oldState: oldState,
+            newState: newState,
+            childOldStates: childStates,
+            childNewStates: childNewStates,
+            store: self
+        )
 
         scheduleSave()
     }
@@ -421,7 +437,8 @@ final class TodoStore {
         }
 
         // 注册撤销
-        undoManager.registerMoveItems(snapshots: snapshots, store: self)
+        let movedSnapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
+        undoManager.registerMoveItems(from: snapshots, to: movedSnapshots, store: self)
 
         scheduleSave()
     }

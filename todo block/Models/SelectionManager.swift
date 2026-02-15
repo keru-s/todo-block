@@ -108,6 +108,18 @@ final class SelectionManager {
         lastSelectedId = item.id
     }
 
+    /// 从外部（如撤销/重做）恢复焦点
+    func restoreFocus(to itemId: UUID?) {
+        focusedItemId = itemId
+        if let itemId {
+            selectedItemIds = [itemId]
+            lastSelectedId = itemId
+        } else {
+            selectedItemIds.removeAll()
+            lastSelectedId = nil
+        }
+    }
+
     // MARK: - 删除逻辑
 
     /// 删除当前选中的项目，并自动计算下一个焦点
@@ -117,15 +129,29 @@ final class SelectionManager {
     func deleteSelectedItems(store: TodoStore, allItemsLookup: (Date) -> [TodoItem]) {
         guard !selectedItemIds.isEmpty else { return }
 
-        let itemsToDelete = selectedItemIds.compactMap { id in
-            store.todoItemsCache[id]
-        }
+        let itemsToDelete = selectedItemIds.compactMap { id in store.todoItemsCache[id] }
+        // 优先以当前焦点作为删除锚点；否则使用选中项中排序最靠前的项
+        let firstSelectedId: UUID? =
+            if let focusedItemId, selectedItemIds.contains(focusedItemId) {
+                focusedItemId
+            } else {
+                itemsToDelete
+                    .sorted {
+                        if Calendar.current.isDate($0.dayDate, inSameDayAs: $1.dayDate) {
+                            return $0.sortOrder < $1.sortOrder
+                        }
+                        return $0.dayDate < $1.dayDate
+                    }
+                    .first?.id
+            }
 
         // 计算下一个焦点
         // 我们只需要根据第一个被删除的项目来决定焦点去向即可
         var nextFocusId: UUID? = nil
 
-        if let firstItemToDelete = itemsToDelete.first {
+        if let firstSelectedId,
+            let firstItemToDelete = store.todoItemsCache[firstSelectedId]
+        {
             let allItems = allItemsLookup(firstItemToDelete.dayDate)
 
             if let firstIndex = allItems.firstIndex(where: { $0.id == firstItemToDelete.id }) {

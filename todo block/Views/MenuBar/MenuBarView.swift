@@ -99,6 +99,10 @@ struct MenuBarView: View {
             // 点击空白处取消选择
             selectionManager.clearSelection()
         }
+        .onChange(of: store.focusRequestId) { _, newValue in
+            guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
+            selectionManager.restoreFocus(to: itemId)
+        }
     }
 
     // MARK: - 待办列表（带拖拽支持）

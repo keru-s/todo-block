@@ -152,7 +152,8 @@ struct TodoItemView: View {
                 let oldIndent = item.indentLevel
                 item.indent()
                 if item.indentLevel != oldIndent {
-                    store.registerIndentChange(itemId: item.id, oldIndent: oldIndent)
+                    store.registerIndentChange(
+                        itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
                 }
                 store.scheduleSave()
             },
@@ -160,7 +161,8 @@ struct TodoItemView: View {
                 let oldIndent = item.indentLevel
                 item.outdent()
                 if item.indentLevel != oldIndent {
-                    store.registerIndentChange(itemId: item.id, oldIndent: oldIndent)
+                    store.registerIndentChange(
+                        itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
                 }
                 store.scheduleSave()
             },

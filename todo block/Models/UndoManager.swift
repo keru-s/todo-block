@@ -76,9 +76,11 @@ final class TodoUndoManager {
             // 保存快照用于 redo
             let snapshot = TodoItemSnapshot(from: item)
             store.deleteItemWithoutUndo(item)
+            store.requestFocus(previousItemId)
             // 注册 redo 操作（恢复 item）
             self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 store.restoreItem(from: snapshot)
+                store.requestFocus(itemId)
                 // 再次注册 undo 操作
                 self?.registerCreateItem(
                     itemId: itemId, previousItemId: previousItemId, store: store)
@@ -92,6 +94,7 @@ final class TodoUndoManager {
     func registerDeleteItem(snapshot: TodoItemSnapshot, store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             store.restoreItem(from: snapshot)
+            store.requestFocus(snapshot.id)
             // 注册 redo 操作（再次删除 item）
             self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 if let item = store.todoItemsCache[snapshot.id] {
@@ -117,30 +120,45 @@ final class TodoUndoManager {
 
     /// 注册完成状态切换的撤销
     func registerToggleComplete(
-        itemId: UUID, oldState: Bool, childStates: [(UUID, Bool)], store: TodoStore
+        itemId: UUID,
+        oldState: Bool,
+        newState: Bool,
+        childOldStates: [(UUID, Bool)],
+        childNewStates: [(UUID, Bool)],
+        store: TodoStore
     ) {
-        nsUndoManager.registerUndo(withTarget: store) { store in
+        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             if let item = store.todoItemsCache[itemId] {
                 item.isCompleted = oldState
                 item.updatedAt = Date()
             }
-            for (childId, childState) in childStates {
+            for (childId, childState) in childOldStates {
                 if let child = store.todoItemsCache[childId] {
                     child.isCompleted = childState
                     child.updatedAt = Date()
                 }
             }
+            self?.registerToggleComplete(
+                itemId: itemId,
+                oldState: newState,
+                newState: oldState,
+                childOldStates: childNewStates,
+                childNewStates: childOldStates,
+                store: store
+            )
             store.scheduleSave()
         }
         nsUndoManager.setActionName("勾选")
     }
 
     /// 注册缩进变化的撤销
-    func registerIndentChange(itemId: UUID, oldIndent: Int, store: TodoStore) {
-        nsUndoManager.registerUndo(withTarget: store) { store in
+    func registerIndentChange(itemId: UUID, oldIndent: Int, newIndent: Int, store: TodoStore) {
+        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             if let item = store.todoItemsCache[itemId] {
                 item.indentLevel = oldIndent
                 item.updatedAt = Date()
+                self?.registerIndentChange(
+                    itemId: itemId, oldIndent: newIndent, newIndent: oldIndent, store: store)
                 store.scheduleSave()
             }
         }
@@ -148,11 +166,13 @@ final class TodoUndoManager {
     }
 
     /// 注册标题变化的撤销
-    func registerTitleChange(itemId: UUID, oldTitle: String, store: TodoStore) {
-        nsUndoManager.registerUndo(withTarget: store) { store in
+    func registerTitleChange(itemId: UUID, oldTitle: String, newTitle: String, store: TodoStore) {
+        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             if let item = store.todoItemsCache[itemId] {
                 item.title = oldTitle
                 item.updatedAt = Date()
+                self?.registerTitleChange(
+                    itemId: itemId, oldTitle: newTitle, newTitle: oldTitle, store: store)
                 store.scheduleSave()
             }
         }
@@ -160,9 +180,9 @@ final class TodoUndoManager {
     }
 
     /// 注册移动 Items 的撤销
-    func registerMoveItems(snapshots: [TodoItemSnapshot], store: TodoStore) {
-        nsUndoManager.registerUndo(withTarget: store) { store in
-            for snapshot in snapshots {
+    func registerMoveItems(from oldSnapshots: [TodoItemSnapshot], to newSnapshots: [TodoItemSnapshot], store: TodoStore) {
+        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            for snapshot in oldSnapshots {
                 if let item = store.todoItemsCache[snapshot.id] {
                     item.dayDate = snapshot.dayDate
                     item.sortOrder = snapshot.sortOrder
@@ -170,6 +190,7 @@ final class TodoUndoManager {
                     item.updatedAt = Date()
                 }
             }
+            self?.registerMoveItems(from: newSnapshots, to: oldSnapshots, store: store)
             store.scheduleSave()
         }
         nsUndoManager.setActionName("移动")

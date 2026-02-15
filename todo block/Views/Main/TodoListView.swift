@@ -76,6 +76,11 @@ struct TodoListView: View {
                     scrollToItem(itemId, proxy: proxy)
                 }
             }
+            .onChange(of: store.focusRequestId) { _, newValue in
+                guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
+                selectionManager.restoreFocus(to: itemId)
+                scrollToItem(itemId, proxy: proxy)
+            }
         }
     }
     
