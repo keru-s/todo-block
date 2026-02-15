@@ -27,6 +27,7 @@
 		A85080CB2F1B280900D28EC9 /* todo block.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "todo block.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A85080DA2F1B280A00D28EC9 /* todo blockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "todo blockTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A85080E42F1B280A00D28EC9 /* todo blockUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "todo blockUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00012F1B280A00D28EC9 /* NoSigning.Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = NoSigning.Debug.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +76,7 @@
 		A85080C22F1B280800D28EC9 = {
 			isa = PBXGroup;
 			children = (
+				C0DE00022F1B280A00D28EC9 /* Config */,
 				A85080CD2F1B280900D28EC9 /* todo block */,
 				A85080DD2F1B280A00D28EC9 /* todo blockTests */,
 				A85080E72F1B280A00D28EC9 /* todo blockUITests */,
@@ -90,6 +92,14 @@
 				A85080E42F1B280A00D28EC9 /* todo blockUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C0DE00022F1B280A00D28EC9 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE00012F1B280A00D28EC9 /* NoSigning.Debug.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -498,11 +508,10 @@
 		};
 		A85080F22F1B280A00D28EC9 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0DE00012F1B280A00D28EC9 /* NoSigning.Debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4727XHULQX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
 				MARKETING_VERSION = 1.0;
@@ -541,6 +550,7 @@
 		A85080F52F1B280A00D28EC9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4727XHULQX;
