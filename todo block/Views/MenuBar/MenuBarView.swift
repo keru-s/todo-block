@@ -202,7 +202,7 @@ struct MenuBarView: View {
         .onDrop(
             of: [.text],
             delegate: TodoDropDelegate(
-                targetDate: Date(),
+                destination: .scheduled(date: Date()),
                 todoItems: todayItems,
                 store: store,
                 dropState: $dropState,
@@ -365,6 +365,7 @@ struct MenuBarView: View {
 
         let selectedItems = sortItemsForListOrder(
             selectionManager.selectedItemIds.compactMap { store.todoItemsCache[$0] }
+                .filter { Calendar.current.isDateInToday($0.dayDate) && $0.containerKind == .scheduled }
         )
         if let lastSelectedItem = selectedItems.last {
             return (lastSelectedItem.dayDate, lastSelectedItem, lastSelectedItem.indentLevel)

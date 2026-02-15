@@ -8,6 +8,12 @@
 import Foundation
 import SwiftData
 
+enum TodoContainerKind: String, Codable, CaseIterable {
+    case scheduled
+    case longTermUrgent
+    case longTermImportant = "longTermNonUrgent"
+}
+
 @Model
 final class TodoItem {
     static let maxIndentLevel = 4
@@ -18,9 +24,15 @@ final class TodoItem {
     var indentLevel: Int = 0          // 0-4，最多 5 层（顶层为 0）
     var sortOrder: Double = 0         // 用于拖拽排序
 
+    var containerKindRaw: String = TodoContainerKind.scheduled.rawValue
     var dayDate: Date = Date()        // 所属日期（只保留年月日）
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+
+    var containerKind: TodoContainerKind {
+        get { TodoContainerKind(rawValue: containerKindRaw) ?? .scheduled }
+        set { containerKindRaw = newValue.rawValue }
+    }
     
     init(
         id: UUID = UUID(),
@@ -28,6 +40,7 @@ final class TodoItem {
         isCompleted: Bool = false,
         indentLevel: Int = 0,
         sortOrder: Double = 0,
+        containerKindRaw: String = TodoContainerKind.scheduled.rawValue,
         dayDate: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -37,6 +50,7 @@ final class TodoItem {
         self.isCompleted = isCompleted
         self.indentLevel = min(max(indentLevel, 0), Self.maxIndentLevel)
         self.sortOrder = sortOrder
+        self.containerKindRaw = containerKindRaw
         self.dayDate = Calendar.current.startOfDay(for: dayDate)
         self.createdAt = createdAt
         self.updatedAt = updatedAt

@@ -12,14 +12,8 @@ import SwiftUI
 @main
 struct todo_blockApp: App {
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            TodoItem.self,
-            DaySection.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try TodoModelContainerFactory.makeContainer()
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }

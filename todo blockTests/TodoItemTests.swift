@@ -21,4 +21,9 @@ final class TodoItemTests: XCTestCase {
         }
         XCTAssertEqual(item.indentLevel, TodoItem.maxIndentLevel)
     }
+
+    func testContainerKindDefaultsToScheduled() {
+        let item = TodoItem()
+        XCTAssertEqual(item.containerKind, .scheduled)
+    }
 }

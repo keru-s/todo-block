@@ -35,6 +35,7 @@ final class TodoStore {
     private var modelContext: ModelContext?
     private var saveTask: Task<Void, Never>?
     private let saveDebounceInterval: TimeInterval = 0.3
+    private let schemaVersionDefaultsKey = "todo.block.schema.version"
 
     private init() {}
 
@@ -44,6 +45,7 @@ final class TodoStore {
     func initialize(with modelContext: ModelContext) {
         self.modelContext = modelContext
         loadFromDatabase()
+        migrateCachedItemsIfNeeded()
     }
 
     /// 用于测试：重置状态
@@ -126,25 +128,124 @@ final class TodoStore {
         }
     }
 
+    private func migrateCachedItemsIfNeeded() {
+        let storedVersion = UserDefaults.standard.integer(forKey: schemaVersionDefaultsKey)
+        guard storedVersion < TodoModelContainerFactory.currentModelVersion else { return }
+
+        var hasChanges = false
+        for item in todoItemsCache.values where item.containerKindRaw.isEmpty {
+            item.containerKindRaw = TodoContainerKind.scheduled.rawValue
+            item.updatedAt = Date()
+            hasChanges = true
+        }
+
+        UserDefaults.standard.set(
+            TodoModelContainerFactory.currentModelVersion,
+            forKey: schemaVersionDefaultsKey
+        )
+
+        if hasChanges {
+            scheduleSave()
+        }
+    }
+
     // MARK: - 查询方法（从缓存）
 
     /// 获取某日的所有待办事项（按 sortOrder 排序）
     func items(for date: Date) -> [TodoItem] {
-        // 引用 refreshTrigger 以建立 Observable 依赖
         _ = refreshTrigger
 
         let startOfDay = Calendar.current.startOfDay(for: date)
         return todoItemsCache.values
-            .filter { Calendar.current.isDate($0.dayDate, inSameDayAs: startOfDay) }
+            .filter {
+                $0.containerKind == .scheduled
+                    && Calendar.current.isDate($0.dayDate, inSameDayAs: startOfDay)
+            }
             .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     /// 获取今日待办
     func todayItems() -> [TodoItem] {
-        // 引用 refreshTrigger 以建立 Observable 依赖
+        _ = refreshTrigger
+        return items(for: Date())
+    }
+
+    /// 获取长期列表
+    func longTermItems(isUrgent: Bool) -> [TodoItem] {
         _ = refreshTrigger
 
-        return items(for: Date())
+        let targetKind: TodoContainerKind = isUrgent ? .longTermUrgent : .longTermImportant
+        return todoItemsCache.values
+            .filter { $0.containerKind == targetKind }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    func destination(for item: TodoItem) -> TodoDropDestination {
+        switch item.containerKind {
+        case .scheduled:
+            .scheduled(date: Calendar.current.startOfDay(for: item.dayDate))
+        case .longTermUrgent:
+            .longTerm(isUrgent: true)
+        case .longTermImportant:
+            .longTerm(isUrgent: false)
+        }
+    }
+
+    func items(in destination: TodoDropDestination) -> [TodoItem] {
+        switch destination.normalized {
+        case .scheduled(let date):
+            items(for: date)
+        case .longTerm(let isUrgent):
+            longTermItems(isUrgent: isUrgent)
+        }
+    }
+
+    /// 获取某月最新日期（仅 scheduled 容器）
+    func latestScheduledDate(year: Int, month: Int) -> Date? {
+        let calendar = Calendar.current
+        return todoItemsCache.values
+            .filter {
+                $0.containerKind == .scheduled
+                    && calendar.component(.year, from: $0.dayDate) == year
+                    && calendar.component(.month, from: $0.dayDate) == month
+            }
+            .map { calendar.startOfDay(for: $0.dayDate) }
+            .max()
+    }
+
+    /// 目标月份为空时，用今天日号夹紧到目标月份天数
+    func fallbackDateForEmptyMonth(year: Int, month: Int, today: Date = .now) -> Date {
+        let calendar = Calendar.current
+        let day = calendar.component(.day, from: today)
+
+        var monthComponents = DateComponents()
+        monthComponents.year = year
+        monthComponents.month = month
+        monthComponents.day = 1
+
+        guard let monthStart = calendar.date(from: monthComponents) else {
+            return calendar.startOfDay(for: today)
+        }
+
+        let maxDay = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 28
+        monthComponents.day = min(day, maxDay)
+        let targetDate = calendar.date(from: monthComponents) ?? monthStart
+        return calendar.startOfDay(for: targetDate)
+    }
+
+    /// 获取某月的最后一项（优先该月最新 DaySection 日期 -> 该日期最后一项）
+    func tailItemForScheduledMonth(year: Int, month: Int) -> (date: Date, tailItem: TodoItem?) {
+        if let latestSectionDate = sections(year: year, month: month).first?.date {
+            let normalizedDate = Calendar.current.startOfDay(for: latestSectionDate)
+            return (normalizedDate, items(for: normalizedDate).last)
+        }
+
+        if let latestDate = latestScheduledDate(year: year, month: month) {
+            return (latestDate, items(for: latestDate).last)
+        }
+
+        let fallbackDate = fallbackDateForEmptyMonth(year: year, month: month)
+        return (fallbackDate, nil)
     }
 
     /// 获取某月的所有 DaySection
@@ -167,7 +268,7 @@ final class TodoStore {
         let sortedSections = daySectionsCache.values.sorted { $0.date > $1.date }
         for section in sortedSections {
             let key = section.yearMonth
-            if !seen.contains(key) {
+            if seen.contains(key) == false {
                 seen.insert(key)
                 uniqueMonths.append((section.year, section.month))
             }
@@ -180,22 +281,22 @@ final class TodoStore {
 
     /// 获取或创建今日的 DaySection
     func getOrCreateTodaySection() -> DaySection {
-        let today = Calendar.current.startOfDay(for: Date())
+        getOrCreateSection(for: Date())
+    }
 
-        // 先从缓存查找
+    /// 获取或创建指定日期的 DaySection
+    func getOrCreateSection(for date: Date) -> DaySection {
+        let targetDate = Calendar.current.startOfDay(for: date)
+
         if let existing = daySectionsCache.values.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: today)
+            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
         }) {
             return existing
         }
 
-        // 创建新的
-        let newSection = DaySection(date: today, sortOrder: Double(Date().timeIntervalSince1970))
-
-        // 加入缓存
+        let newSection = DaySection(date: targetDate, sortOrder: Double(Date().timeIntervalSince1970))
         daySectionsCache[newSection.id] = newSection
 
-        // 异步持久化
         modelContext?.insert(newSection)
         scheduleSave()
 
@@ -204,10 +305,7 @@ final class TodoStore {
 
     /// 删除 DaySection
     func deleteSection(_ section: DaySection) {
-        // 从缓存移除
         daySectionsCache.removeValue(forKey: section.id)
-
-        // 从数据库删除
         modelContext?.delete(section)
 
         refreshTrigger += 1
@@ -221,12 +319,26 @@ final class TodoStore {
         title: String = "",
         dayDate: Date,
         afterItem: TodoItem? = nil,
-        indentLevel: Int = 0
+        indentLevel: Int = 0,
+        containerKind: TodoContainerKind = .scheduled,
+        insertAtBeginning: Bool = false
     ) -> TodoItem {
-        let currentItems = items(for: dayDate)
+        let normalizedDate = Calendar.current.startOfDay(for: dayDate)
+        let destination: TodoDropDestination = {
+            switch containerKind {
+            case .scheduled:
+                return .scheduled(date: normalizedDate)
+            case .longTermUrgent:
+                return .longTerm(isUrgent: true)
+            case .longTermImportant:
+                return .longTerm(isUrgent: false)
+            }
+        }()
 
+        let currentItems = items(in: destination)
         var newSortOrder: Double
-        if let afterItem = afterItem,
+
+        if let afterItem,
             let afterIndex = currentItems.firstIndex(where: { $0.id == afterItem.id })
         {
             if afterIndex + 1 < currentItems.count {
@@ -235,27 +347,31 @@ final class TodoStore {
             } else {
                 newSortOrder = afterItem.sortOrder + 1000
             }
+        } else if insertAtBeginning, let firstItem = currentItems.first {
+            newSortOrder = firstItem.sortOrder - 1000
         } else if let lastItem = currentItems.last {
             newSortOrder = lastItem.sortOrder + 1000
         } else {
             newSortOrder = 1000
         }
 
+        if containerKind == .scheduled {
+            _ = getOrCreateSection(for: normalizedDate)
+        }
+
         let newItem = TodoItem(
             title: title,
             indentLevel: indentLevel,
             sortOrder: newSortOrder,
-            dayDate: dayDate
+            containerKindRaw: containerKind.rawValue,
+            dayDate: normalizedDate
         )
 
-        // 加入缓存（即时响应）
         todoItemsCache[newItem.id] = newItem
 
-        // 异步持久化
         modelContext?.insert(newItem)
         scheduleSave()
 
-        // 注册撤销（传入 afterItem 的 ID，撤销时恢复焦点）
         undoManager.registerCreateItem(
             itemId: newItem.id, previousItemId: afterItem?.id, store: self)
 
@@ -264,14 +380,10 @@ final class TodoStore {
 
     /// 删除待办事项
     func deleteItem(_ item: TodoItem) {
-        // 注册撤销（在删除前保存快照）
         let snapshot = TodoItemSnapshot(from: item)
         undoManager.registerDeleteItem(snapshot: snapshot, store: self)
 
-        // 从缓存移除（即时响应）
         todoItemsCache.removeValue(forKey: item.id)
-
-        // 异步持久化
         modelContext?.delete(item)
         scheduleSave()
     }
@@ -291,10 +403,15 @@ final class TodoStore {
             isCompleted: snapshot.isCompleted,
             indentLevel: snapshot.indentLevel,
             sortOrder: snapshot.sortOrder,
+            containerKindRaw: snapshot.containerKindRaw,
             dayDate: snapshot.dayDate,
             createdAt: snapshot.createdAt,
             updatedAt: Date()
         )
+
+        if restoredItem.containerKind == .scheduled {
+            _ = getOrCreateSection(for: restoredItem.dayDate)
+        }
 
         todoItemsCache[restoredItem.id] = restoredItem
         modelContext?.insert(restoredItem)
@@ -309,22 +426,20 @@ final class TodoStore {
 
     /// 标记完成（包括子任务）
     func toggleComplete(_ item: TodoItem) {
-        let allItems = items(for: item.dayDate)
+        let allItems = items(in: destination(for: item))
         let oldState = item.isCompleted
-        let newState = !item.isCompleted
+        let newState = oldState == false
 
-        // 收集子任务的旧状态（用于撤销）
         var childStates: [(UUID, Bool)] = []
 
         item.isCompleted = newState
         item.updatedAt = Date()
 
-        // 找到所有子任务并同步状态
         if let itemIndex = allItems.firstIndex(where: { $0.id == item.id }) {
             let itemIndent = item.indentLevel
 
-            for i in (itemIndex + 1)..<allItems.count {
-                let child = allItems[i]
+            for index in (itemIndex + 1)..<allItems.count {
+                let child = allItems[index]
                 if child.indentLevel > itemIndent {
                     childStates.append((child.id, child.isCompleted))
                     child.isCompleted = newState
@@ -335,7 +450,6 @@ final class TodoStore {
             }
         }
 
-        // 注册撤销
         let childNewStates = childStates.map { ($0.0, newState) }
         undoManager.registerToggleComplete(
             itemId: item.id,
@@ -349,71 +463,52 @@ final class TodoStore {
         scheduleSave()
     }
 
-    /// 移动待办事项到新位置
+    /// 兼容旧接口：移动待办事项到指定日期
     func moveItem(_ item: TodoItem, toDate: Date, afterItem: TodoItem?) {
-        let newDate = Calendar.current.startOfDay(for: toDate)
-        item.dayDate = newDate
-
-        let targetItems = items(for: newDate).filter { $0.id != item.id }
-
-        if let afterItem = afterItem,
-            let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id })
-        {
-            if afterIndex + 1 < targetItems.count {
-                let nextItem = targetItems[afterIndex + 1]
-                item.sortOrder = (afterItem.sortOrder + nextItem.sortOrder) / 2
-            } else {
-                item.sortOrder = afterItem.sortOrder + 1000
-            }
-        } else if let firstItem = targetItems.first {
-            item.sortOrder = firstItem.sortOrder - 1000
-        } else {
-            item.sortOrder = 1000
-        }
-
-        item.updatedAt = Date()
-        scheduleSave()
+        moveItemWithChildren(
+            item,
+            to: .scheduled(date: toDate),
+            afterItem: afterItem,
+            newIndentLevel: item.indentLevel
+        )
     }
 
     /// 移动待办事项及其子项到新位置
     func moveItemWithChildren(
-        _ item: TodoItem, toDate: Date, afterItem: TodoItem?, newIndentLevel: Int
+        _ item: TodoItem,
+        to destination: TodoDropDestination,
+        afterItem: TodoItem?,
+        newIndentLevel: Int
     ) {
-        let sourceDate = item.dayDate
-        let sourceItems = items(for: sourceDate)
+        let normalizedDestination = destination.normalized
+        let sourceDestination = self.destination(for: item)
+        let sourceItems = items(in: sourceDestination)
 
-        // 找到被拖拽项及其所有子项
         guard let itemIndex = sourceItems.firstIndex(where: { $0.id == item.id }) else {
             return
         }
 
         var itemsToMove = [item]
+        var movingIds: Set<UUID> = [item.id]
         let baseIndent = item.indentLevel
 
-        // 收集所有子项（indentLevel > baseIndent 的连续项）
-        for i in (itemIndex + 1)..<sourceItems.count {
-            let child = sourceItems[i]
+        for index in (itemIndex + 1)..<sourceItems.count {
+            let child = sourceItems[index]
             if child.indentLevel > baseIndent {
                 itemsToMove.append(child)
+                movingIds.insert(child.id)
             } else {
-                break  // 遇到同级或更高级别项，停止
+                break
             }
         }
 
-        // 保存快照（用于撤销）
         let snapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
-
-        // 计算缩进差异
         let indentDelta = newIndentLevel - baseIndent
 
-        // 计算新的 sortOrder
-        let newDate = Calendar.current.startOfDay(for: toDate)
-        let targetItems = items(for: newDate).filter { movingItem in
-            !itemsToMove.contains { $0.id == movingItem.id }
-        }
+        let targetItems = items(in: normalizedDestination).filter { movingIds.contains($0.id) == false }
 
-        var baseSortOrder: Double
-        if let afterItem = afterItem,
+        let baseSortOrder: Double
+        if let afterItem,
             let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id })
         {
             if afterIndex + 1 < targetItems.count {
@@ -428,10 +523,16 @@ final class TodoStore {
             baseSortOrder = 1000
         }
 
-        // 移动所有项
+        if case .scheduled(let date) = normalizedDestination {
+            _ = getOrCreateSection(for: date)
+        }
+
         for (offset, movingItem) in itemsToMove.enumerated() {
-            movingItem.dayDate = newDate
-            movingItem.sortOrder = baseSortOrder + Double(offset) * 0.001  // 保持相对顺序
+            movingItem.containerKind = normalizedDestination.containerKind
+            if case .scheduled(let date) = normalizedDestination {
+                movingItem.dayDate = date
+            }
+            movingItem.sortOrder = baseSortOrder + Double(offset) * 0.001
             movingItem.indentLevel = max(
                 0,
                 min(TodoItem.maxIndentLevel, movingItem.indentLevel + indentDelta)
@@ -439,7 +540,6 @@ final class TodoStore {
             movingItem.updatedAt = Date()
         }
 
-        // 注册撤销
         let movedSnapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
         undoManager.registerMoveItems(from: snapshots, to: movedSnapshots, store: self)
 
@@ -449,13 +549,12 @@ final class TodoStore {
     // MARK: - 异步保存
 
     func scheduleSave() {
-        // 立即触发视图刷新
         refreshTrigger += 1
 
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(Int(saveDebounceInterval * 1000)))
-            guard !Task.isCancelled else { return }
+            guard Task.isCancelled == false else { return }
             await performSave()
         }
     }

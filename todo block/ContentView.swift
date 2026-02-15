@@ -9,25 +9,29 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-
-    @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
-    @State private var selectedMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var selectedDestination: SidebarDestination = .month(
+        year: Calendar.current.component(.year, from: Date()),
+        month: Calendar.current.component(.month, from: Date())
+    )
 
     @State private var injectionHook = Date()
 
     var body: some View {
         NavigationSplitView {
             SidebarView(
-                selectedYear: $selectedYear,
-                selectedMonth: $selectedMonth
+                selectedDestination: $selectedDestination
             )
             .navigationSplitViewColumnWidth(min: 150, ideal: 180)
         } detail: {
-            TodoListView(
-                year: selectedYear,
-                month: selectedMonth
-            )
+            switch selectedDestination {
+            case .month(let year, let month):
+                TodoListView(
+                    year: year,
+                    month: month
+                )
+            case .longTerm:
+                LongTermListView()
+            }
         }
         .frame(minWidth: 600, minHeight: 400)
         .id(injectionHook)

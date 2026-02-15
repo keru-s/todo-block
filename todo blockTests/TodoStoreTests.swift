@@ -134,4 +134,191 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertFalse(child1.isCompleted)
         XCTAssertFalse(child2.isCompleted)
     }
+
+    func testMoveItemToAnotherMonthUsesLatestDateTail() {
+        let store = TodoStore.shared
+        let januaryDate = date(year: 2026, month: 1, day: 10)
+        let februaryOld = date(year: 2026, month: 2, day: 12)
+        let februaryLatest = date(year: 2026, month: 2, day: 20)
+
+        let draggedItem = store.createItem(title: "Dragged", dayDate: januaryDate)
+        _ = store.createItem(title: "Feb old", dayDate: februaryOld)
+        let febTail = store.createItem(title: "Feb latest", dayDate: februaryLatest)
+
+        let target = store.tailItemForScheduledMonth(year: 2026, month: 2)
+        store.moveItemWithChildren(
+            draggedItem,
+            to: .scheduled(date: target.date),
+            afterItem: target.tailItem,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(target.tailItem?.id, febTail.id)
+        XCTAssertTrue(Calendar.current.isDate(draggedItem.dayDate, inSameDayAs: februaryLatest))
+        XCTAssertEqual(store.items(for: februaryLatest).last?.id, draggedItem.id)
+    }
+
+    func testMoveItemToEmptyMonthUsesClampedTodayDay() {
+        let store = TodoStore.shared
+        let today = date(year: 2026, month: 1, day: 31)
+
+        let fallback = store.fallbackDateForEmptyMonth(
+            year: 2026,
+            month: 2,
+            today: today
+        )
+
+        XCTAssertEqual(Calendar.current.component(.year, from: fallback), 2026)
+        XCTAssertEqual(Calendar.current.component(.month, from: fallback), 2)
+        XCTAssertEqual(Calendar.current.component(.day, from: fallback), 28)
+    }
+
+    func testMoveItemToLongTermNonUrgent() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "scheduled", dayDate: date(year: 2026, month: 1, day: 8))
+
+        store.moveItemWithChildren(
+            item,
+            to: .longTerm(isUrgent: false),
+            afterItem: nil,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(item.containerKind, .longTermImportant)
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [item.id])
+    }
+
+    func testMoveItemToLongTermNonUrgentWithNilAfterItemInsertsAtHead() {
+        let store = TodoStore.shared
+        let firstLongTerm = store.createItem(
+            title: "existing",
+            dayDate: date(year: 2026, month: 1, day: 8),
+            containerKind: .longTermImportant
+        )
+        let moved = store.createItem(title: "scheduled", dayDate: date(year: 2026, month: 1, day: 9))
+
+        store.moveItemWithChildren(
+            moved,
+            to: .longTerm(isUrgent: false),
+            afterItem: nil,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.title), ["scheduled", "existing"])
+        XCTAssertEqual(firstLongTerm.containerKind, .longTermImportant)
+    }
+
+    func testMoveItemBetweenLongTermUrgentAndNonUrgent() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "urgent",
+            dayDate: date(year: 2026, month: 1, day: 8),
+            containerKind: .longTermUrgent
+        )
+
+        store.moveItemWithChildren(
+            item,
+            to: .longTerm(isUrgent: false),
+            afterItem: nil,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(item.containerKind, .longTermImportant)
+        XCTAssertTrue(store.longTermItems(isUrgent: true).isEmpty)
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [item.id])
+    }
+
+    func testMoveItemFromLongTermBackToScheduledMonth() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "long term",
+            dayDate: date(year: 2026, month: 1, day: 9),
+            containerKind: .longTermImportant
+        )
+        _ = store.createItem(title: "anchor", dayDate: date(year: 2026, month: 3, day: 15))
+
+        let target = store.tailItemForScheduledMonth(year: 2026, month: 3)
+        store.moveItemWithChildren(
+            item,
+            to: .scheduled(date: target.date),
+            afterItem: target.tailItem,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(item.containerKind, .scheduled)
+        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: target.date))
+        XCTAssertEqual(store.items(for: target.date).last?.id, item.id)
+    }
+
+    func testMoveItemToMonthPrefersLatestSectionEvenWhenEmpty() {
+        let store = TodoStore.shared
+        let longTermItem = store.createItem(
+            title: "long term",
+            dayDate: date(year: 2026, month: 2, day: 1),
+            containerKind: .longTermImportant
+        )
+
+        let monthOldDate = date(year: 2026, month: 2, day: 9)
+        let monthLatestEmptyDate = date(year: 2026, month: 2, day: 15)
+        _ = store.createItem(title: "old item", dayDate: monthOldDate)
+        _ = store.getOrCreateSection(for: monthLatestEmptyDate)
+
+        let target = store.tailItemForScheduledMonth(year: 2026, month: 2)
+        store.moveItemWithChildren(
+            longTermItem,
+            to: .scheduled(date: target.date),
+            afterItem: target.tailItem,
+            newIndentLevel: 0
+        )
+
+        XCTAssertNil(target.tailItem)
+        XCTAssertTrue(Calendar.current.isDate(target.date, inSameDayAs: monthLatestEmptyDate))
+        XCTAssertTrue(Calendar.current.isDate(longTermItem.dayDate, inSameDayAs: monthLatestEmptyDate))
+        XCTAssertEqual(store.items(for: monthLatestEmptyDate).map(\.id), [longTermItem.id])
+    }
+
+    func testMoveItemToExistingMonthWithNilAfterItemInsertsAtHead() {
+        let store = TodoStore.shared
+        let source = store.createItem(
+            title: "from long term",
+            dayDate: date(year: 2026, month: 1, day: 1),
+            containerKind: .longTermImportant
+        )
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let firstExisting = store.createItem(title: "existing-1", dayDate: targetDate)
+        _ = store.createItem(title: "existing-2", dayDate: targetDate, afterItem: firstExisting)
+
+        store.moveItemWithChildren(
+            source,
+            to: .scheduled(date: targetDate),
+            afterItem: nil,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(store.items(for: targetDate).map(\.title), ["from long term", "existing-1", "existing-2"])
+    }
+
+    func testCreateItemInsertAtBeginningPlacesNewItemAtHead() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let first = store.createItem(title: "first", dayDate: targetDate)
+        _ = store.createItem(title: "second", dayDate: targetDate, afterItem: first)
+
+        _ = store.createItem(
+            title: "head",
+            dayDate: targetDate,
+            insertAtBeginning: true
+        )
+
+        XCTAssertEqual(store.items(for: targetDate).map(\.title), ["head", "first", "second"])
+    }
+
+    private func date(year: Int, month: Int, day: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: calendar.date(from: components) ?? Date())
+    }
 }

@@ -20,6 +20,7 @@ struct TodoItemSnapshot {
     let isCompleted: Bool
     let indentLevel: Int
     let sortOrder: Double
+    let containerKindRaw: String
     let dayDate: Date
     let createdAt: Date
     let updatedAt: Date
@@ -30,6 +31,7 @@ struct TodoItemSnapshot {
         self.isCompleted = item.isCompleted
         self.indentLevel = item.indentLevel
         self.sortOrder = item.sortOrder
+        self.containerKindRaw = item.containerKindRaw
         self.dayDate = item.dayDate
         self.createdAt = item.createdAt
         self.updatedAt = item.updatedAt
@@ -184,6 +186,7 @@ final class TodoUndoManager {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             for snapshot in oldSnapshots {
                 if let item = store.todoItemsCache[snapshot.id] {
+                    item.containerKindRaw = snapshot.containerKindRaw
                     item.dayDate = snapshot.dayDate
                     item.sortOrder = snapshot.sortOrder
                     item.indentLevel = snapshot.indentLevel

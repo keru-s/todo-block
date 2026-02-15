@@ -193,13 +193,27 @@ final class UndoManagerTests: XCTestCase {
     func testMultipleUndo() {
         let store = TodoStore.shared
         let date = Date()
+        let originalGroupsByEvent = store.nsUndoManager.groupsByEvent
+
+        store.nsUndoManager.groupsByEvent = false
+        defer {
+            store.nsUndoManager.groupsByEvent = originalGroupsByEvent
+        }
 
         store.undoManager.clear()
 
         // 创建 3 个 items
-        let item1 = store.createItem(title: "Item 1", dayDate: date)
-        let item2 = store.createItem(title: "Item 2", dayDate: date)
-        let item3 = store.createItem(title: "Item 3", dayDate: date)
+        store.nsUndoManager.beginUndoGrouping()
+        _ = store.createItem(title: "Item 1", dayDate: date)
+        store.nsUndoManager.endUndoGrouping()
+
+        store.nsUndoManager.beginUndoGrouping()
+        _ = store.createItem(title: "Item 2", dayDate: date)
+        store.nsUndoManager.endUndoGrouping()
+
+        store.nsUndoManager.beginUndoGrouping()
+        _ = store.createItem(title: "Item 3", dayDate: date)
+        store.nsUndoManager.endUndoGrouping()
 
         XCTAssertEqual(store.items(for: date).count, 3)
 
@@ -229,5 +243,63 @@ final class UndoManagerTests: XCTestCase {
 
         store.redo()
         XCTAssertTrue(item.isCompleted)
+    }
+
+    func testUndoRedoCrossContainerMove() {
+        let store = TodoStore.shared
+        let sourceDate = fixedDate(year: 2026, month: 1, day: 5)
+
+        let item = store.createItem(title: "cross container", dayDate: sourceDate)
+        store.undoManager.clear()
+
+        store.moveItemWithChildren(
+            item,
+            to: .longTerm(isUrgent: false),
+            afterItem: nil,
+            newIndentLevel: 0
+        )
+        XCTAssertEqual(item.containerKind, .longTermImportant)
+
+        store.undo()
+        XCTAssertEqual(item.containerKind, .scheduled)
+        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: sourceDate))
+
+        store.redo()
+        XCTAssertEqual(item.containerKind, .longTermImportant)
+    }
+
+    func testUndoRedoCrossMonthMove() {
+        let store = TodoStore.shared
+        let sourceDate = fixedDate(year: 2026, month: 1, day: 10)
+        let targetDate = fixedDate(year: 2026, month: 2, day: 22)
+
+        let item = store.createItem(title: "cross month", dayDate: sourceDate)
+        _ = store.createItem(title: "anchor", dayDate: targetDate)
+        store.undoManager.clear()
+
+        let target = store.tailItemForScheduledMonth(year: 2026, month: 2)
+        store.moveItemWithChildren(
+            item,
+            to: .scheduled(date: target.date),
+            afterItem: target.tailItem,
+            newIndentLevel: 0
+        )
+        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate))
+
+        store.undo()
+        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: sourceDate))
+        XCTAssertEqual(item.containerKind, .scheduled)
+
+        store.redo()
+        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate))
+    }
+
+    private func fixedDate(year: Int, month: Int, day: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: calendar.date(from: components) ?? Date())
     }
 }

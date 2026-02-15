@@ -153,7 +153,8 @@ struct TodoListView: View {
                 title: entry.title,
                 dayDate: target.dayDate,
                 afterItem: currentAfterItem,
-                indentLevel: entry.indentLevel
+                indentLevel: entry.indentLevel,
+                insertAtBeginning: target.insertAtBeginning && currentAfterItem == nil
             )
             newItem.isCompleted = entry.isCompleted
             newItem.updatedAt = Date()
@@ -194,29 +195,42 @@ struct TodoListView: View {
         }
     }
 
-    private func resolvePasteTarget() -> (dayDate: Date, afterItem: TodoItem?, baseIndentLevel: Int) {
+    private func resolvePasteTarget() -> (
+        dayDate: Date,
+        afterItem: TodoItem?,
+        baseIndentLevel: Int,
+        insertAtBeginning: Bool
+    ) {
+        let calendar = Calendar.current
+        let isInCurrentMonth: (TodoItem) -> Bool = { item in
+            item.containerKind == .scheduled
+                && calendar.component(.year, from: item.dayDate) == year
+                && calendar.component(.month, from: item.dayDate) == month
+        }
+
         if
             let focusedItemId = selectionManager.focusedItemId,
-            let focusedItem = store.todoItemsCache[focusedItemId]
+            let focusedItem = store.todoItemsCache[focusedItemId],
+            isInCurrentMonth(focusedItem)
         {
-            return (focusedItem.dayDate, focusedItem, focusedItem.indentLevel)
+            return (focusedItem.dayDate, focusedItem, focusedItem.indentLevel, false)
         }
 
         let selectedItems = sortItemsForListOrder(
             selectionManager.selectedItemIds.compactMap { store.todoItemsCache[$0] }
+                .filter(isInCurrentMonth)
         )
         if let lastSelectedItem = selectedItems.last {
-            return (lastSelectedItem.dayDate, lastSelectedItem, lastSelectedItem.indentLevel)
+            return (lastSelectedItem.dayDate, lastSelectedItem, lastSelectedItem.indentLevel, false)
         }
 
-        if let topSection = daySections.first {
-            let sectionItems = store.items(for: topSection.date)
-            return (topSection.date, sectionItems.last, 0)
+        if let latestSection = daySections.first {
+            return (latestSection.date, nil, 0, true)
         }
 
-        let todaySection = store.getOrCreateTodaySection()
-        let todayItems = store.items(for: todaySection.date)
-        return (todaySection.date, todayItems.last, 0)
+        let fallbackDate = store.fallbackDateForEmptyMonth(year: year, month: month)
+        let fallbackSection = store.getOrCreateSection(for: fallbackDate)
+        return (fallbackSection.date, nil, 0, true)
     }
 }
 

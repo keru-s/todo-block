@@ -165,7 +165,7 @@ struct DaySectionView: View {
         .onDrop(
             of: [.text],
             delegate: TodoDropDelegate(
-                targetDate: section.date,
+                destination: .scheduled(date: section.date),
                 todoItems: todoItems,
                 store: store,
                 dropState: $dropState,
@@ -310,7 +310,7 @@ struct DaySectionView: View {
 // MARK: - 拖拽代理
 
 struct TodoDropDelegate: DropDelegate {
-    let targetDate: Date
+    let destination: TodoDropDestination
     let todoItems: [TodoItem]
     let store: TodoStore
     @Binding var dropState: TodoListDropState
@@ -351,7 +351,7 @@ struct TodoDropDelegate: DropDelegate {
                 return
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.performMove(
                     draggedId: draggedId, toIndex: insertIndex, indentLevel: indentLevel)
             }
@@ -426,8 +426,10 @@ struct TodoDropDelegate: DropDelegate {
         var remainingItems = todoItems
         var movingItemIds = Set<UUID>()
 
-        // 同日移动时，需要按“被拖拽项 + 连续子项”整体从目标列表中剔除后再计算插入位置。
-        if Calendar.current.isDate(draggedItem.dayDate, inSameDayAs: targetDate),
+        let normalizedDestination = destination.normalized
+
+        // 同目标容器移动时，需要按“被拖拽项 + 连续子项”整体从目标列表中剔除后再计算插入位置。
+        if store.destination(for: draggedItem) == normalizedDestination,
             let draggedIndex = todoItems.firstIndex(where: { $0.id == draggedId })
         {
             let baseIndent = todoItems[draggedIndex].indentLevel
@@ -468,7 +470,7 @@ struct TodoDropDelegate: DropDelegate {
         // 移动项目及其子项
         store.moveItemWithChildren(
             draggedItem,
-            toDate: targetDate,
+            to: normalizedDestination,
             afterItem: afterItem,
             newIndentLevel: clampedIndentLevel
         )
