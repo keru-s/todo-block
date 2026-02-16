@@ -13,6 +13,10 @@ struct ContentView: View {
         year: Calendar.current.component(.year, from: Date()),
         month: Calendar.current.component(.month, from: Date())
     )
+    @State private var lastMonthDestination: SidebarDestination = .month(
+        year: Calendar.current.component(.year, from: Date()),
+        month: Calendar.current.component(.month, from: Date())
+    )
 
     @State private var injectionHook = Date()
 
@@ -23,18 +27,18 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 150, ideal: 180)
         } detail: {
-            switch selectedDestination {
-            case .month(let year, let month):
-                TodoListView(
-                    year: year,
-                    month: month
-                )
-            case .longTerm:
-                LongTermListView()
-            }
+            MainDetailHostView(
+                selectedDestination: selectedDestination,
+                fallbackMonthDestination: lastMonthDestination
+            )
         }
         .frame(minWidth: 600, minHeight: 400)
         .id(injectionHook)
+        .onChange(of: selectedDestination) { _, newValue in
+            if case .month = newValue {
+                lastMonthDestination = newValue
+            }
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: Notification.Name("INJECTION_BUNDLE_NOTIFICATION"))

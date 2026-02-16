@@ -43,6 +43,10 @@ final class TodoStore {
 
     /// 初始化并从数据库加载数据到缓存
     func initialize(with modelContext: ModelContext) {
+        if let existingContext = self.modelContext, existingContext !== modelContext {
+            clearCachesAndState(clearUndo: true)
+        }
+        saveTask?.cancel()
         self.modelContext = modelContext
         loadFromDatabase()
         migrateCachedItemsIfNeeded()
@@ -50,11 +54,15 @@ final class TodoStore {
 
     /// 用于测试：重置状态
     func reset() {
-        todoItemsCache.removeAll()
-        daySectionsCache.removeAll()
-        focusRequestId = nil
-        undoManager.clear()
-        refreshTrigger += 1
+        saveTask?.cancel()
+        saveTask = nil
+        modelContext = nil
+        clearCachesAndState(clearUndo: true)
+    }
+
+    /// 重新从数据库加载缓存（用于外部数据变更后的显式同步）
+    func reloadFromPersistentStore() {
+        loadFromDatabase()
     }
 
     // MARK: - 撤销操作
@@ -111,11 +119,14 @@ final class TodoStore {
     private func loadFromDatabase() {
         guard let modelContext = modelContext else { return }
 
+        var loadedSections: [UUID: DaySection] = [:]
+        var loadedItems: [UUID: TodoItem] = [:]
+
         // 加载所有 DaySection
         let sectionDescriptor = FetchDescriptor<DaySection>()
         if let sections = try? modelContext.fetch(sectionDescriptor) {
             for section in sections {
-                daySectionsCache[section.id] = section
+                loadedSections[section.id] = section
             }
         }
 
@@ -123,9 +134,44 @@ final class TodoStore {
         let itemDescriptor = FetchDescriptor<TodoItem>()
         if let items = try? modelContext.fetch(itemDescriptor) {
             for item in items {
-                todoItemsCache[item.id] = item
+                loadedItems[item.id] = item
             }
         }
+
+        // 全量替换缓存，避免残留已失效的 SwiftData 实例
+        daySectionsCache = loadedSections
+        todoItemsCache = loadedItems
+        refreshTrigger += 1
+    }
+
+    private func clearCachesAndState(clearUndo: Bool) {
+        todoItemsCache.removeAll()
+        daySectionsCache.removeAll()
+        focusRequestId = nil
+        if clearUndo {
+            undoManager.clear()
+        }
+        refreshTrigger += 1
+    }
+
+    private func isValid(model item: TodoItem) -> Bool {
+        guard item.isDeleted == false else { return false }
+        guard let modelContext else { return true }
+        return item.modelContext === modelContext
+    }
+
+    private func isValid(model section: DaySection) -> Bool {
+        guard section.isDeleted == false else { return false }
+        guard let modelContext else { return true }
+        return section.modelContext === modelContext
+    }
+
+    private var validTodoItems: [TodoItem] {
+        todoItemsCache.values.filter { isValid(model: $0) }
+    }
+
+    private var validDaySections: [DaySection] {
+        daySectionsCache.values.filter { isValid(model: $0) }
     }
 
     private func migrateCachedItemsIfNeeded() {
@@ -156,7 +202,7 @@ final class TodoStore {
         _ = refreshTrigger
 
         let startOfDay = Calendar.current.startOfDay(for: date)
-        return todoItemsCache.values
+        return validTodoItems
             .filter {
                 $0.containerKind == .scheduled
                     && Calendar.current.isDate($0.dayDate, inSameDayAs: startOfDay)
@@ -175,7 +221,7 @@ final class TodoStore {
         _ = refreshTrigger
 
         let targetKind: TodoContainerKind = isUrgent ? .longTermUrgent : .longTermImportant
-        return todoItemsCache.values
+        return validTodoItems
             .filter { $0.containerKind == targetKind }
             .sorted { $0.sortOrder < $1.sortOrder }
     }
@@ -203,7 +249,7 @@ final class TodoStore {
     /// 获取某月最新日期（仅 scheduled 容器）
     func latestScheduledDate(year: Int, month: Int) -> Date? {
         let calendar = Calendar.current
-        return todoItemsCache.values
+        return validTodoItems
             .filter {
                 $0.containerKind == .scheduled
                     && calendar.component(.year, from: $0.dayDate) == year
@@ -251,7 +297,7 @@ final class TodoStore {
     /// 获取某月的所有 DaySection
     func sections(year: Int, month: Int) -> [DaySection] {
         let calendar = Calendar.current
-        return daySectionsCache.values
+        return validDaySections
             .filter { section in
                 let y = calendar.component(.year, from: section.date)
                 let m = calendar.component(.month, from: section.date)
@@ -265,7 +311,7 @@ final class TodoStore {
         var uniqueMonths: [(year: Int, month: Int)] = []
         var seen = Set<String>()
 
-        let sortedSections = daySectionsCache.values.sorted { $0.date > $1.date }
+        let sortedSections = validDaySections.sorted { $0.date > $1.date }
         for section in sortedSections {
             let key = section.yearMonth
             if seen.contains(key) == false {
@@ -288,7 +334,7 @@ final class TodoStore {
     func getOrCreateSection(for date: Date) -> DaySection {
         let targetDate = Calendar.current.startOfDay(for: date)
 
-        if let existing = daySectionsCache.values.first(where: {
+        if let existing = validDaySections.first(where: {
             Calendar.current.isDate($0.date, inSameDayAs: targetDate)
         }) {
             return existing

@@ -1,16 +1,17 @@
 //
-//  DaySectionView.swift
+//  LongTermBucketView.swift
 //  todo block
 //
-//  Created by Claude on 2026/1/17.
+//  Created by Codex on 2026/2/16.
 //
 
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct DaySectionView: View {
-    @Bindable var section: DaySection
+struct LongTermBucketView: View {
+    let title: String
+    let isUrgent: Bool
     @Bindable var selectionManager: SelectionManager
     var onItemCreated: ((UUID) -> Void)?
     var onInteraction: (() -> Void)?
@@ -21,27 +22,24 @@ struct DaySectionView: View {
     @State private var dropState: TodoListDropState = .none
     @State private var isDropFinalizing: Bool = false
     @State private var itemFrames: [UUID: CGRect] = [:]
-    @State private var showDatePicker: Bool = false
-    @State private var selectedDate: Date = Date()
 
     private var store: TodoStore { TodoStore.shared }
 
     private var todoItems: [TodoItem] {
-        store.items(for: section.date)
+        store.longTermItems(isUrgent: isUrgent)
+    }
+
+    private var containerKind: TodoContainerKind {
+        isUrgent ? .longTermUrgent : .longTermImportant
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            DaySectionHeaderView(
-                title: section.title,
-                showDatePicker: $showDatePicker,
-                selectedDate: $selectedDate,
-                onTitleTap: onDateTitleTapped,
-                onConfirm: confirmDateSelection
-            )
+            LongTermBucketHeaderView(title: title)
 
-            DaySectionTodoListView(
-                sectionDate: section.date,
+            LongTermBucketListView(
+                coordinateSpaceName: "long-term-drop-area-\(title)",
+                destination: .longTerm(isUrgent: isUrgent),
                 items: todoItems,
                 selectionManager: selectionManager,
                 dropState: $dropState,
@@ -55,109 +53,61 @@ struct DaySectionView: View {
                 onCreateItemAfter: createNewItemAfter
             )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.accentColor.opacity(0.05))
         )
-        .onAppear {
-            selectedDate = section.date
-            isDropFinalizing = false
-        }
         .onChange(of: todoItems.dropResetSnapshot) { _, _ in
             dropState = .none
             isDropFinalizing = false
         }
     }
+}
 
-    private func onDateTitleTapped() {
-        selectedDate = section.date
-        showDatePicker = true
-    }
-
-    private func confirmDateSelection(_ newDate: Date) {
-        store.updateSectionDate(section, to: newDate)
-        showDatePicker = false
-    }
-
-    private func addNewItem() {
-        let newItem = store.createItem(dayDate: section.date)
+private extension LongTermBucketView {
+    func addNewItem() {
+        let newItem = store.createItem(
+            dayDate: Date(),
+            containerKind: containerKind
+        )
         selectionManager.handleSelect(
             item: newItem,
-            allItems: store.items(for: section.date),
+            allItems: todoItems,
             shiftPressed: false
         )
         onItemCreated?(newItem.id)
     }
 
-    private func createNewItemAfter(_ item: TodoItem) {
+    func createNewItemAfter(_ item: TodoItem) {
         let newItem = store.createItem(
-            dayDate: section.date,
+            dayDate: item.dayDate,
             afterItem: item,
-            indentLevel: item.indentLevel
+            indentLevel: item.indentLevel,
+            containerKind: containerKind
         )
         selectionManager.handleSelect(
             item: newItem,
-            allItems: store.items(for: section.date),
+            allItems: todoItems,
             shiftPressed: false
         )
         onItemCreated?(newItem.id)
     }
 }
 
-private struct DaySectionHeaderView: View {
+private struct LongTermBucketHeaderView: View {
     let title: String
-    @Binding var showDatePicker: Bool
-    @Binding var selectedDate: Date
-    let onTitleTap: () -> Void
-    let onConfirm: (Date) -> Void
 
     var body: some View {
-        HStack {
-            Button(title) {
-                onTitleTap()
-            }
-            .buttonStyle(.plain)
-            .font(.title3)
-            .bold()
-            .foregroundStyle(.primary)
-            .popover(isPresented: $showDatePicker) {
-                VStack(spacing: 12) {
-                    DatePicker(
-                        "选择日期",
-                        selection: $selectedDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
-
-                    HStack {
-                        Button("取消") {
-                            showDatePicker = false
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        Button("确认") {
-                            onConfirm(selectedDate)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(.horizontal)
-                }
-                .padding()
-                .frame(width: 300)
-            }
-
-            Spacer()
-        }
-        .padding(.bottom, 4)
+        Text(title)
+            .font(.headline)
     }
 }
 
-private struct DaySectionTodoListView: View {
-    let sectionDate: Date
+private struct LongTermBucketListView: View {
+    let coordinateSpaceName: String
+    let destination: TodoDropDestination
     let items: [TodoItem]
     @Bindable var selectionManager: SelectionManager
     @Binding var dropState: TodoListDropState
@@ -173,7 +123,7 @@ private struct DaySectionTodoListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if items.isEmpty {
-                DaySectionEmptyStateView(onAddItem: onAddItem)
+                LongTermBucketEmptyStateView(onAddItem: onAddItem)
             } else {
                 ForEach(items.indices, id: \.self) { index in
                     let item = items[index]
@@ -216,8 +166,8 @@ private struct DaySectionTodoListView: View {
                             onEnterPressed: { onCreateItemAfter(item) },
                             onDeletePressed: {
                                 if selectionManager.selectedItemIds.contains(item.id) {
-                                    selectionManager.deleteSelectedItems(store: store) { date in
-                                        store.items(for: date)
+                                    selectionManager.deleteSelectedItems(store: store) { _ in
+                                        items
                                     }
                                 }
                             },
@@ -245,7 +195,7 @@ private struct DaySectionTodoListView: View {
                             GeometryReader { proxy in
                                 Color.clear.preference(
                                     key: TodoDropItemFramePreferenceKey.self,
-                                    value: [item.id: proxy.frame(in: .named("todo-list-drop-area"))]
+                                    value: [item.id: proxy.frame(in: .named(coordinateSpaceName))]
                                 )
                             }
                         }
@@ -266,7 +216,7 @@ private struct DaySectionTodoListView: View {
         .onDrop(
             of: [.text],
             delegate: TodoDropDelegate(
-                destination: .scheduled(date: sectionDate),
+                destination: destination,
                 todoItems: items,
                 store: store,
                 dropState: $dropState,
@@ -276,43 +226,21 @@ private struct DaySectionTodoListView: View {
                 itemHeight: itemHeight
             )
         )
-        .coordinateSpace(name: "todo-list-drop-area")
+        .coordinateSpace(name: coordinateSpaceName)
         .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
             itemFrames = value
         }
     }
 }
 
-private struct DaySectionEmptyStateView: View {
+private struct LongTermBucketEmptyStateView: View {
     let onAddItem: () -> Void
 
     var body: some View {
-        Button(action: onAddItem) {
-            HStack(spacing: 4) {
-                Image(systemName: "plus.circle")
-                Text("添加待办")
-            }
-            .font(.system(size: 14))
-            .foregroundStyle(Color.accentColor)
+        Button("添加待办", systemImage: "plus") {
+            onAddItem()
         }
         .buttonStyle(.plain)
         .padding(.vertical, 8)
     }
-}
-
-#Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
-
-    let section = DaySection(date: Date(), title: "01-17")
-    container.mainContext.insert(section)
-
-    TodoStore.shared.initialize(with: container.mainContext)
-
-    return DaySectionView(
-        section: section,
-        selectionManager: SelectionManager()
-    )
-    .modelContainer(container)
-    .padding()
 }

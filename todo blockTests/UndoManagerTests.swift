@@ -19,8 +19,8 @@ final class UndoManagerTests: XCTestCase {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         descriptor = try ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
 
-        TodoStore.shared.initialize(with: descriptor.mainContext)
         TodoStore.shared.reset()
+        TodoStore.shared.initialize(with: descriptor.mainContext)
     }
 
     // MARK: - 测试撤销新增

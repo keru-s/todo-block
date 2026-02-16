@@ -19,8 +19,8 @@ final class TodoStoreTests: XCTestCase {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         descriptor = try ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
         
-        TodoStore.shared.initialize(with: descriptor.mainContext)
         TodoStore.shared.reset()
+        TodoStore.shared.initialize(with: descriptor.mainContext)
         
         // Clear shared store cache between tests (important because it's a singleton)
         // Since we re-initialize with a fresh context, it should reload from empty
@@ -277,6 +277,33 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(store.items(for: monthLatestEmptyDate).map(\.id), [longTermItem.id])
     }
 
+    func testInitializeReloadReplacesStaleCachesAfterExternalDeletion() throws {
+        let store = TodoStore.shared
+        let date = self.date(year: 2026, month: 2, day: 16)
+        let created = store.createItem(title: "to-delete-externally", dayDate: date)
+        XCTAssertEqual(store.items(for: date).map(\.id), [created.id])
+
+        descriptor.mainContext.delete(created)
+        try descriptor.mainContext.save()
+
+        store.initialize(with: descriptor.mainContext)
+
+        XCTAssertTrue(store.items(for: date).isEmpty)
+        XCTAssertNil(store.todoItemsCache[created.id])
+    }
+
+    func testItemsQuerySurvivesExternalDeletionWithoutReinitialize() throws {
+        let store = TodoStore.shared
+        let date = self.date(year: 2026, month: 2, day: 17)
+        let created = store.createItem(title: "externally-deleted", dayDate: date)
+        XCTAssertEqual(store.items(for: date).map(\.id), [created.id])
+
+        descriptor.mainContext.delete(created)
+        try descriptor.mainContext.save()
+
+        XCTAssertTrue(store.items(for: date).isEmpty)
+    }
+
     func testMoveItemToExistingMonthWithNilAfterItemInsertsAtHead() {
         let store = TodoStore.shared
         let source = store.createItem(
@@ -311,6 +338,176 @@ final class TodoStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(store.items(for: targetDate).map(\.title), ["head", "first", "second"])
+    }
+
+    func testCanCopyAndExportInScheduledMonthScope() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let inScope = store.createItem(title: "in-scope", dayDate: targetDate)
+        _ = store.createItem(title: "out-scope", dayDate: date(year: 2026, month: 1, day: 1))
+
+        let scope = TodoClipboardScope.scheduledMonth(year: 2026, month: 2)
+        let snapshot = TodoClipboardSelectionSnapshot(
+            focusedItemId: nil,
+            selectedItemIds: [inScope.id]
+        )
+
+        XCTAssertTrue(store.canCopy(scope: scope, selection: snapshot))
+        let markdown = store.exportMarkdown(scope: scope, selection: snapshot)
+        XCTAssertEqual(markdown, "- [ ] in-scope")
+    }
+
+    func testImportMarkdownScheduledMonthPrefersFocusedItem() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let focused = store.createItem(title: "focus", dayDate: targetDate)
+        _ = store.createItem(title: "tail", dayDate: targetDate, afterItem: focused)
+
+        let result = store.importMarkdown(
+            "- [ ] pasted",
+            scope: .scheduledMonth(year: 2026, month: 2),
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: focused.id,
+                selectedItemIds: []
+            )
+        )
+
+        guard
+            let result,
+            let created = store.todoItemsCache[result.focusedItemId]
+        else {
+            XCTFail("Expected pasted item")
+            return
+        }
+
+        XCTAssertEqual(result.createdItemIds, [created.id])
+        XCTAssertTrue(Calendar.current.isDate(created.dayDate, inSameDayAs: targetDate))
+        let orderedItems = store.items(for: targetDate)
+        guard
+            let focusedIndex = orderedItems.firstIndex(where: { $0.id == focused.id }),
+            focusedIndex + 1 < orderedItems.count
+        else {
+            XCTFail("Expected focused item followed by pasted item")
+            return
+        }
+        XCTAssertEqual(orderedItems[focusedIndex + 1].id, created.id)
+    }
+
+    func testImportMarkdownLongTermFallbacksToImportantContainer() {
+        let store = TodoStore.shared
+        let existing = store.createItem(
+            title: "existing",
+            dayDate: Date(),
+            containerKind: .longTermImportant
+        )
+
+        let result = store.importMarkdown(
+            "- [ ] pasted",
+            scope: .longTerm,
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: nil,
+                selectedItemIds: []
+            )
+        )
+
+        guard
+            let result,
+            let created = store.todoItemsCache[result.focusedItemId]
+        else {
+            XCTFail("Expected pasted item")
+            return
+        }
+
+        XCTAssertEqual(created.containerKind, .longTermImportant)
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [existing.id, created.id])
+    }
+
+    func testImportMarkdownTodayFallbacksToTodayTail() {
+        let store = TodoStore.shared
+        let todayExisting = store.createItem(title: "today-existing", dayDate: Date())
+
+        let result = store.importMarkdown(
+            "- [ ] pasted",
+            scope: .today,
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: nil,
+                selectedItemIds: []
+            )
+        )
+
+        guard
+            let result,
+            let created = store.todoItemsCache[result.focusedItemId]
+        else {
+            XCTFail("Expected pasted item")
+            return
+        }
+
+        XCTAssertEqual(store.todayItems().map(\.id), [todayExisting.id, created.id])
+        XCTAssertTrue(Calendar.current.isDateInToday(created.dayDate))
+    }
+
+    func testUpdateSectionDateMergesIntoExistingSection() {
+        let store = TodoStore.shared
+        let sourceDate = date(year: 2026, month: 2, day: 15)
+        let targetDate = date(year: 2026, month: 2, day: 18)
+
+        let sourceSection = store.getOrCreateSection(for: sourceDate)
+        _ = store.getOrCreateSection(for: targetDate)
+        let moved = store.createItem(title: "to-move", dayDate: sourceDate)
+
+        store.updateSectionDate(sourceSection, to: targetDate)
+
+        XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: targetDate))
+        XCTAssertNil(store.daySectionsCache[sourceSection.id])
+        XCTAssertEqual(
+            store.sections(year: 2026, month: 2)
+                .filter { Calendar.current.isDate($0.date, inSameDayAs: targetDate) }
+                .count,
+            1
+        )
+    }
+
+    func testUpdateSectionDateUpdatesSectionWhenTargetMissing() {
+        let store = TodoStore.shared
+        let sourceDate = date(year: 2026, month: 2, day: 15)
+        let targetDate = date(year: 2026, month: 2, day: 19)
+
+        let section = store.getOrCreateSection(for: sourceDate)
+        let moved = store.createItem(title: "to-update", dayDate: sourceDate)
+
+        store.updateSectionDate(section, to: targetDate)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd"
+        XCTAssertTrue(Calendar.current.isDate(section.date, inSameDayAs: targetDate))
+        XCTAssertEqual(section.title, formatter.string(from: targetDate))
+        XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: targetDate))
+    }
+
+    func testIndentAndOutdentItemRegisterUndoAndClampAtBounds() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "indent", dayDate: Date())
+        store.undoManager.clear()
+
+        store.indentItem(item)
+        XCTAssertEqual(item.indentLevel, 1)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.indentLevel, 0)
+
+        store.indentItem(item)
+        XCTAssertEqual(item.indentLevel, 1)
+        store.outdentItem(item)
+        XCTAssertEqual(item.indentLevel, 0)
+
+        item.indentLevel = TodoItem.maxIndentLevel
+        store.indentItem(item)
+        XCTAssertEqual(item.indentLevel, TodoItem.maxIndentLevel)
+
+        item.indentLevel = 0
+        store.outdentItem(item)
+        XCTAssertEqual(item.indentLevel, 0)
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

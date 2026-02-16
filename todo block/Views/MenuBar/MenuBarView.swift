@@ -10,22 +10,28 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuBarView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
 
-    private var store: TodoStore { TodoStore.shared }
+    private let indentWidth: CGFloat = 24
+    private let itemHeight: CGFloat = 28
 
     // 状态管理
     @State private var selectionManager = SelectionManager()
     @State private var dropState: TodoListDropState = .none
+    @State private var isDropFinalizing: Bool = false
     @State private var itemFrames: [UUID: CGRect] = [:]
+
+    private var store: TodoStore { TodoStore.shared }
 
     private var todayItems: [TodoItem] {
         store.todayItems()
     }
 
-    private let indentWidth: CGFloat = 24
-    private let itemHeight: CGFloat = 28
+    private var formattedToday: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd"
+        return formatter.string(from: Date())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,7 +42,7 @@ struct MenuBarView: View {
                 Spacer()
                 Text(formattedToday)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -67,14 +73,14 @@ struct MenuBarView: View {
                     .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
 
                 Spacer()
 
                 if selectionManager.selectedItemIds.count > 1 {
                     Text("已选 \(selectionManager.selectedItemIds.count) 项")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .padding(.trailing, 8)
                 }
 
@@ -84,7 +90,7 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
-                .foregroundColor(.blue)
+                .foregroundStyle(.blue)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -92,49 +98,55 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
-            if store.todoItemsCache.isEmpty {
-                store.initialize(with: modelContext)
+            bindClipboardContext()
+            isDropFinalizing = false
+        }
+        .gesture(
+            TapGesture().onEnded {
+                bindClipboardContext()
+                selectionManager.clearSelection()
             }
-            activateClipboardContext()
-        }
-        .onTapGesture {
-            activateClipboardContext()
-            // 点击空白处取消选择
-            selectionManager.clearSelection()
-        }
+        )
         .onChange(of: store.focusRequestId) { _, newValue in
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-            activateClipboardContext()
+            bindClipboardContext()
             selectionManager.restoreFocus(to: itemId)
         }
-        .onChange(of: todayItems.map(\.id)) { _, _ in
+        .onChange(of: todayItems.dropResetSnapshot) { _, _ in
             dropState = .none
-            activateClipboardContext()
+            isDropFinalizing = false
+            bindClipboardContext()
         }
         .onChange(of: selectionManager.focusedItemId) { _, _ in
-            activateClipboardContext()
+            bindClipboardContext()
         }
         .onChange(of: selectionManager.selectedItemIds) { _, _ in
-            activateClipboardContext()
+            bindClipboardContext()
         }
     }
 
     // MARK: - 待办列表（带拖拽支持）
 
     private var todoListView: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(todayItems.enumerated()), id: \.element.id) { index, item in
+        let items = todayItems
+
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(items.indices, id: \.self) { index in
+                let item = items[index]
                 VStack(spacing: 0) {
                     // 插入线（在当前项上方）
                     if case .insertAt(let insertIndex, let indentLevel) = dropState,
                         insertIndex == index
                     {
-                        insertionIndicator(indentLevel: indentLevel)
+                        TodoInsertionIndicator(
+                            indentLevel: indentLevel,
+                            indentWidth: indentWidth
+                        )
                     }
 
                     TodoItemView(
                         item: item,
-                        allItems: todayItems,
+                        allItems: items,
                         focusedItemId: $selectionManager.focusedItemId,
                         isSelected: selectionManager.selectedItemIds.contains(item.id),
                         hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
@@ -142,28 +154,28 @@ struct MenuBarView: View {
                         preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
                         verticalMoveDirection: selectionManager.verticalMoveDirection,
                         onSelect: { shiftPressed in
-                            activateClipboardContext()
+                            bindClipboardContext()
                             selectionManager.handleSelect(
-                                item: item, allItems: todayItems, shiftPressed: shiftPressed)
+                                item: item, allItems: items, shiftPressed: shiftPressed)
                         },
                         onFocus: { shiftPressed, cursorPosition in
-                            activateClipboardContext()
+                            bindClipboardContext()
                             selectionManager.handleSelect(
-                                item: item, allItems: todayItems, shiftPressed: shiftPressed,
+                                item: item, allItems: items, shiftPressed: shiftPressed,
                                 cursorPosition: cursorPosition)
                         },
                         onEnterPressed: { createNewItemAfter(item) },
                         onDeletePressed: {
                             if selectionManager.selectedItemIds.contains(item.id) {
                                 selectionManager.deleteSelectedItems(store: store) { _ in
-                                    return todayItems
+                                    return items
                                 }
                             }
                         },
                         onMoveUp: { position, horizontalOffset in
                             selectionManager.moveFocusUp(
                                 from: item,
-                                allItems: todayItems,
+                                allItems: items,
                                 cursorPosition: position,
                                 preferredHorizontalOffset: horizontalOffset
                             )
@@ -171,13 +183,13 @@ struct MenuBarView: View {
                         onMoveDown: { position, horizontalOffset in
                             selectionManager.moveFocusDown(
                                 from: item,
-                                allItems: todayItems,
+                                allItems: items,
                                 cursorPosition: position,
                                 preferredHorizontalOffset: horizontalOffset
                             )
                         },
                         onActivateInteraction: {
-                            activateClipboardContext()
+                            bindClipboardContext()
                         }
                     )
                     .background {
@@ -194,18 +206,22 @@ struct MenuBarView: View {
 
             // 插入线（在列表末尾）
             if case .insertAt(let insertIndex, let indentLevel) = dropState,
-                insertIndex == todayItems.count
+                insertIndex == items.count
             {
-                insertionIndicator(indentLevel: indentLevel)
+                TodoInsertionIndicator(
+                    indentLevel: indentLevel,
+                    indentWidth: indentWidth
+                )
             }
         }
         .onDrop(
             of: [.text],
             delegate: TodoDropDelegate(
                 destination: .scheduled(date: Date()),
-                todoItems: todayItems,
+                todoItems: items,
                 store: store,
                 dropState: $dropState,
+                isDropFinalizing: $isDropFinalizing,
                 itemFrames: itemFrames,
                 indentWidth: indentWidth,
                 itemHeight: itemHeight
@@ -216,29 +232,10 @@ struct MenuBarView: View {
         }
     }
 
-    // MARK: - 插入线指示器
-
-    private func insertionIndicator(indentLevel: Int) -> some View {
-        HStack(spacing: 0) {
-            Spacer()
-                .frame(width: 20 + CGFloat(indentLevel) * indentWidth)
-
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 6, height: 6)
-
-            Rectangle()
-                .fill(Color.accentColor)
-                .frame(height: 2)
-        }
-        .frame(height: 4)
-        .transition(.opacity)
-    }
-
     private var emptyStateView: some View {
         VStack {
             Text("今天没有待办事项")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .font(.system(size: 13))
 
             Button("添加待办") {
@@ -249,24 +246,20 @@ struct MenuBarView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
     }
+}
 
-    private var formattedToday: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd"
-        return formatter.string(from: Date())
-    }
+// MARK: - Actions
 
-    // MARK: - 逻辑操作
-
-    private func addTodayItem() {
-        activateClipboardContext()
+private extension MenuBarView {
+    func addTodayItem() {
+        bindClipboardContext()
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(dayDate: Date())
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
-    private func createNewItemAfter(_ item: TodoItem) {
-        activateClipboardContext()
+    func createNewItemAfter(_ item: TodoItem) {
+        bindClipboardContext()
         let newItem = store.createItem(
             dayDate: Date(),
             afterItem: item,
@@ -275,103 +268,12 @@ struct MenuBarView: View {
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
-    private func activateClipboardContext() {
-        TodoClipboardManager.shared.setActiveContext(
-            export: { exportSelectedItemsAsMarkdown() },
-            import: { markdown in importMarkdownItems(markdown) },
-            canCopy: { hasCopyCandidates() }
+    func bindClipboardContext() {
+        TodoClipboardManager.shared.activateListContext(
+            scope: .today,
+            store: store,
+            selectionManager: selectionManager
         )
-    }
-
-    private func hasCopyCandidates() -> Bool {
-        selectedOrFocusedItems().isEmpty == false
-    }
-
-    private func exportSelectedItemsAsMarkdown() -> String? {
-        let items = sortItemsForListOrder(selectedOrFocusedItems())
-        guard items.isEmpty == false else { return nil }
-        return MarkdownTodoCodec.encode(items: items, normalizeBaseIndent: true)
-    }
-
-    private func importMarkdownItems(_ markdown: String) -> Bool {
-        let target = resolvePasteTarget()
-        let parsedEntries = MarkdownTodoCodec.decode(
-            markdown,
-            baseIndentLevel: target.baseIndentLevel,
-            maxIndentLevel: TodoItem.maxIndentLevel
-        )
-        guard parsedEntries.isEmpty == false else { return false }
-
-        var createdItems: [TodoItem] = []
-        var currentAfterItem = target.afterItem
-
-        store.nsUndoManager.beginUndoGrouping()
-        defer {
-            store.nsUndoManager.endUndoGrouping()
-            store.nsUndoManager.setActionName("粘贴")
-        }
-
-        for entry in parsedEntries {
-            let newItem = store.createItem(
-                title: entry.title,
-                dayDate: target.dayDate,
-                afterItem: currentAfterItem,
-                indentLevel: entry.indentLevel
-            )
-            newItem.isCompleted = entry.isCompleted
-            newItem.updatedAt = Date()
-            createdItems.append(newItem)
-            currentAfterItem = newItem
-        }
-
-        guard let lastItem = createdItems.last else { return false }
-
-        selectionManager.selectedItemIds = Set(createdItems.map(\.id))
-        selectionManager.focusedItemId = lastItem.id
-        selectionManager.lastSelectedId = lastItem.id
-        store.scheduleSave()
-        return true
-    }
-
-    private func selectedOrFocusedItems() -> [TodoItem] {
-        let selectedItems = selectionManager.selectedItemIds.compactMap { store.todoItemsCache[$0] }
-        if selectedItems.isEmpty == false {
-            return selectedItems
-        }
-
-        guard
-            let focusedItemId = selectionManager.focusedItemId,
-            let focusedItem = store.todoItemsCache[focusedItemId]
-        else {
-            return []
-        }
-        return [focusedItem]
-    }
-
-    private func sortItemsForListOrder(_ items: [TodoItem]) -> [TodoItem] {
-        items.sorted { lhs, rhs in
-            lhs.sortOrder < rhs.sortOrder
-        }
-    }
-
-    private func resolvePasteTarget() -> (dayDate: Date, afterItem: TodoItem?, baseIndentLevel: Int) {
-        if
-            let focusedItemId = selectionManager.focusedItemId,
-            let focusedItem = store.todoItemsCache[focusedItemId],
-            Calendar.current.isDateInToday(focusedItem.dayDate)
-        {
-            return (focusedItem.dayDate, focusedItem, focusedItem.indentLevel)
-        }
-
-        let selectedItems = sortItemsForListOrder(
-            selectionManager.selectedItemIds.compactMap { store.todoItemsCache[$0] }
-                .filter { Calendar.current.isDateInToday($0.dayDate) && $0.containerKind == .scheduled }
-        )
-        if let lastSelectedItem = selectedItems.last {
-            return (lastSelectedItem.dayDate, lastSelectedItem, lastSelectedItem.indentLevel)
-        }
-
-        return (Date(), todayItems.last, 0)
     }
 }
 

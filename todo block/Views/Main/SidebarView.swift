@@ -14,10 +14,6 @@ struct SidebarView: View {
 
     @Binding var selectedDestination: SidebarDestination
 
-    init(selectedDestination: Binding<SidebarDestination>) {
-        self._selectedDestination = selectedDestination
-    }
-
     private var groupedMonths: [(year: Int, months: [Int])] {
         var yearMonths: [Int: Set<Int>] = [:]
 
@@ -32,6 +28,10 @@ struct SidebarView: View {
         return yearMonths.keys.sorted(by: >).map { year in
             (year: year, months: yearMonths[year, default: []].sorted(by: >))
         }
+    }
+
+    init(selectedDestination: Binding<SidebarDestination>) {
+        self._selectedDestination = selectedDestination
     }
 
     var body: some View {
@@ -84,138 +84,6 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 150)
-    }
-}
-
-struct LongTermRow: View {
-    let isSelected: Bool
-
-    var body: some View {
-        HStack {
-            Image(systemName: "infinity")
-            if isSelected {
-                Text("长期")
-                    .bold()
-            } else {
-                Text("长期")
-            }
-        }
-        .padding(.vertical, 4)
-        .contentShape(.rect)
-    }
-}
-
-struct MonthRow: View {
-    let year: Int
-    let month: Int
-    let isSelected: Bool
-
-    var body: some View {
-        HStack {
-            if isSelected {
-                Text("\(month) 月")
-                    .bold()
-            } else {
-                Text("\(month) 月")
-            }
-        }
-        .padding(.vertical, 4)
-        .contentShape(.rect)
-    }
-}
-
-struct SidebarLongTermDropDelegate: DropDelegate {
-    let store: TodoStore
-    let selectedDestination: Binding<SidebarDestination>
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.text]).first else {
-            return false
-        }
-
-        provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard
-                let idString = object as? String,
-                let itemId = UUID(uuidString: idString)
-            else {
-                return
-            }
-
-            Task { @MainActor in
-                guard let draggedItem = store.todoItemsCache[itemId] else { return }
-                let newIndent = SidebarDropIndentResolver.resolveIndent(
-                    draggedItem: draggedItem,
-                    afterItem: nil
-                )
-                store.moveItemWithChildren(
-                    draggedItem,
-                    to: .longTerm(isUrgent: false),
-                    afterItem: nil,
-                    newIndentLevel: newIndent
-                )
-                selectedDestination.wrappedValue = .longTerm
-            }
-        }
-
-        return true
-    }
-}
-
-struct SidebarMonthDropDelegate: DropDelegate {
-    let year: Int
-    let month: Int
-    let store: TodoStore
-    let selectedDestination: Binding<SidebarDestination>
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.text]).first else {
-            return false
-        }
-
-        provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard
-                let idString = object as? String,
-                let itemId = UUID(uuidString: idString)
-            else {
-                return
-            }
-
-            Task { @MainActor in
-                guard let draggedItem = store.todoItemsCache[itemId] else { return }
-
-                let target = store.tailItemForScheduledMonth(year: year, month: month)
-                let newIndent = SidebarDropIndentResolver.resolveIndent(
-                    draggedItem: draggedItem,
-                    afterItem: nil
-                )
-                store.moveItemWithChildren(
-                    draggedItem,
-                    to: .scheduled(date: target.date),
-                    afterItem: nil,
-                    newIndentLevel: newIndent
-                )
-                selectedDestination.wrappedValue = .month(year: year, month: month)
-            }
-        }
-
-        return true
-    }
-}
-
-enum SidebarDropIndentResolver {
-    static func resolveIndent(draggedItem: TodoItem, afterItem: TodoItem?) -> Int {
-        if let afterItem {
-            return min(draggedItem.indentLevel, afterItem.indentLevel + 1)
-        }
-        return 0
     }
 }
 

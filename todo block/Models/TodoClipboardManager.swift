@@ -29,6 +29,52 @@ final class TodoClipboardManager {
         canCopyHandler = canCopy
     }
 
+    func activateListContext(
+        scope: TodoClipboardScope,
+        store: TodoStore,
+        selectionManager: SelectionManager
+    ) {
+        setActiveContext(
+            export: {
+                store.exportMarkdown(
+                    scope: scope,
+                    selection: TodoClipboardSelectionSnapshot(
+                        focusedItemId: selectionManager.focusedItemId,
+                        selectedItemIds: selectionManager.selectedItemIds
+                    )
+                )
+            },
+            import: { markdown in
+                guard
+                    let result = store.importMarkdown(
+                        markdown,
+                        scope: scope,
+                        selection: TodoClipboardSelectionSnapshot(
+                            focusedItemId: selectionManager.focusedItemId,
+                            selectedItemIds: selectionManager.selectedItemIds
+                        )
+                    )
+                else {
+                    return false
+                }
+
+                selectionManager.selectedItemIds = Set(result.createdItemIds)
+                selectionManager.focusedItemId = result.focusedItemId
+                selectionManager.lastSelectedId = result.focusedItemId
+                return true
+            },
+            canCopy: {
+                store.canCopy(
+                    scope: scope,
+                    selection: TodoClipboardSelectionSnapshot(
+                        focusedItemId: selectionManager.focusedItemId,
+                        selectedItemIds: selectionManager.selectedItemIds
+                    )
+                )
+            }
+        )
+    }
+
     func clearContext() {
         exportHandler = nil
         importHandler = nil
