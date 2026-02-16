@@ -114,8 +114,10 @@ struct MenuBarView: View {
         }
         .onChange(of: todayItems.dropResetSnapshot) { _, _ in
             dropState = .none
-            isDropFinalizing = false
             bindClipboardContext()
+        }
+        .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
+            dropState = .none
         }
         .onChange(of: selectionManager.focusedItemId) { _, _ in
             bindClipboardContext()

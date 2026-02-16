@@ -19,7 +19,10 @@ struct TodoDropDelegate: DropDelegate {
     let itemHeight: CGFloat
 
     func dropEntered(info: DropInfo) {
-        guard isDropFinalizing == false else { return }
+        if isDropFinalizing {
+            // A new drag session entered; unlock updates after the previous drop finalized.
+            isDropFinalizing = false
+        }
         updateDropState(info: info)
     }
 
@@ -32,46 +35,46 @@ struct TodoDropDelegate: DropDelegate {
     }
 
     func dropExited(info: DropInfo) {
-        isDropFinalizing = false
-        dropState = .none
+        clearLocalDropState()
     }
 
     func performDrop(info: DropInfo) -> Bool {
         isDropFinalizing = true
 
         guard case .insertAt(let insertIndex, let indentLevel) = dropState else {
-            dropState = .none
+            finalizeDropState(broadcastReset: true)
             return false
         }
 
+        // Hide insertion indicator immediately while the provider resolves asynchronously.
+        dropState = .none
+
         let providers = info.itemProviders(for: [.text])
         guard let provider = providers.first else {
-            dropState = .none
+            finalizeDropState(broadcastReset: true)
             return false
         }
 
         provider.loadObject(ofClass: NSString.self) { data, _ in
-            guard let idString = data as? String,
-                let draggedId = UUID(uuidString: idString)
-            else {
-                Task { @MainActor in
-                    isDropFinalizing = false
-                    dropState = .none
-                }
-                return
-            }
-
             Task { @MainActor in
+                guard let idString = data as? String,
+                    let draggedId = UUID(uuidString: idString)
+                else {
+                    finalizeDropState(broadcastReset: true)
+                    return
+                }
+
                 performMove(draggedId: draggedId, toIndex: insertIndex, indentLevel: indentLevel)
-                dropState = .none
+                finalizeDropState(broadcastReset: true)
             }
         }
 
-        dropState = .none
         return true
     }
 
     private func updateDropState(info: DropInfo) {
+        guard info.hasItemsConforming(to: [.text]) else { return }
+
         let y = info.location.y
         let x = info.location.x
 
@@ -121,8 +124,6 @@ struct TodoDropDelegate: DropDelegate {
 
     private func performMove(draggedId: UUID, toIndex: Int, indentLevel: Int) {
         guard let draggedItem = store.todoItemsCache[draggedId] else {
-            isDropFinalizing = false
-            dropState = .none
             return
         }
 
@@ -177,6 +178,16 @@ struct TodoDropDelegate: DropDelegate {
             afterItem: afterItem,
             newIndentLevel: clampedIndentLevel
         )
+    }
+
+    private func clearLocalDropState() {
         dropState = .none
+    }
+
+    private func finalizeDropState(broadcastReset: Bool) {
+        clearLocalDropState()
+        if broadcastReset {
+            store.requestDropIndicatorReset()
+        }
     }
 }

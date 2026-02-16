@@ -66,7 +66,9 @@ struct DaySectionView: View {
         }
         .onChange(of: todoItems.dropResetSnapshot) { _, _ in
             dropState = .none
-            isDropFinalizing = false
+        }
+        .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
+            dropState = .none
         }
     }
 
