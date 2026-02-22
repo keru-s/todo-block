@@ -7,7 +7,6 @@
 
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
@@ -18,8 +17,8 @@ struct MenuBarView: View {
     // 状态管理
     @State private var selectionManager = SelectionManager()
     @State private var dropState: TodoListDropState = .none
-    @State private var isDropFinalizing: Bool = false
     @State private var itemFrames: [UUID: CGRect] = [:]
+    @State private var draggingItemId: UUID?
 
     private var store: TodoStore { TodoStore.shared }
 
@@ -59,6 +58,11 @@ struct MenuBarView: View {
                         .padding(.vertical, 4)
                 }
                 .frame(minHeight: 50, maxHeight: 350)
+                .contentShape(.rect)
+                .coordinateSpace(name: "menubar-drop-area")
+                .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
+                    itemFrames = value
+                }
             }
 
             Divider()
@@ -99,13 +103,12 @@ struct MenuBarView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             bindClipboardContext()
-            isDropFinalizing = false
         }
         .gesture(
             TapGesture().onEnded {
-                bindClipboardContext()
-                selectionManager.clearSelection()
-            }
+                handleBackgroundTap()
+            },
+            including: .gesture
         )
         .onChange(of: store.focusRequestId) { _, newValue in
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
@@ -144,6 +147,7 @@ struct MenuBarView: View {
                             indentLevel: indentLevel,
                             indentWidth: indentWidth
                         )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     TodoItemView(
@@ -155,6 +159,25 @@ struct MenuBarView: View {
                         cursorPosition: selectionManager.cursorPosition,
                         preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
                         verticalMoveDirection: selectionManager.verticalMoveDirection,
+                        useSystemDragAndDrop: false,
+                        handleDragCoordinateSpace: .named("menubar-drop-area"),
+                        onHandleDragBegan: {
+                            handleMenuBarDragBegan(itemId: item.id)
+                        },
+                        onHandleDragChanged: { location in
+                            handleMenuBarDragChanged(
+                                location: location,
+                                itemId: item.id,
+                                items: items
+                            )
+                        },
+                        onHandleDragEnded: { location in
+                            handleMenuBarDragEnded(
+                                location: location,
+                                itemId: item.id,
+                                items: items
+                            )
+                        },
                         onSelect: { shiftPressed in
                             bindClipboardContext()
                             selectionManager.handleSelect(
@@ -194,6 +217,7 @@ struct MenuBarView: View {
                             bindClipboardContext()
                         }
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         GeometryReader { proxy in
                             Color.clear.preference(
@@ -214,24 +238,11 @@ struct MenuBarView: View {
                     indentLevel: indentLevel,
                     indentWidth: indentWidth
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onDrop(
-            of: [.text],
-            delegate: TodoDropDelegate(
-                destination: .scheduled(date: Date()),
-                todoItems: items,
-                store: store,
-                dropState: $dropState,
-                isDropFinalizing: $isDropFinalizing,
-                itemFrames: itemFrames,
-                indentWidth: indentWidth,
-                itemHeight: itemHeight
-            ))
-        .coordinateSpace(name: "menubar-drop-area")
-        .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
-            itemFrames = value
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
     }
 
     private var emptyStateView: some View {
@@ -275,6 +286,52 @@ private extension MenuBarView {
             scope: .today,
             store: store,
             selectionManager: selectionManager
+        )
+    }
+
+    func handleBackgroundTap() {
+        bindClipboardContext()
+        selectionManager.clearSelection()
+    }
+
+    func handleMenuBarDragBegan(itemId: UUID) {
+        draggingItemId = itemId
+    }
+
+    func handleMenuBarDragChanged(location: CGPoint, itemId: UUID, items: [TodoItem]) {
+        guard draggingItemId == itemId else { return }
+        dropState = MenuBarManualReorderEngine.dropState(
+            for: location,
+            items: items,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+    }
+
+    func handleMenuBarDragEnded(location: CGPoint, itemId: UUID, items: [TodoItem]) {
+        guard draggingItemId == itemId else { return }
+
+        let finalDropState = MenuBarManualReorderEngine.dropState(
+            for: location,
+            items: items,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+        dropState = finalDropState
+
+        defer {
+            draggingItemId = nil
+            dropState = .none
+        }
+
+        MenuBarManualReorderEngine.performMove(
+            draggedId: itemId,
+            dropState: finalDropState,
+            items: items,
+            destination: .scheduled(date: Date()),
+            store: store
         )
     }
 }

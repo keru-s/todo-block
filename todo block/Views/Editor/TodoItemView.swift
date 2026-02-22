@@ -17,6 +17,11 @@ struct TodoItemView: View {
     var cursorPosition: Int = 0
     var preferredHorizontalOffset: CGFloat? = nil
     var verticalMoveDirection: VerticalMoveDirection? = nil
+    var useSystemDragAndDrop: Bool = true
+    var handleDragCoordinateSpace: CoordinateSpace = .global
+    var onHandleDragBegan: (() -> Void)? = nil
+    var onHandleDragChanged: ((CGPoint) -> Void)? = nil
+    var onHandleDragEnded: ((CGPoint) -> Void)? = nil
 
     var onSelect: (Bool) -> Void = { _ in }
     var onFocus: (Bool, Int?) -> Void = { _, _ in }
@@ -49,7 +54,12 @@ struct TodoItemView: View {
 
             TodoItemDragHandleView(
                 isHovering: $isHoveringDragHandle,
-                item: item
+                item: item,
+                useSystemDragAndDrop: useSystemDragAndDrop,
+                dragCoordinateSpace: handleDragCoordinateSpace,
+                onManualDragBegan: onHandleDragBegan,
+                onManualDragChanged: onHandleDragChanged,
+                onManualDragEnded: onHandleDragEnded
             )
 
             TodoItemCheckboxView(
@@ -138,9 +148,15 @@ struct TodoItemView: View {
 private struct TodoItemDragHandleView: View {
     @Binding var isHovering: Bool
     let item: TodoItem
+    let useSystemDragAndDrop: Bool
+    let dragCoordinateSpace: CoordinateSpace
+    let onManualDragBegan: (() -> Void)?
+    let onManualDragChanged: ((CGPoint) -> Void)?
+    let onManualDragEnded: ((CGPoint) -> Void)?
+    @State private var hasStartedManualDrag: Bool = false
 
     var body: some View {
-        Rectangle()
+        let handle = Rectangle()
             .fill(isHovering ? Color.gray.opacity(0.5) : Color.clear)
             .frame(width: 20, height: 20)
             .overlay {
@@ -153,9 +169,31 @@ private struct TodoItemDragHandleView: View {
             .onHover { hovering in
                 isHovering = hovering
             }
-            .draggable(item.id.uuidString) {
-                TodoItemDragPreviewView(item: item)
-            }
+
+        if useSystemDragAndDrop {
+            handle
+                .draggable(item.id.uuidString) {
+                    TodoItemDragPreviewView(item: item)
+                }
+        } else {
+            handle
+                .gesture(
+                    DragGesture(minimumDistance: 2, coordinateSpace: dragCoordinateSpace)
+                        .onChanged { value in
+                            if hasStartedManualDrag == false {
+                                hasStartedManualDrag = true
+                                onManualDragBegan?()
+                            }
+                            onManualDragChanged?(value.location)
+                        }
+                        .onEnded { value in
+                            if hasStartedManualDrag {
+                                onManualDragEnded?(value.location)
+                            }
+                            hasStartedManualDrag = false
+                        }
+                )
+        }
     }
 }
 
