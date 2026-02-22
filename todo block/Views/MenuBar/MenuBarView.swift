@@ -9,7 +9,11 @@ import SwiftData
 import SwiftUI
 
 struct MenuBarView: View {
-    @Environment(\.openWindow) private var openWindow
+    let onOpenMainWindow: () -> Void
+
+    init(onOpenMainWindow: @escaping () -> Void = {}) {
+        self.onOpenMainWindow = onOpenMainWindow
+    }
 
     private let indentWidth: CGFloat = 24
     private let itemHeight: CGFloat = 28
@@ -89,8 +93,7 @@ struct MenuBarView: View {
                 }
 
                 Button("打开应用") {
-                    openWindow(id: "mainWindow")
-                    NSApp.activate(ignoringOtherApps: true)
+                    onOpenMainWindow()
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))

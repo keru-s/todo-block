@@ -33,6 +33,9 @@ struct todo_blockApp: App {
                     // 初始化 TodoStore 单例
                     TodoStore.shared.initialize(with: sharedModelContainer.mainContext)
                 }
+                .background {
+                    MenuBarStatusItemBootstrapView(modelContainer: sharedModelContainer)
+                }
         }
         .modelContainer(sharedModelContainer)
         .commands {
@@ -91,17 +94,6 @@ struct todo_blockApp: App {
                 .keyboardShortcut("a", modifiers: .command)
             }
         }
-
-        // 菜单栏组件
-        MenuBarExtra("待办", systemImage: "checklist") {
-            MenuBarView()
-                .onAppear {
-                    // 确保菜单栏也初始化 TodoStore
-                    TodoStore.shared.initialize(with: sharedModelContainer.mainContext)
-                }
-        }
-        .menuBarExtraStyle(.window)
-        .modelContainer(sharedModelContainer)
     }
 
     private func performCopy() {
