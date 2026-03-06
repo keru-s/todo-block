@@ -16,54 +16,16 @@ enum MenuBarManualReorderEngine {
         itemHeight: CGFloat,
         indentWidth: CGFloat
     ) -> TodoListDropState {
-        if items.isEmpty {
-            return .insertAt(index: 0, indentLevel: 0)
-        }
-
-        let y = location.y
-        let x = location.x
-        let availableFrames = items.compactMap { itemFrames[$0.id] }
-        if let minY = availableFrames.map({ $0.minY }).min(),
-            let maxY = availableFrames.map({ $0.maxY }).max(),
-            (y < minY - itemHeight || y > maxY + itemHeight)
-        {
-            return .none
-        }
-
-        var insertIndex = items.count
-        let hasCompleteFrames = items.allSatisfy { itemFrames[$0.id] != nil }
-
-        if hasCompleteFrames {
-            for (index, item) in items.enumerated() {
-                guard let frame = itemFrames[item.id] else { continue }
-                if y < frame.midY {
-                    insertIndex = index
-                    break
-                }
-            }
-        } else {
-            var accumulatedHeight: CGFloat = 0
-            for (index, item) in items.enumerated() {
-                let estimatedHeight = estimatedItemHeight(for: item, defaultHeight: itemHeight)
-                if y < accumulatedHeight + estimatedHeight / 2 {
-                    insertIndex = index
-                    break
-                }
-                accumulatedHeight += estimatedHeight
-            }
-        }
-
-        let relativeX = max(0, x)
-        var indentLevel = Int(relativeX / indentWidth)
-
-        if insertIndex > 0 {
-            indentLevel = min(indentLevel, items[insertIndex - 1].indentLevel + 1)
-        } else {
-            indentLevel = 0
-        }
-
-        indentLevel = min(indentLevel, TodoItem.maxIndentLevel)
-        return .insertAt(index: insertIndex, indentLevel: indentLevel)
+        TodoDropLocationEngine.dropState(
+            for: location,
+            items: items,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth,
+            baseX: 0,
+            constrainsToVerticalRange: true,
+            verticalSlack: itemHeight
+        )
     }
 
     static func performMove(
@@ -84,9 +46,4 @@ enum MenuBarManualReorderEngine {
         )
     }
 
-    private static func estimatedItemHeight(for item: TodoItem, defaultHeight: CGFloat) -> CGFloat {
-        let explicitLineCount = max(1, item.title.components(separatedBy: "\n").count)
-        let multiLineHeight = CGFloat(explicitLineCount) * 20 + 8
-        return max(defaultHeight, multiLineHeight)
-    }
 }

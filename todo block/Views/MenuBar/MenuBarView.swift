@@ -17,6 +17,7 @@ struct MenuBarView: View {
 
     private let indentWidth: CGFloat = 24
     private let itemHeight: CGFloat = 28
+    private let dropAreaInset = TodoInsertionIndicator.visualHeight + 8
 
     // 状态管理
     @State private var selectionManager = SelectionManager()
@@ -138,21 +139,9 @@ struct MenuBarView: View {
     private var todoListView: some View {
         let items = todayItems
 
-        return LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(items.indices, id: \.self) { index in
-                let item = items[index]
-                VStack(spacing: 0) {
-                    // 插入线（在当前项上方）
-                    if case .insertAt(let insertIndex, let indentLevel) = dropState,
-                        insertIndex == index
-                    {
-                        TodoInsertionIndicator(
-                            indentLevel: indentLevel,
-                            indentWidth: indentWidth
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
+        return ZStack(alignment: .topLeading) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(items.enumerated(), id: \.element.id) { _, item in
                     TodoItemView(
                         item: item,
                         allItems: items,
@@ -232,17 +221,15 @@ struct MenuBarView: View {
                     .id(item.id)
                 }
             }
+            .padding(.vertical, dropAreaInset)
 
-            // 插入线（在列表末尾）
-            if case .insertAt(let insertIndex, let indentLevel) = dropState,
-                insertIndex == items.count
-            {
-                TodoInsertionIndicator(
-                    indentLevel: indentLevel,
-                    indentWidth: indentWidth
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            TodoDropIndicatorOverlay(
+                dropState: dropState,
+                items: items,
+                itemFrames: itemFrames,
+                itemHeight: itemHeight,
+                indentWidth: indentWidth
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)

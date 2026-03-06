@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum TodoListDropState: Equatable {
     case none
@@ -43,6 +44,8 @@ struct TodoDropItemFramePreferenceKey: PreferenceKey {
 }
 
 struct TodoInsertionIndicator: View {
+    static let visualHeight: CGFloat = 4
+
     let indentLevel: Int
     let indentWidth: CGFloat
 
@@ -59,7 +62,77 @@ struct TodoInsertionIndicator: View {
                 .fill(Color.accentColor)
                 .frame(height: 2)
         }
-        .frame(height: 4)
+        .frame(height: Self.visualHeight)
         .transition(.opacity)
+    }
+}
+
+struct TodoDropIndicatorOverlay: View {
+    let dropState: TodoListDropState
+    let items: [TodoItem]
+    let itemFrames: [UUID: CGRect]
+    let itemHeight: CGFloat
+    let indentWidth: CGFloat
+
+    var body: some View {
+        if case .insertAt(_, let indentLevel) = dropState,
+            let indicatorTopY = TodoDropLocationEngine.indicatorTopY(
+                for: dropState,
+                items: items,
+                itemFrames: itemFrames,
+                itemHeight: itemHeight
+            )
+        {
+            TodoInsertionIndicator(
+                indentLevel: indentLevel,
+                indentWidth: indentWidth
+            )
+            .offset(y: indicatorTopY)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+struct TodoDropGutterView: View {
+    let index: Int
+    let visualHeight: CGFloat
+    let hitHeight: CGFloat
+    let destination: TodoDropDestination
+    let items: [TodoItem]
+    let store: TodoStore
+    @Binding var dropState: TodoListDropState
+    let indentWidth: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Color.clear
+
+            if case .insertAt(let currentIndex, let indentLevel) = dropState,
+                currentIndex == index
+            {
+                TodoInsertionIndicator(
+                    indentLevel: indentLevel,
+                    indentWidth: indentWidth
+                )
+            }
+        }
+        .frame(height: visualHeight)
+        .overlay {
+            Color.clear
+                .frame(height: hitHeight)
+                .contentShape(.rect)
+                .onDrop(
+                    of: [.text],
+                    delegate: TodoBoundaryDropDelegate(
+                        insertIndex: index,
+                        destination: destination,
+                        todoItems: items,
+                        store: store,
+                        dropState: $dropState,
+                        indentWidth: indentWidth
+                    )
+                )
+                .allowsHitTesting(true)
+        }
     }
 }

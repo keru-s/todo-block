@@ -13,23 +13,17 @@ struct TodoDropDelegate: DropDelegate {
     let todoItems: [TodoItem]
     let store: TodoStore
     @Binding var dropState: TodoListDropState
-    @Binding var isDropFinalizing: Bool
     let itemFrames: [UUID: CGRect]
     let indentWidth: CGFloat
     let itemHeight: CGFloat
 
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
     func dropEntered(info: DropInfo) {
-        if isDropFinalizing {
-            // A new drag session entered; unlock updates after the previous drop finalized.
-            isDropFinalizing = false
-        }
         updateDropState(info: info)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard isDropFinalizing == false else {
-            return DropProposal(operation: .move)
-        }
         updateDropState(info: info)
         return DropProposal(operation: .move)
     }
@@ -39,20 +33,17 @@ struct TodoDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        isDropFinalizing = true
+        let resolvedDrop = resolveDrop(for: info)
+        dragCoordinator.finishSystemDrag()
+        finalizeDropState(broadcastReset: true)
 
-        guard case .insertAt(let insertIndex, let indentLevel) = dropState else {
-            finalizeDropState(broadcastReset: true)
-            return false
+        guard let resolvedDrop else {
+            return true
         }
-
-        // Hide insertion indicator immediately while the provider resolves asynchronously.
-        dropState = .none
 
         let providers = info.itemProviders(for: [.text])
         guard let provider = providers.first else {
-            finalizeDropState(broadcastReset: true)
-            return false
+            return true
         }
 
         provider.loadObject(ofClass: NSString.self) { data, _ in
@@ -60,12 +51,14 @@ struct TodoDropDelegate: DropDelegate {
                 guard let idString = data as? String,
                     let draggedId = UUID(uuidString: idString)
                 else {
-                    finalizeDropState(broadcastReset: true)
                     return
                 }
 
-                performMove(draggedId: draggedId, toIndex: insertIndex, indentLevel: indentLevel)
-                finalizeDropState(broadcastReset: true)
+                performMove(
+                    draggedId: draggedId,
+                    toIndex: resolvedDrop.index,
+                    indentLevel: resolvedDrop.indentLevel
+                )
             }
         }
 
@@ -74,52 +67,17 @@ struct TodoDropDelegate: DropDelegate {
 
     private func updateDropState(info: DropInfo) {
         guard info.hasItemsConforming(to: [.text]) else { return }
-
-        let y = info.location.y
-        let x = info.location.x
-
-        var insertIndex = todoItems.count
-        let hasCompleteFrames = todoItems.allSatisfy { itemFrames[$0.id] != nil }
-
-        if hasCompleteFrames {
-            for (index, item) in todoItems.enumerated() {
-                guard let frame = itemFrames[item.id] else { continue }
-                if y < frame.midY {
-                    insertIndex = index
-                    break
-                }
-            }
-        } else {
-            var accumulatedHeight: CGFloat = 0
-            for (index, item) in todoItems.enumerated() {
-                let estimatedHeight = estimatedItemHeight(for: item)
-                if y < accumulatedHeight + estimatedHeight / 2 {
-                    insertIndex = index
-                    break
-                }
-                accumulatedHeight += estimatedHeight
-            }
+        guard dragCoordinator.hasActiveSystemDrag else {
+            clearLocalDropState()
+            return
         }
-
-        let baseX: CGFloat = 20
-        let relativeX = max(0, x - baseX)
-        var indentLevel = Int(relativeX / indentWidth)
-
-        if insertIndex > 0 {
-            let previousItem = todoItems[insertIndex - 1]
-            indentLevel = min(indentLevel, previousItem.indentLevel + 1)
-        } else {
-            indentLevel = 0
-        }
-
-        indentLevel = min(indentLevel, TodoItem.maxIndentLevel)
-        dropState = .insertAt(index: insertIndex, indentLevel: indentLevel)
-    }
-
-    private func estimatedItemHeight(for item: TodoItem) -> CGFloat {
-        let explicitLineCount = max(1, item.title.components(separatedBy: "\n").count)
-        let multiLineHeight = CGFloat(explicitLineCount) * 20 + 8
-        return max(itemHeight, multiLineHeight)
+        dropState = TodoDropLocationEngine.dropState(
+            for: info.location,
+            items: todoItems,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
     }
 
     private func performMove(draggedId: UUID, toIndex: Int, indentLevel: Int) {
@@ -131,6 +89,123 @@ struct TodoDropDelegate: DropDelegate {
             destination: destination,
             store: store
         )
+    }
+
+    private func clearLocalDropState() {
+        dropState = .none
+    }
+
+    private func resolveDrop(for info: DropInfo) -> TodoResolvedDrop? {
+        guard info.hasItemsConforming(to: [.text]) else { return nil }
+        guard dragCoordinator.hasActiveSystemDrag else { return nil }
+        return TodoDropLocationEngine.resolve(
+            location: info.location,
+            items: todoItems,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+    }
+
+    private func finalizeDropState(broadcastReset: Bool) {
+        clearLocalDropState()
+        if broadcastReset {
+            store.requestDropIndicatorReset()
+        }
+    }
+}
+
+struct TodoBoundaryDropDelegate: DropDelegate {
+    let insertIndex: Int
+    let destination: TodoDropDestination
+    let todoItems: [TodoItem]
+    let store: TodoStore
+    @Binding var dropState: TodoListDropState
+    let indentWidth: CGFloat
+
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
+    func dropEntered(info: DropInfo) {
+        updateDropState(info: info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropState(info: info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        clearLocalDropState()
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let resolvedDrop = resolveDrop(for: info)
+        dragCoordinator.finishSystemDrag()
+        finalizeDropState(broadcastReset: true)
+
+        guard let resolvedDrop else {
+            return true
+        }
+
+        guard let provider = info.itemProviders(for: [.text]).first else {
+            return true
+        }
+
+        provider.loadObject(ofClass: NSString.self) { data, _ in
+            Task { @MainActor in
+                guard let idString = data as? String,
+                    let draggedId = UUID(uuidString: idString)
+                else {
+                    return
+                }
+
+                TodoReorderMoveEngine.performMove(
+                    draggedId: draggedId,
+                    toIndex: resolvedDrop.index,
+                    indentLevel: resolvedDrop.indentLevel,
+                    items: todoItems,
+                    destination: destination,
+                    store: store
+                )
+            }
+        }
+
+        return true
+    }
+
+    private func updateDropState(info: DropInfo) {
+        guard info.hasItemsConforming(to: [.text]) else { return }
+        guard dragCoordinator.hasActiveSystemDrag else {
+            clearLocalDropState()
+            return
+        }
+        dropState = .insertAt(
+            index: insertIndex,
+            indentLevel: resolvedIndentLevel(for: info.location.x)
+        )
+    }
+
+    private func resolveDrop(for info: DropInfo) -> TodoResolvedDrop? {
+        guard info.hasItemsConforming(to: [.text]) else { return nil }
+        guard dragCoordinator.hasActiveSystemDrag else { return nil }
+        return TodoResolvedDrop(
+            index: insertIndex,
+            indentLevel: resolvedIndentLevel(for: info.location.x)
+        )
+    }
+
+    private func resolvedIndentLevel(for x: CGFloat) -> Int {
+        let baseX: CGFloat = 20
+        let relativeX = max(0, x - baseX)
+        var indentLevel = Int(relativeX / indentWidth)
+
+        if insertIndex > 0 {
+            indentLevel = min(indentLevel, todoItems[insertIndex - 1].indentLevel + 1)
+        } else {
+            indentLevel = 0
+        }
+
+        return min(indentLevel, TodoItem.maxIndentLevel)
     }
 
     private func clearLocalDropState() {

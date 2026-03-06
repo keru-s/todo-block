@@ -155,6 +155,8 @@ private struct TodoItemDragHandleView: View {
     let onManualDragEnded: ((CGPoint) -> Void)?
     @State private var hasStartedManualDrag: Bool = false
 
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
     var body: some View {
         let handle = Rectangle()
             .fill(isHovering ? Color.gray.opacity(0.5) : Color.clear)
@@ -172,7 +174,10 @@ private struct TodoItemDragHandleView: View {
 
         if useSystemDragAndDrop {
             handle
-                .draggable(item.id.uuidString) {
+                .onDrag {
+                    dragCoordinator.beginSystemDrag(itemID: item.id)
+                    return NSItemProvider(object: item.id.uuidString as NSString)
+                } preview: {
                     TodoItemDragPreviewView(item: item)
                 }
         } else {

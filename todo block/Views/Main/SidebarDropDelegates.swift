@@ -12,11 +12,14 @@ struct SidebarLongTermDropDelegate: DropDelegate {
     let store: TodoStore
     let selectedDestination: Binding<SidebarDestination>
 
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        dragCoordinator.finishSystemDrag()
         guard let provider = info.itemProviders(for: [.text]).first else {
             return false
         }
@@ -55,11 +58,14 @@ struct SidebarMonthDropDelegate: DropDelegate {
     let store: TodoStore
     let selectedDestination: Binding<SidebarDestination>
 
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        dragCoordinator.finishSystemDrag()
         guard let provider = info.itemProviders(for: [.text]).first else {
             return false
         }

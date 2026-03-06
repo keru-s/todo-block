@@ -16,11 +16,7 @@ struct DaySectionView: View {
     var onInteraction: (() -> Void)?
 
     private let indentWidth: CGFloat = 24
-    private let itemHeight: CGFloat = 28
-
     @State private var dropState: TodoListDropState = .none
-    @State private var isDropFinalizing: Bool = false
-    @State private var itemFrames: [UUID: CGRect] = [:]
     @State private var showDatePicker: Bool = false
     @State private var selectedDate: Date = Date()
 
@@ -45,10 +41,7 @@ struct DaySectionView: View {
                 items: todoItems,
                 selectionManager: selectionManager,
                 dropState: $dropState,
-                isDropFinalizing: $isDropFinalizing,
-                itemFrames: $itemFrames,
                 indentWidth: indentWidth,
-                itemHeight: itemHeight,
                 store: store,
                 onInteraction: onInteraction,
                 onAddItem: addNewItem,
@@ -62,7 +55,6 @@ struct DaySectionView: View {
         )
         .onAppear {
             selectedDate = section.date
-            isDropFinalizing = false
         }
         .onChange(of: todoItems.dropResetSnapshot) { _, _ in
             dropState = .none
@@ -163,124 +155,120 @@ private struct DaySectionTodoListView: View {
     let items: [TodoItem]
     @Bindable var selectionManager: SelectionManager
     @Binding var dropState: TodoListDropState
-    @Binding var isDropFinalizing: Bool
-    @Binding var itemFrames: [UUID: CGRect]
     let indentWidth: CGFloat
-    let itemHeight: CGFloat
     let store: TodoStore
     let onInteraction: (() -> Void)?
     let onAddItem: () -> Void
     let onCreateItemAfter: (TodoItem) -> Void
 
+    private let topDropZoneVisualHeight: CGFloat = 4
+    private let topDropZoneHitHeight: CGFloat = 24
+    private let middleDropZoneVisualHeight: CGFloat = 2
+    private let middleDropZoneHitHeight: CGFloat = 14
+    private let bottomDropZoneVisualHeight: CGFloat = 4
+    private let bottomDropZoneHitHeight: CGFloat = 18
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            TodoDropGutterView(
+                index: 0,
+                visualHeight: topDropZoneVisualHeight,
+                hitHeight: topDropZoneHitHeight,
+                destination: .scheduled(date: sectionDate),
+                items: items,
+                store: store,
+                dropState: $dropState,
+                indentWidth: indentWidth
+            )
+
             if items.isEmpty {
                 DaySectionEmptyStateView(onAddItem: onAddItem)
-            } else {
-                ForEach(items.indices, id: \.self) { index in
-                    let item = items[index]
-                    VStack(spacing: 0) {
-                        if case .insertAt(let insertIndex, let indentLevel) = dropState,
-                            insertIndex == index
-                        {
-                            TodoInsertionIndicator(
-                                indentLevel: indentLevel,
-                                indentWidth: indentWidth
-                            )
-                        }
-
-                        TodoItemView(
-                            item: item,
-                            allItems: items,
-                            focusedItemId: $selectionManager.focusedItemId,
-                            isSelected: selectionManager.selectedItemIds.contains(item.id),
-                            hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
-                            cursorPosition: selectionManager.cursorPosition,
-                            preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
-                            verticalMoveDirection: selectionManager.verticalMoveDirection,
-                            onSelect: { shiftPressed in
-                                onInteraction?()
-                                selectionManager.handleSelect(
-                                    item: item,
-                                    allItems: items,
-                                    shiftPressed: shiftPressed
-                                )
-                            },
-                            onFocus: { shiftPressed, cursorPosition in
-                                onInteraction?()
-                                selectionManager.handleSelect(
-                                    item: item,
-                                    allItems: items,
-                                    shiftPressed: shiftPressed,
-                                    cursorPosition: cursorPosition
-                                )
-                            },
-                            onEnterPressed: { onCreateItemAfter(item) },
-                            onDeletePressed: {
-                                if selectionManager.selectedItemIds.contains(item.id) {
-                                    selectionManager.deleteSelectedItems(store: store) { date in
-                                        store.items(for: date)
-                                    }
-                                }
-                            },
-                            onMoveUp: { position, horizontalOffset in
-                                selectionManager.moveFocusUp(
-                                    from: item,
-                                    allItems: items,
-                                    cursorPosition: position,
-                                    preferredHorizontalOffset: horizontalOffset
-                                )
-                            },
-                            onMoveDown: { position, horizontalOffset in
-                                selectionManager.moveFocusDown(
-                                    from: item,
-                                    allItems: items,
-                                    cursorPosition: position,
-                                    preferredHorizontalOffset: horizontalOffset
-                                )
-                            },
-                            onActivateInteraction: {
-                                onInteraction?()
-                            }
+                    .contentShape(.rect)
+                    .onDrop(
+                        of: [.text],
+                        delegate: TodoBoundaryDropDelegate(
+                            insertIndex: 0,
+                            destination: .scheduled(date: sectionDate),
+                            todoItems: items,
+                            store: store,
+                            dropState: $dropState,
+                            indentWidth: indentWidth
                         )
-                        .background {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: TodoDropItemFramePreferenceKey.self,
-                                    value: [item.id: proxy.frame(in: .named("todo-list-drop-area"))]
-                                )
+                    )
+            } else {
+                ForEach(items.enumerated(), id: \.element.id) { index, item in
+                    TodoItemView(
+                        item: item,
+                        allItems: items,
+                        focusedItemId: $selectionManager.focusedItemId,
+                        isSelected: selectionManager.selectedItemIds.contains(item.id),
+                        hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
+                        cursorPosition: selectionManager.cursorPosition,
+                        preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
+                        verticalMoveDirection: selectionManager.verticalMoveDirection,
+                        onSelect: { shiftPressed in
+                            onInteraction?()
+                            selectionManager.handleSelect(
+                                item: item,
+                                allItems: items,
+                                shiftPressed: shiftPressed
+                            )
+                        },
+                        onFocus: { shiftPressed, cursorPosition in
+                            onInteraction?()
+                            selectionManager.handleSelect(
+                                item: item,
+                                allItems: items,
+                                shiftPressed: shiftPressed,
+                                cursorPosition: cursorPosition
+                            )
+                        },
+                        onEnterPressed: { onCreateItemAfter(item) },
+                        onDeletePressed: {
+                            if selectionManager.selectedItemIds.contains(item.id) {
+                                selectionManager.deleteSelectedItems(store: store) { date in
+                                    store.items(for: date)
+                                }
                             }
+                        },
+                        onMoveUp: { position, horizontalOffset in
+                            selectionManager.moveFocusUp(
+                                from: item,
+                                allItems: items,
+                                cursorPosition: position,
+                                preferredHorizontalOffset: horizontalOffset
+                            )
+                        },
+                        onMoveDown: { position, horizontalOffset in
+                            selectionManager.moveFocusDown(
+                                from: item,
+                                allItems: items,
+                                cursorPosition: position,
+                                preferredHorizontalOffset: horizontalOffset
+                            )
+                        },
+                        onActivateInteraction: {
+                            onInteraction?()
                         }
-                        .id(item.id)
-                    }
-                }
+                    )
+                    .id(item.id)
 
-                if case .insertAt(let insertIndex, let indentLevel) = dropState,
-                    insertIndex == items.count
-                {
-                    TodoInsertionIndicator(
-                        indentLevel: indentLevel,
+                    TodoDropGutterView(
+                        index: index + 1,
+                        visualHeight: index == items.count - 1
+                            ? bottomDropZoneVisualHeight
+                            : middleDropZoneVisualHeight,
+                        hitHeight: index == items.count - 1
+                            ? bottomDropZoneHitHeight
+                            : middleDropZoneHitHeight,
+                        destination: .scheduled(date: sectionDate),
+                        items: items,
+                        store: store,
+                        dropState: $dropState,
                         indentWidth: indentWidth
                     )
                 }
             }
-        }
-        .onDrop(
-            of: [.text],
-            delegate: TodoDropDelegate(
-                destination: .scheduled(date: sectionDate),
-                todoItems: items,
-                store: store,
-                dropState: $dropState,
-                isDropFinalizing: $isDropFinalizing,
-                itemFrames: itemFrames,
-                indentWidth: indentWidth,
-                itemHeight: itemHeight
-            )
-        )
-        .coordinateSpace(name: "todo-list-drop-area")
-        .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
-            itemFrames = value
         }
     }
 }
