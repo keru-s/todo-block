@@ -93,6 +93,18 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("a", modifiers: .command)
             }
+
+            CommandMenu("排序") {
+                Button("上移当前待办") {
+                    TodoReorderCommandManager.shared.moveSelectionUp()
+                }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+
+                Button("下移当前待办") {
+                    TodoReorderCommandManager.shared.moveSelectionDown()
+                }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+            }
         }
     }
 

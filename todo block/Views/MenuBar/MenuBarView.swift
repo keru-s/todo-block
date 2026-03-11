@@ -106,7 +106,7 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
-            bindClipboardContext()
+            bindContexts()
         }
         .gesture(
             TapGesture().onEnded {
@@ -116,21 +116,21 @@ struct MenuBarView: View {
         )
         .onChange(of: store.focusRequestId) { _, newValue in
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-            bindClipboardContext()
+            bindContexts()
             selectionManager.restoreFocus(to: itemId)
         }
         .onChange(of: todayItems.dropResetSnapshot) { _, _ in
             dropState = .none
-            bindClipboardContext()
+            bindContexts()
         }
         .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
             dropState = .none
         }
         .onChange(of: selectionManager.focusedItemId) { _, _ in
-            bindClipboardContext()
+            bindContexts()
         }
         .onChange(of: selectionManager.selectedItemIds) { _, _ in
-            bindClipboardContext()
+            bindContexts()
         }
     }
 
@@ -171,12 +171,12 @@ struct MenuBarView: View {
                             )
                         },
                         onSelect: { shiftPressed in
-                            bindClipboardContext()
+                            bindContexts()
                             selectionManager.handleSelect(
                                 item: item, allItems: items, shiftPressed: shiftPressed)
                         },
                         onFocus: { shiftPressed, cursorPosition in
-                            bindClipboardContext()
+                            bindContexts()
                             selectionManager.handleSelect(
                                 item: item, allItems: items, shiftPressed: shiftPressed,
                                 cursorPosition: cursorPosition)
@@ -206,7 +206,7 @@ struct MenuBarView: View {
                             )
                         },
                         onActivateInteraction: {
-                            bindClipboardContext()
+                            bindContexts()
                         }
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,14 +255,14 @@ struct MenuBarView: View {
 
 private extension MenuBarView {
     func addTodayItem() {
-        bindClipboardContext()
+        bindContexts()
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(dayDate: Date())
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
     func createNewItemAfter(_ item: TodoItem) {
-        bindClipboardContext()
+        bindContexts()
         let newItem = store.createItem(
             dayDate: Date(),
             afterItem: item,
@@ -271,16 +271,20 @@ private extension MenuBarView {
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
-    func bindClipboardContext() {
+    func bindContexts() {
         TodoClipboardManager.shared.activateListContext(
             scope: .today,
+            store: store,
+            selectionManager: selectionManager
+        )
+        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )
     }
 
     func handleBackgroundTap() {
-        bindClipboardContext()
+        bindContexts()
         selectionManager.clearSelection()
     }
 

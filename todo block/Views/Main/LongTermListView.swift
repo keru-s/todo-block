@@ -27,7 +27,7 @@ struct LongTermListView: View {
                             scrollToItem(itemId, proxy: proxy)
                         },
                         onInteraction: {
-                            bindClipboardContextIfNeeded()
+                            bindContextsIfNeeded()
                         }
                     )
 
@@ -39,7 +39,7 @@ struct LongTermListView: View {
                             scrollToItem(itemId, proxy: proxy)
                         },
                         onInteraction: {
-                            bindClipboardContextIfNeeded()
+                            bindContextsIfNeeded()
                         }
                     )
                 }
@@ -47,24 +47,24 @@ struct LongTermListView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onAppear {
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: selectionManager.focusedItemId) { _, newValue in
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
                 if let itemId = newValue {
                     scrollToItem(itemId, proxy: proxy)
                 }
             }
             .onChange(of: selectionManager.selectedItemIds) { _, _ in
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: isActiveContext) { _, newValue in
                 guard newValue else { return }
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: store.focusRequestId) { _, newValue in
                 guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
                 selectionManager.restoreFocus(to: itemId)
                 scrollToItem(itemId, proxy: proxy)
             }
@@ -78,10 +78,14 @@ struct LongTermListView: View {
         }
     }
 
-    private func bindClipboardContextIfNeeded() {
+    private func bindContextsIfNeeded() {
         guard isActiveContext else { return }
         TodoClipboardManager.shared.activateListContext(
             scope: .longTerm,
+            store: store,
+            selectionManager: selectionManager
+        )
+        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )

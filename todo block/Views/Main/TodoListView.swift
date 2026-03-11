@@ -25,6 +25,11 @@ struct TodoListView: View {
         .scheduledMonth(year: year, month: month)
     }
 
+    private var hasTodaySection: Bool {
+        let today = Calendar.current.startOfDay(for: Date())
+        return daySections.contains { Calendar.current.isDate($0.date, inSameDayAs: today) }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
@@ -38,7 +43,7 @@ struct TodoListView: View {
                                     scrollToItem(itemId, proxy: proxy)
                                 },
                                 onInteraction: {
-                                    bindClipboardContextIfNeeded()
+                                    bindContextsIfNeeded()
                                 }
                             )
                             .id(section.id)
@@ -48,7 +53,7 @@ struct TodoListView: View {
                 }
                 .gesture(
                     TapGesture().onEnded {
-                        bindClipboardContextIfNeeded()
+                        bindContextsIfNeeded()
                         selectionManager.clearSelection()
                     }
                 )
@@ -57,7 +62,7 @@ struct TodoListView: View {
                     Button(action: { addTodaySection(proxy: proxy) }) {
                         HStack {
                             Image(systemName: "plus")
-                            Text("添加一个今日待办")
+                            Text(hasTodaySection ? "添加一个今日待办" : "添加今日分区")
                         }
                     }
                     .buttonStyle(.plain)
@@ -78,24 +83,24 @@ struct TodoListView: View {
                 .background(Color(NSColor.windowBackgroundColor))
             }
             .onAppear {
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: selectionManager.focusedItemId) { _, newValue in
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
                 if let itemId = newValue {
                     scrollToItem(itemId, proxy: proxy)
                 }
             }
             .onChange(of: selectionManager.selectedItemIds) { _, _ in
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: isActiveContext) { _, newValue in
                 guard newValue else { return }
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
             }
             .onChange(of: store.focusRequestId) { _, newValue in
                 guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-                bindClipboardContextIfNeeded()
+                bindContextsIfNeeded()
                 selectionManager.restoreFocus(to: itemId)
                 scrollToItem(itemId, proxy: proxy)
             }
@@ -103,10 +108,25 @@ struct TodoListView: View {
     }
 
     private func addTodaySection(proxy: ScrollViewProxy) {
-        bindClipboardContextIfNeeded()
+        bindContextsIfNeeded()
+        let hadTodaySection = hasTodaySection
         let section = store.getOrCreateTodaySection()
+        if hadTodaySection == false {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(section.id, anchor: .center)
+                }
+            }
+            return
+        }
+
         let newItem = store.createItem(dayDate: section.date)
-        selectionManager.handleSelect(item: newItem, allItems: store.items(for: section.date), shiftPressed: false)
+        selectionManager.handleSelect(
+            item: newItem,
+            allItems: store.items(for: section.date),
+            shiftPressed: false
+        )
         scrollToItem(newItem.id, proxy: proxy)
     }
 
@@ -119,10 +139,14 @@ struct TodoListView: View {
         }
     }
 
-    private func bindClipboardContextIfNeeded() {
+    private func bindContextsIfNeeded() {
         guard isActiveContext else { return }
         TodoClipboardManager.shared.activateListContext(
             scope: clipboardScope,
+            store: store,
+            selectionManager: selectionManager
+        )
+        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )
