@@ -55,3 +55,4 @@ xcuserdata/
 # Other
 *.os_build_search_paths
 *.xcuserstate
+.idea
