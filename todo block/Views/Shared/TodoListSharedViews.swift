@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum TodoListDropState: Equatable {
     case none
@@ -93,46 +92,4 @@ struct TodoDropIndicatorOverlay: View {
     }
 }
 
-struct TodoDropGutterView: View {
-    let index: Int
-    let visualHeight: CGFloat
-    let hitHeight: CGFloat
-    let destination: TodoDropDestination
-    let items: [TodoItem]
-    let store: TodoStore
-    @Binding var dropState: TodoListDropState
-    let indentWidth: CGFloat
 
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Color.clear
-
-            if case .insertAt(let currentIndex, let indentLevel) = dropState,
-                currentIndex == index
-            {
-                TodoInsertionIndicator(
-                    indentLevel: indentLevel,
-                    indentWidth: indentWidth
-                )
-            }
-        }
-        .frame(height: visualHeight)
-        .overlay {
-            Color.clear
-                .frame(height: hitHeight)
-                .contentShape(.rect)
-                .onDrop(
-                    of: [.text],
-                    delegate: TodoBoundaryDropDelegate(
-                        insertIndex: index,
-                        destination: destination,
-                        todoItems: items,
-                        store: store,
-                        dropState: $dropState,
-                        indentWidth: indentWidth
-                    )
-                )
-                .allowsHitTesting(true)
-        }
-    }
-}

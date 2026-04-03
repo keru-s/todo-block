@@ -20,6 +20,8 @@ struct ContentView: View {
 
     @State private var injectionHook = Date()
 
+    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
     var body: some View {
         NavigationSplitView {
             SidebarView(
@@ -33,6 +35,19 @@ struct ContentView: View {
             )
         }
         .frame(minWidth: 600, minHeight: 400)
+        .overlay {
+            if dragCoordinator.isDragging,
+                let loc = dragCoordinator.globalDragLocation,
+                let itemId = dragCoordinator.draggedItemId,
+                let item = TodoStore.shared.todoItemsCache[itemId]
+            {
+                TodoItemDragPreviewView(item: item)
+                    .position(x: loc.x, y: loc.y)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .coordinateSpace(name: "main-window")
         .id(injectionHook)
         .onChange(of: selectedDestination) { _, newValue in
             if case .month = newValue {

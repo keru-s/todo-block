@@ -7,12 +7,13 @@
 
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @Query(sort: \DaySection.date, order: .reverse) private var allSections: [DaySection]
 
     @Binding var selectedDestination: SidebarDestination
+
+    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
 
     private var groupedMonths: [(year: Int, months: [Int])] {
         var yearMonths: [Int: Set<Int>] = [:]
@@ -44,36 +45,24 @@ struct SidebarView: View {
             }
         )) {
             Section {
-                LongTermRow(isSelected: selectedDestination == .longTerm)
-                    .tag(SidebarDestination.longTerm)
-                    .onDrop(
-                        of: [.text],
-                        delegate: SidebarLongTermDropDelegate(
-                            store: TodoStore.shared,
-                            selectedDestination: $selectedDestination
-                        )
-                    )
+                SidebarDropTargetRow(destination: .longTerm) {
+                    LongTermRow(isSelected: selectedDestination == .longTerm)
+                }
+                .tag(SidebarDestination.longTerm)
             }
 
             ForEach(groupedMonths, id: \.year) { yearGroup in
                 Section {
                     ForEach(yearGroup.months, id: \.self) { month in
                         let destination = SidebarDestination.month(year: yearGroup.year, month: month)
-                        MonthRow(
-                            year: yearGroup.year,
-                            month: month,
-                            isSelected: selectedDestination == destination
-                        )
-                        .tag(destination)
-                        .onDrop(
-                            of: [.text],
-                            delegate: SidebarMonthDropDelegate(
+                        SidebarDropTargetRow(destination: destination) {
+                            MonthRow(
                                 year: yearGroup.year,
                                 month: month,
-                                store: TodoStore.shared,
-                                selectedDestination: $selectedDestination
+                                isSelected: selectedDestination == destination
                             )
-                        )
+                        }
+                        .tag(destination)
                     }
                 } header: {
                     Text("\(yearGroup.year) 年")
@@ -84,6 +73,40 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 150)
+    }
+}
+
+/// Wraps a sidebar row to register its frame as a drag-and-drop target
+/// and show a highlight when the pointer hovers during a drag.
+private struct SidebarDropTargetRow<Content: View>: View {
+    let destination: SidebarDestination
+    @ViewBuilder let content: Content
+
+    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
+    private var isHighlighted: Bool {
+        coordinator.hoveredSidebarDestination == destination
+    }
+
+    var body: some View {
+        content
+            .background {
+                GeometryReader { proxy in
+                    let frame = proxy.frame(in: .global)
+                    Color.clear
+                        .onAppear {
+                            coordinator.registerSidebarTarget(destination, frame: frame)
+                        }
+                        .onChange(of: frame) { _, newValue in
+                            coordinator.registerSidebarTarget(destination, frame: newValue)
+                        }
+                }
+            }
+            .listRowBackground(
+                isHighlighted
+                    ? Color.accentColor.opacity(0.2)
+                    : nil
+            )
     }
 }
 

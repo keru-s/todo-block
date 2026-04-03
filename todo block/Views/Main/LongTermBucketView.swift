@@ -7,7 +7,6 @@
 
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct LongTermBucketView: View {
     let title: String
@@ -19,6 +18,7 @@ struct LongTermBucketView: View {
     private let indentWidth: CGFloat = 24
     @State private var dropState: TodoListDropState = .none
     private var store: TodoStore { TodoStore.shared }
+    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
 
     private var todoItems: [TodoItem] {
         store.longTermItems(isUrgent: isUrgent)
@@ -51,7 +51,9 @@ struct LongTermBucketView: View {
                 .fill(Color.accentColor.opacity(0.05))
         )
         .onChange(of: todoItems.dropResetSnapshot) { _, _ in
-            dropState = .none
+            if coordinator.isDragging == false {
+                dropState = .none
+            }
         }
         .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
             dropState = .none
@@ -109,114 +111,199 @@ private struct LongTermBucketListView: View {
     let onAddItem: () -> Void
     let onCreateItemAfter: (TodoItem) -> Void
 
-    private let topDropZoneVisualHeight: CGFloat = 4
-    private let topDropZoneHitHeight: CGFloat = 24
-    private let middleDropZoneVisualHeight: CGFloat = 2
-    private let middleDropZoneHitHeight: CGFloat = 14
-    private let bottomDropZoneVisualHeight: CGFloat = 4
-    private let bottomDropZoneHitHeight: CGFloat = 18
+    @State private var itemFrames: [UUID: CGRect] = [:]
+    @State private var listGlobalFrame: CGRect = .zero
+    private let itemHeight: CGFloat = 28
+
+    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
+
+    private var dropCoordinateSpaceName: String {
+        "longterm-drop-\(destination == .longTerm(isUrgent: true) ? "urgent" : "important")"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TodoDropGutterView(
-                index: 0,
-                visualHeight: topDropZoneVisualHeight,
-                hitHeight: topDropZoneHitHeight,
-                destination: destination,
-                items: items,
-                store: store,
-                dropState: $dropState,
-                indentWidth: indentWidth
-            )
-
-            if items.isEmpty {
-                LongTermBucketEmptyStateView(onAddItem: onAddItem)
-                    .contentShape(.rect)
-                    .onDrop(
-                        of: [.text],
-                        delegate: TodoBoundaryDropDelegate(
-                            insertIndex: 0,
-                            destination: destination,
-                            todoItems: items,
-                            store: store,
-                            dropState: $dropState,
-                            indentWidth: indentWidth
-                        )
-                    )
-            } else {
-                ForEach(items.enumerated(), id: \.element.id) { index, item in
-                    TodoItemView(
-                        item: item,
-                        allItems: items,
-                        focusedItemId: $selectionManager.focusedItemId,
-                        isSelected: selectionManager.selectedItemIds.contains(item.id),
-                        hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
-                        cursorPosition: selectionManager.cursorPosition,
-                        preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
-                        verticalMoveDirection: selectionManager.verticalMoveDirection,
-                        onSelect: { shiftPressed in
-                            onInteraction?()
-                            selectionManager.handleSelect(
-                                item: item,
-                                allItems: items,
-                                shiftPressed: shiftPressed
-                            )
-                        },
-                        onFocus: { shiftPressed, cursorPosition in
-                            onInteraction?()
-                            selectionManager.handleSelect(
-                                item: item,
-                                allItems: items,
-                                shiftPressed: shiftPressed,
-                                cursorPosition: cursorPosition
-                            )
-                        },
-                        onEnterPressed: { onCreateItemAfter(item) },
-                        onDeletePressed: {
-                            if selectionManager.selectedItemIds.contains(item.id) {
-                                selectionManager.deleteSelectedItems(store: store) { _ in
-                                    items
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                if items.isEmpty {
+                    LongTermBucketEmptyStateView(onAddItem: onAddItem)
+                } else {
+                    ForEach(items.enumerated(), id: \.element.id) { _, item in
+                        TodoItemView(
+                            item: item,
+                            allItems: items,
+                            focusedItemId: $selectionManager.focusedItemId,
+                            isSelected: selectionManager.selectedItemIds.contains(item.id),
+                            hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
+                            cursorPosition: selectionManager.cursorPosition,
+                            preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
+                            verticalMoveDirection: selectionManager.verticalMoveDirection,
+                            useSystemDragAndDrop: false,
+                            handleDragCoordinateSpace: .named(dropCoordinateSpaceName),
+                            onHandleDragBegan: {
+                                coordinator.beginDrag(itemId: item.id)
+                            },
+                            onHandleDragChanged: { location in
+                                coordinator.updateDrag(globalLocation: localToGlobal(location))
+                                updateDropFromLocal(location)
+                            },
+                            onHandleDragEnded: { location in
+                                coordinator.updateDrag(globalLocation: localToGlobal(location))
+                                finalizeDropFromLocal(location)
+                            },
+                            onSelect: { shiftPressed in
+                                onInteraction?()
+                                selectionManager.handleSelect(
+                                    item: item,
+                                    allItems: items,
+                                    shiftPressed: shiftPressed
+                                )
+                            },
+                            onFocus: { shiftPressed, cursorPosition in
+                                onInteraction?()
+                                selectionManager.handleSelect(
+                                    item: item,
+                                    allItems: items,
+                                    shiftPressed: shiftPressed,
+                                    cursorPosition: cursorPosition
+                                )
+                            },
+                            onEnterPressed: { onCreateItemAfter(item) },
+                            onDeletePressed: {
+                                if selectionManager.selectedItemIds.contains(item.id) {
+                                    selectionManager.deleteSelectedItems(store: store) { _ in
+                                        items
+                                    }
                                 }
+                            },
+                            onMoveUp: { position, horizontalOffset in
+                                selectionManager.moveFocusUp(
+                                    from: item,
+                                    allItems: items,
+                                    cursorPosition: position,
+                                    preferredHorizontalOffset: horizontalOffset
+                                )
+                            },
+                            onMoveDown: { position, horizontalOffset in
+                                selectionManager.moveFocusDown(
+                                    from: item,
+                                    allItems: items,
+                                    cursorPosition: position,
+                                    preferredHorizontalOffset: horizontalOffset
+                                )
+                            },
+                            onActivateInteraction: {
+                                onInteraction?()
                             }
-                        },
-                        onMoveUp: { position, horizontalOffset in
-                            selectionManager.moveFocusUp(
-                                from: item,
-                                allItems: items,
-                                cursorPosition: position,
-                                preferredHorizontalOffset: horizontalOffset
-                            )
-                        },
-                        onMoveDown: { position, horizontalOffset in
-                            selectionManager.moveFocusDown(
-                                from: item,
-                                allItems: items,
-                                cursorPosition: position,
-                                preferredHorizontalOffset: horizontalOffset
-                            )
-                        },
-                        onActivateInteraction: {
-                            onInteraction?()
+                        )
+                        .id(item.id)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TodoDropItemFramePreferenceKey.self,
+                                    value: [item.id: proxy.frame(in: .named(dropCoordinateSpaceName))]
+                                )
+                            }
                         }
-                    )
-                    .id(item.id)
-
-                    TodoDropGutterView(
-                        index: index + 1,
-                        visualHeight: index == items.count - 1
-                            ? bottomDropZoneVisualHeight
-                            : middleDropZoneVisualHeight,
-                        hitHeight: index == items.count - 1
-                            ? bottomDropZoneHitHeight
-                            : middleDropZoneHitHeight,
-                        destination: destination,
-                        items: items,
-                        store: store,
-                        dropState: $dropState,
-                        indentWidth: indentWidth
-                    )
+                    }
                 }
             }
+            .coordinateSpace(name: dropCoordinateSpaceName)
+            .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { itemFrames = $0 }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { listGlobalFrame = proxy.frame(in: .global) }
+                        .onChange(of: proxy.frame(in: .global)) { _, newValue in
+                            listGlobalFrame = newValue
+                        }
+                }
+            }
+
+            TodoDropIndicatorOverlay(
+                dropState: dropState,
+                items: items,
+                itemFrames: itemFrames,
+                itemHeight: itemHeight,
+                indentWidth: indentWidth
+            )
+        }
+    }
+
+    // MARK: - Coordinate conversion
+
+    private func localToGlobal(_ local: CGPoint) -> CGPoint {
+        CGPoint(
+            x: local.x + listGlobalFrame.origin.x,
+            y: local.y + listGlobalFrame.origin.y
+        )
+    }
+
+    // MARK: - Drop state
+
+    private func updateDropFromLocal(_ location: CGPoint) {
+        dropState = TodoDropLocationEngine.dropState(
+            for: location,
+            items: items,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+    }
+
+    private func finalizeDropFromLocal(_ location: CGPoint) {
+        defer {
+            coordinator.endDrag()
+            dropState = .none
+            store.requestDropIndicatorReset()
+        }
+
+        guard let draggedId = coordinator.draggedItemId else { return }
+
+        let globalLoc = localToGlobal(location)
+        if let sidebarDest = coordinator.sidebarTarget(at: globalLoc),
+            let draggedItem = store.todoItemsCache[draggedId]
+        {
+            performSidebarDrop(item: draggedItem, destination: sidebarDest)
+            return
+        }
+
+        let finalState = TodoDropLocationEngine.dropState(
+            for: location,
+            items: items,
+            itemFrames: itemFrames,
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+
+        guard case .insertAt(let toIndex, let indentLevel) = finalState else { return }
+
+        TodoReorderMoveEngine.performMove(
+            draggedId: draggedId,
+            toIndex: toIndex,
+            indentLevel: indentLevel,
+            items: items,
+            destination: destination,
+            store: store
+        )
+    }
+
+    private func performSidebarDrop(item: TodoItem, destination: SidebarDestination) {
+        switch destination {
+        case .longTerm:
+            store.moveItemWithChildren(
+                item,
+                to: .longTerm(isUrgent: false),
+                afterItem: nil,
+                newIndentLevel: 0
+            )
+        case .month(let year, let month):
+            let target = store.tailItemForScheduledMonth(year: year, month: month)
+            store.moveItemWithChildren(
+                item,
+                to: .scheduled(date: target.date),
+                afterItem: nil,
+                newIndentLevel: 0
+            )
         }
     }
 }

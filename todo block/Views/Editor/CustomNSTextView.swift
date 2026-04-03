@@ -63,6 +63,8 @@ final class CustomNSTextView: NSTextView {
         onCompositionChange?(false)
     }
 
+    // MARK: - Command handling
+
     override func doCommand(by commandSelector: Selector) {
         if let handled = customCoordinator?.handleCommand(in: self, commandSelector: commandSelector),
             handled

@@ -17,7 +17,7 @@ struct TodoItemView: View {
     var cursorPosition: Int = 0
     var preferredHorizontalOffset: CGFloat? = nil
     var verticalMoveDirection: VerticalMoveDirection? = nil
-    var useSystemDragAndDrop: Bool = true
+    var useSystemDragAndDrop: Bool = false
     var handleDragCoordinateSpace: CoordinateSpace = .global
     var onHandleDragBegan: (() -> Void)? = nil
     var onHandleDragChanged: ((CGPoint) -> Void)? = nil
@@ -155,10 +155,8 @@ private struct TodoItemDragHandleView: View {
     let onManualDragEnded: ((CGPoint) -> Void)?
     @State private var hasStartedManualDrag: Bool = false
 
-    private var dragCoordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
-
     var body: some View {
-        let handle = Rectangle()
+        Rectangle()
             .fill(isHovering ? Color.gray.opacity(0.5) : Color.clear)
             .frame(width: 20, height: 20)
             .overlay {
@@ -171,38 +169,26 @@ private struct TodoItemDragHandleView: View {
             .onHover { hovering in
                 isHovering = hovering
             }
-
-        if useSystemDragAndDrop {
-            handle
-                .onDrag {
-                    dragCoordinator.beginSystemDrag(itemID: item.id)
-                    return NSItemProvider(object: item.id.uuidString as NSString)
-                } preview: {
-                    TodoItemDragPreviewView(item: item)
-                }
-        } else {
-            handle
-                .gesture(
-                    DragGesture(minimumDistance: 2, coordinateSpace: dragCoordinateSpace)
-                        .onChanged { value in
-                            if hasStartedManualDrag == false {
-                                hasStartedManualDrag = true
-                                onManualDragBegan?()
-                            }
-                            onManualDragChanged?(value.location)
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: dragCoordinateSpace)
+                    .onChanged { value in
+                        if hasStartedManualDrag == false {
+                            hasStartedManualDrag = true
+                            onManualDragBegan?()
                         }
-                        .onEnded { value in
-                            if hasStartedManualDrag {
-                                onManualDragEnded?(value.location)
-                            }
-                            hasStartedManualDrag = false
+                        onManualDragChanged?(value.location)
+                    }
+                    .onEnded { value in
+                        if hasStartedManualDrag {
+                            onManualDragEnded?(value.location)
                         }
-                )
-        }
+                        hasStartedManualDrag = false
+                    }
+            )
     }
 }
 
-private struct TodoItemDragPreviewView: View {
+struct TodoItemDragPreviewView: View {
     let item: TodoItem
 
     var body: some View {

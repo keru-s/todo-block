@@ -120,7 +120,9 @@ struct MenuBarView: View {
             selectionManager.restoreFocus(to: itemId)
         }
         .onChange(of: todayItems.dropResetSnapshot) { _, _ in
-            dropState = .none
+            if TodoDragCoordinator.shared.isDragging == false, draggingItemId == nil {
+                dropState = .none
+            }
             bindContexts()
         }
         .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
