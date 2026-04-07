@@ -43,6 +43,7 @@ final class TodoDragCoordinator {
         defer {
             draggedItemId = nil
             globalDragLocation = nil
+            resetAllDropZoneStates()
         }
         guard let id = draggedItemId, let loc = globalDragLocation else { return nil }
         return (id, loc)
@@ -51,6 +52,54 @@ final class TodoDragCoordinator {
     func cancelDrag() {
         draggedItemId = nil
         globalDragLocation = nil
+        resetAllDropZoneStates()
+    }
+
+    // MARK: - Drop zone registration (list-level targets)
+
+    struct DropZoneInfo {
+        let destination: TodoDropDestination
+        var frame: CGRect
+        /// The drop state last computed by this zone while the pointer was over it.
+        var currentDropState: TodoListDropState = .none
+    }
+
+    private var dropZones: [String: DropZoneInfo] = [:]
+
+    func registerDropZone(id: String, destination: TodoDropDestination, frame: CGRect) {
+        dropZones[id] = DropZoneInfo(destination: destination, frame: frame)
+    }
+
+    func updateDropZoneFrame(id: String, frame: CGRect) {
+        dropZones[id]?.frame = frame
+    }
+
+    func updateDropZoneState(id: String, state: TodoListDropState) {
+        dropZones[id]?.currentDropState = state
+    }
+
+    func unregisterDropZone(id: String) {
+        dropZones.removeValue(forKey: id)
+    }
+
+    private func resetAllDropZoneStates() {
+        for key in dropZones.keys {
+            dropZones[key]?.currentDropState = .none
+        }
+    }
+
+    /// Returns the drop zone at the given global point.
+    func dropZone(at globalPoint: CGPoint) -> (id: String, info: DropZoneInfo, localPoint: CGPoint)? {
+        for (id, info) in dropZones {
+            if info.frame.contains(globalPoint) {
+                let local = CGPoint(
+                    x: globalPoint.x - info.frame.origin.x,
+                    y: globalPoint.y - info.frame.origin.y
+                )
+                return (id, info, local)
+            }
+        }
+        return nil
     }
 
     // MARK: - Sidebar drop target registration

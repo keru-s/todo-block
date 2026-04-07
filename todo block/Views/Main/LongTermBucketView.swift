@@ -144,11 +144,10 @@ private struct LongTermBucketListView: View {
                             },
                             onHandleDragChanged: { location in
                                 coordinator.updateDrag(globalLocation: localToGlobal(location))
-                                updateDropFromLocal(location)
                             },
                             onHandleDragEnded: { location in
                                 coordinator.updateDrag(globalLocation: localToGlobal(location))
-                                finalizeDropFromLocal(location)
+                                finalizeDrop()
                             },
                             onSelect: { shiftPressed in
                                 onInteraction?()
@@ -212,11 +211,25 @@ private struct LongTermBucketListView: View {
             .background {
                 GeometryReader { proxy in
                     Color.clear
-                        .onAppear { listGlobalFrame = proxy.frame(in: .global) }
+                        .onAppear {
+                            listGlobalFrame = proxy.frame(in: .global)
+                            coordinator.registerDropZone(
+                                id: dropCoordinateSpaceName,
+                                destination: destination,
+                                frame: listGlobalFrame
+                            )
+                        }
                         .onChange(of: proxy.frame(in: .global)) { _, newValue in
                             listGlobalFrame = newValue
+                            coordinator.updateDropZoneFrame(
+                                id: dropCoordinateSpaceName,
+                                frame: newValue
+                            )
                         }
                 }
+            }
+            .onDisappear {
+                coordinator.unregisterDropZone(id: dropCoordinateSpaceName)
             }
 
             TodoDropIndicatorOverlay(
@@ -226,6 +239,15 @@ private struct LongTermBucketListView: View {
                 itemHeight: itemHeight,
                 indentWidth: indentWidth
             )
+        }
+        .onChange(of: coordinator.globalDragLocation) { _, _ in
+            updateDropStateFromCoordinator()
+        }
+        .onChange(of: coordinator.isDragging) { _, isDragging in
+            if !isDragging {
+                dropState = .none
+                coordinator.updateDropZoneState(id: dropCoordinateSpaceName, state: .none)
+            }
         }
     }
 
@@ -238,28 +260,50 @@ private struct LongTermBucketListView: View {
         )
     }
 
-    // MARK: - Drop state
+    // MARK: - Drop state observation
 
-    private func updateDropFromLocal(_ location: CGPoint) {
-        dropState = TodoDropLocationEngine.dropState(
-            for: location,
+    private func updateDropStateFromCoordinator() {
+        guard coordinator.isDragging,
+            let globalLoc = coordinator.globalDragLocation,
+            listGlobalFrame.width > 0,
+            listGlobalFrame.contains(globalLoc)
+        else {
+            if dropState != .none {
+                dropState = .none
+                coordinator.updateDropZoneState(id: dropCoordinateSpaceName, state: .none)
+            }
+            return
+        }
+
+        let localPoint = CGPoint(
+            x: globalLoc.x - listGlobalFrame.origin.x,
+            y: globalLoc.y - listGlobalFrame.origin.y
+        )
+        let newState = TodoDropLocationEngine.dropState(
+            for: localPoint,
             items: items,
             itemFrames: itemFrames,
             itemHeight: itemHeight,
             indentWidth: indentWidth
         )
+        dropState = newState
+        coordinator.updateDropZoneState(id: dropCoordinateSpaceName, state: newState)
     }
 
-    private func finalizeDropFromLocal(_ location: CGPoint) {
+    // MARK: - Drop finalization
+
+    private func finalizeDrop() {
         defer {
             coordinator.endDrag()
             dropState = .none
             store.requestDropIndicatorReset()
         }
 
-        guard let draggedId = coordinator.draggedItemId else { return }
+        guard let draggedId = coordinator.draggedItemId,
+            let globalLoc = coordinator.globalDragLocation
+        else { return }
 
-        let globalLoc = localToGlobal(location)
+        // 1. Sidebar target
         if let sidebarDest = coordinator.sidebarTarget(at: globalLoc),
             let draggedItem = store.todoItemsCache[draggedId]
         {
@@ -267,16 +311,25 @@ private struct LongTermBucketListView: View {
             return
         }
 
-        let finalState = TodoDropLocationEngine.dropState(
-            for: location,
-            items: items,
-            itemFrames: itemFrames,
-            itemHeight: itemHeight,
-            indentWidth: indentWidth
-        )
+        // 2. Find which drop zone the pointer is over
+        if let (zoneId, zoneInfo, localPoint) = coordinator.dropZone(at: globalLoc) {
+            if zoneId == dropCoordinateSpaceName {
+                performLocalDrop(draggedId: draggedId)
+            } else {
+                performCrossListDrop(
+                    draggedId: draggedId,
+                    targetDestination: zoneInfo.destination,
+                    localPointInTarget: localPoint
+                )
+            }
+            return
+        }
 
-        guard case .insertAt(let toIndex, let indentLevel) = finalState else { return }
+        // 3. No target matched — item stays in place (no-op)
+    }
 
+    private func performLocalDrop(draggedId: UUID) {
+        guard case .insertAt(let toIndex, let indentLevel) = dropState else { return }
         TodoReorderMoveEngine.performMove(
             draggedId: draggedId,
             toIndex: toIndex,
@@ -285,6 +338,52 @@ private struct LongTermBucketListView: View {
             destination: destination,
             store: store
         )
+    }
+
+    private func performCrossListDrop(
+        draggedId: UUID,
+        targetDestination: TodoDropDestination,
+        localPointInTarget: CGPoint
+    ) {
+        let targetItems = resolveItems(for: targetDestination)
+
+        let freshState = TodoDropLocationEngine.dropState(
+            for: localPointInTarget,
+            items: targetItems,
+            itemFrames: [:],
+            itemHeight: itemHeight,
+            indentWidth: indentWidth
+        )
+
+        guard case .insertAt(let toIndex, let indentLevel) = freshState else {
+            TodoReorderMoveEngine.performMove(
+                draggedId: draggedId,
+                toIndex: targetItems.count,
+                indentLevel: 0,
+                items: targetItems,
+                destination: targetDestination,
+                store: store
+            )
+            return
+        }
+
+        TodoReorderMoveEngine.performMove(
+            draggedId: draggedId,
+            toIndex: toIndex,
+            indentLevel: indentLevel,
+            items: targetItems,
+            destination: targetDestination,
+            store: store
+        )
+    }
+
+    private func resolveItems(for dest: TodoDropDestination) -> [TodoItem] {
+        switch dest {
+        case .scheduled(let date):
+            return store.items(for: date)
+        case .longTerm(let isUrgent):
+            return store.longTermItems(isUrgent: isUrgent)
+        }
     }
 
     private func performSidebarDrop(item: TodoItem, destination: SidebarDestination) {
