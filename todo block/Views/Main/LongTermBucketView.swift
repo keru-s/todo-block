@@ -138,15 +138,15 @@ private struct LongTermBucketListView: View {
                             preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
                             verticalMoveDirection: selectionManager.verticalMoveDirection,
                             useSystemDragAndDrop: false,
-                            handleDragCoordinateSpace: .named(dropCoordinateSpaceName),
+                            handleDragCoordinateSpace: .global,
                             onHandleDragBegan: {
                                 coordinator.beginDrag(itemId: item.id)
                             },
                             onHandleDragChanged: { location in
-                                coordinator.updateDrag(globalLocation: localToGlobal(location))
+                                coordinator.updateDrag(globalLocation: location)
                             },
                             onHandleDragEnded: { location in
-                                coordinator.updateDrag(globalLocation: localToGlobal(location))
+                                coordinator.updateDrag(globalLocation: location)
                                 finalizeDrop()
                             },
                             onSelect: { shiftPressed in
@@ -251,15 +251,6 @@ private struct LongTermBucketListView: View {
         }
     }
 
-    // MARK: - Coordinate conversion
-
-    private func localToGlobal(_ local: CGPoint) -> CGPoint {
-        CGPoint(
-            x: local.x + listGlobalFrame.origin.x,
-            y: local.y + listGlobalFrame.origin.y
-        )
-    }
-
     // MARK: - Drop state observation
 
     private func updateDropStateFromCoordinator() {
@@ -272,8 +263,13 @@ private struct LongTermBucketListView: View {
                 dropState = .none
                 coordinator.updateDropZoneState(id: dropCoordinateSpaceName, state: .none)
             }
+            if coordinator.activeDropZoneId == dropCoordinateSpaceName {
+                coordinator.setActiveDropZone(nil)
+            }
             return
         }
+
+        coordinator.setActiveDropZone(dropCoordinateSpaceName)
 
         let localPoint = CGPoint(
             x: globalLoc.x - listGlobalFrame.origin.x,
@@ -311,21 +307,23 @@ private struct LongTermBucketListView: View {
             return
         }
 
-        // 2. Find which drop zone the pointer is over
-        if let (zoneId, zoneInfo, localPoint) = coordinator.dropZone(at: globalLoc) {
-            if zoneId == dropCoordinateSpaceName {
+        // 2. Use the active zone determined by each list's own local check.
+        if let activeId = coordinator.activeDropZoneId,
+            let zoneInfo = coordinator.dropZoneInfo(for: activeId)
+        {
+            if activeId == dropCoordinateSpaceName {
                 performLocalDrop(draggedId: draggedId)
             } else {
                 performCrossListDrop(
                     draggedId: draggedId,
                     targetDestination: zoneInfo.destination,
-                    localPointInTarget: localPoint
+                    targetDropState: zoneInfo.currentDropState
                 )
             }
             return
         }
 
-        // 3. No target matched — item stays in place (no-op)
+        // 3. No active zone — item stays in place (no-op)
     }
 
     private func performLocalDrop(draggedId: UUID) {
@@ -343,19 +341,11 @@ private struct LongTermBucketListView: View {
     private func performCrossListDrop(
         draggedId: UUID,
         targetDestination: TodoDropDestination,
-        localPointInTarget: CGPoint
+        targetDropState: TodoListDropState
     ) {
         let targetItems = resolveItems(for: targetDestination)
 
-        let freshState = TodoDropLocationEngine.dropState(
-            for: localPointInTarget,
-            items: targetItems,
-            itemFrames: [:],
-            itemHeight: itemHeight,
-            indentWidth: indentWidth
-        )
-
-        guard case .insertAt(let toIndex, let indentLevel) = freshState else {
+        guard case .insertAt(let toIndex, let indentLevel) = targetDropState else {
             TodoReorderMoveEngine.performMove(
                 draggedId: draggedId,
                 toIndex: targetItems.count,

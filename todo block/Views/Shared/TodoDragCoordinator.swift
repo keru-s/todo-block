@@ -66,6 +66,11 @@ final class TodoDragCoordinator {
 
     private var dropZones: [String: DropZoneInfo] = [:]
 
+    /// The zone whose view-local `contains` check passed most recently.
+    /// Set by each list from its own `updateDropStateFromCoordinator`,
+    /// which avoids the stale-frame problem of `dropZone(at:)`.
+    private(set) var activeDropZoneId: String?
+
     func registerDropZone(id: String, destination: TodoDropDestination, frame: CGRect) {
         dropZones[id] = DropZoneInfo(destination: destination, frame: frame)
     }
@@ -78,28 +83,24 @@ final class TodoDragCoordinator {
         dropZones[id]?.currentDropState = state
     }
 
+    func setActiveDropZone(_ id: String?) {
+        activeDropZoneId = id
+    }
+
+    func dropZoneInfo(for id: String) -> DropZoneInfo? {
+        dropZones[id]
+    }
+
     func unregisterDropZone(id: String) {
         dropZones.removeValue(forKey: id)
+        if activeDropZoneId == id { activeDropZoneId = nil }
     }
 
     private func resetAllDropZoneStates() {
         for key in dropZones.keys {
             dropZones[key]?.currentDropState = .none
         }
-    }
-
-    /// Returns the drop zone at the given global point.
-    func dropZone(at globalPoint: CGPoint) -> (id: String, info: DropZoneInfo, localPoint: CGPoint)? {
-        for (id, info) in dropZones {
-            if info.frame.contains(globalPoint) {
-                let local = CGPoint(
-                    x: globalPoint.x - info.frame.origin.x,
-                    y: globalPoint.y - info.frame.origin.y
-                )
-                return (id, info, local)
-            }
-        }
-        return nil
+        activeDropZoneId = nil
     }
 
     // MARK: - Sidebar drop target registration
