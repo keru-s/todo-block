@@ -1,59 +1,61 @@
 # Todo Block
 
-A native macOS to-do application built with SwiftUI and SwiftData, featuring Notion-style nested tasks, keyboard-first navigation, and real-time menu bar access.
+[中文](README.md) | [English](README.en.md)
 
-## Features
+Todo Block 是一个原生 macOS 待办应用，支持分层任务、键盘优先操作、菜单栏快速查看，以及按日期整理任务。
 
-- **Native macOS Experience** — Built with SwiftUI and SwiftData for optimal performance and system integration
-- **Nested Tasks** — Support up to 4 levels of subtasks with Tab/Shift+Tab indentation
-- **Keyboard-First Navigation** — Full keyboard support for creating, editing, and navigating tasks
-- **Date Grouping** — Tasks automatically grouped by date with editable section titles
-- **Menu Bar Widget** — Quick access to today's tasks without switching windows
-- **Drag & Drop** — Intuitive task reordering within and across sections
-- **Multi-Selection** — Range selection with Shift+Click for batch operations
-- **Real-Time Sync** — Changes in menu bar instantly sync to main window
-- **Undo/Redo** — Full undo/redo support for all operations
-- **Long-term Tasks** — Eisenhower Matrix-style buckets for urgent and important tasks
+## 截图
 
-## Requirements
+![Todo Block 启动画面](docs/images/todo-block-startup.png)
 
-- macOS 15.7 or later
-- Xcode 26.0 or later (for development)
+## 功能特点
 
-## Installation
+- 原生 macOS 体验：基于 SwiftUI 和 SwiftData 构建
+- 分层任务：支持最多 4 层子任务
+- 键盘优先：创建、编辑、移动任务都可以直接用键盘完成
+- 日期分组：任务按日期自动归类，分区标题可编辑
+- 菜单栏入口：不切换窗口也能快速查看今天的待办
+- 拖拽排序：支持列表内和列表间拖拽整理
+- 多选操作：支持 `Shift + 点击` 范围选择
+- 实时同步：菜单栏和主窗口内容保持同步
+- 撤销重做：常见操作支持撤销和重做
+- 长期任务：支持长期事项分桶管理
 
-### Download
+## 下载
 
-Download the latest packaged app from [GitHub Releases](https://github.com/keru-s/todo-block/releases/latest), or use the direct link:
+- 最新版本页面：[GitHub Releases](https://github.com/keru-s/todo-block/releases/latest)
+- 直接下载：[Todo-Block-macOS.zip](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.zip)
 
-[Download Todo Block for macOS](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.zip)
-
-If macOS warns that this app should be moved to the Trash, Enter the following command in the terminal.
+如果 macOS 提示应用已损坏或应被移到废纸篓，可以在终端执行：
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/todo block.app"
 ```
 
+## 运行要求
 
+- 系统：macOS 15.7 或更高版本
+- 开发：Xcode 26.0 或更高版本
 
-## Screenshot
+## 安装与运行
 
-![Todo Block startup screen](docs/images/todo-block-startup.png)
+### 直接安装
 
-### From Source
+1. 从 Releases 下载压缩包。
+2. 解压后把 `todo block.app` 拖到“应用程序”文件夹。
+3. 首次打开如果遇到系统拦截，先执行上面的终端命令，再重新打开。
+
+### 从源码运行
 
 ```bash
-# Clone the repository
 git clone https://github.com/keru-s/todo-block.git
 cd todo-block
-
-# Open in Xcode
 open "todo block.xcodeproj"
-
-# Build and run (⌘R)
 ```
 
-### Build via Command Line
+打开后在 Xcode 中直接运行即可。
+
+### 命令行构建
 
 ```bash
 xcodebuild -project "todo block.xcodeproj" \
@@ -62,96 +64,40 @@ xcodebuild -project "todo block.xcodeproj" \
   build
 ```
 
-## Keyboard Shortcuts
+## 快捷键
 
-| Shortcut | Action |
-|----------|--------|
-| `Enter` | Create new task below current |
-| `Backspace` | Delete empty task |
-| `Tab` | Increase indent level |
-| `Shift+Tab` | Decrease indent level |
-| `↑` / `↓` | Navigate between tasks |
-| `⌘↑` / `⌘↓` | Move task up/down |
-| `Space` | Toggle completion (when checkbox focused) |
-| `Shift+Click` | Multi-select range |
-| `⌘Z` | Undo |
-| `⌘⇧Z` | Redo |
-| `⌘C` | Copy task(s) |
-| `⌘V` | Paste task(s) |
+| 快捷键 | 作用 |
+|--------|------|
+| `Enter` | 在当前任务下方新建任务 |
+| `Backspace` | 删除空任务 |
+| `Tab` | 增加缩进 |
+| `Shift+Tab` | 减少缩进 |
+| `↑` / `↓` | 在任务间移动 |
+| `⌘↑` / `⌘↓` | 上移或下移任务 |
+| `Space` | 切换完成状态 |
+| `Shift+Click` | 范围多选 |
+| `⌘Z` | 撤销 |
+| `⌘⇧Z` | 重做 |
+| `⌘C` | 复制任务 |
+| `⌘V` | 粘贴任务 |
 
-## Architecture
+## 项目结构
 
-Todo Block uses a **single source of truth** architecture with in-memory caching for optimal performance:
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│   Main Window   │     │   Menu Bar      │
-│   (TodoListView)│     │   (MenuBarView) │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         └───────────┬───────────┘
-                     │ @Observable
-             ┌───────▼───────┐
-             │   TodoStore   │  ← Singleton, in-memory cache
-             │  (Observable) │
-             └───────┬───────┘
-                     │ Async persistence
-             ┌───────▼───────┐
-             │   SwiftData   │
-             └───────────────┘
-```
-
-### Key Design Decisions
-
-1. **In-Memory Cache** — `TodoStore` maintains an in-memory cache indexed by UUID for O(1) access, eliminating index-out-of-bounds errors during rapid operations
-
-2. **Async Persistence** — All mutations update the cache immediately for instant UI response, then persist asynchronously with debouncing
-
-3. **Component Reuse** — `TodoItemView` is shared between main window and menu bar, ensuring consistent behavior and reducing code duplication
-
-4. **Observable Pattern** — Using `@Observable` (Swift 5.9+) for automatic UI updates without `ObservableObject` boilerplate
-
-## Project Structure
-
-```
+```text
 todo block/
-├── Models/
-│   ├── TodoItem.swift           # Task model with SwiftData
-│   ├── DaySection.swift         # Date grouping model
-│   ├── TodoStore.swift          # Singleton data store
-│   ├── UndoManager.swift        # Undo/redo support
-│   ├── SelectionManager.swift   # Multi-selection state
-│   ├── TodoClipboardManager.swift
-│   └── MarkdownTodoCodec.swift  # Import/export support
+├── Models/         # 数据模型、存储、撤销、剪贴板等核心逻辑
 ├── Views/
-│   ├── Main/
-│   │   ├── SidebarView.swift    # Month sidebar
-│   │   ├── TodoListView.swift   # Main task list
-│   │   └── LongTermListView.swift
-│   ├── Editor/
-│   │   ├── DaySectionView.swift # Date section header
-│   │   ├── TodoItemView.swift   # Task row (shared component)
-│   │   └── CustomTextEditor.swift
-│   ├── MenuBar/
-│   │   └── MenuBarView.swift    # Menu bar popup
-│   └── Shared/
-│       ├── TodoDragCoordinator.swift
-│       └── TodoDropDelegate.swift
-├── todo_blockApp.swift          # App entry point
-└── ContentView.swift            # Root view
+│   ├── Main/       # 主窗口
+│   ├── Editor/     # 任务编辑相关视图
+│   ├── MenuBar/    # 菜单栏界面
+│   └── Shared/     # 共享拖拽与排序逻辑
+├── ContentView.swift
+└── todo_blockApp.swift
 ```
 
-## Tech Stack
+## 开发
 
-- **Language**: Swift 6.2
-- **UI Framework**: SwiftUI with `@Observable` macro
-- **Persistence**: SwiftData with async autosave
-- **Minimum Target**: macOS 14.0
-- **Architecture**: MVVM with singleton store
-
-## Development
-
-### Running Tests
+### 运行测试
 
 ```bash
 xcodebuild test \
@@ -160,28 +106,26 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
-### Creating a Release
+### 发布打包
 
-Release packaging is triggered by pushing a version tag that starts with `v`, for example:
+正式发布通过推送 `v` 开头的标签触发，例如：
 
 ```bash
 git tag v0.1.0
 git push origin main v0.1.0
 ```
 
-The GitHub Action builds the Release app, packages it as `Todo-Block-macOS.zip`, and attaches it to the GitHub Release. You can also run the workflow manually from GitHub Actions to generate a downloadable build artifact without publishing a GitHub Release.
+触发后，GitHub Action 会自动构建 Release 版本、生成 `Todo-Block-macOS.zip`，并把它挂到 GitHub Release 页面。
 
-### Code Style
+如果只是想先试跑打包流程，也可以在 GitHub Actions 页面手动运行工作流。手动运行会生成下载产物，但不会创建正式 Release。
 
-This project follows:
-- Swift concurrency best practices with strict concurrency checking
-- SwiftUI patterns with `@Observable` instead of `ObservableObject`
-- macOS Human Interface Guidelines for native look and feel
+## 技术栈
 
-## License
+- Swift 6.2
+- SwiftUI
+- SwiftData
+- `@Observable`
 
-MIT License - see [LICENSE](LICENSE) for details.
+## 许可证
 
-## Acknowledgments
-
-Inspired by [Notion](https://notion.so)'s task management interface and keyboard-centric design philosophy.
+MIT
