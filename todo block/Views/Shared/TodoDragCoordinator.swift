@@ -115,6 +115,10 @@ final class TodoDragCoordinator {
         }
     }
 
+    func removeAllSidebarTargets() {
+        sidebarTargets.removeAll()
+    }
+
     /// Returns the sidebar destination at the given global point, if any.
     func sidebarTarget(at globalPoint: CGPoint) -> SidebarDestination? {
         sidebarTargets.first(where: { $0.frame.contains(globalPoint) })?.destination

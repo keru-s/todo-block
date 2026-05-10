@@ -17,16 +17,34 @@ A native macOS to-do application built with SwiftUI and SwiftData, featuring Not
 
 ## Requirements
 
-- macOS 14.0 or later
-- Xcode 16.0 or later (for development)
+- macOS 15.7 or later
+- Xcode 26.0 or later (for development)
 
 ## Installation
+
+### Download
+
+Download the latest packaged app from [GitHub Releases](https://github.com/keru-s/todo-block/releases/latest), or use the direct link:
+
+[Download Todo Block for macOS](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.zip)
+
+If macOS warns that this app should be moved to the Trash, Enter the following command in the terminal.
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/todo block.app"
+```
+
+
+
+## Screenshot
+
+![Todo Block startup screen](docs/images/todo-block-startup.png)
 
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/todo-block.git
+git clone https://github.com/keru-s/todo-block.git
 cd todo-block
 
 # Open in Xcode
@@ -141,6 +159,17 @@ xcodebuild test \
   -scheme "todo block" \
   -destination 'platform=macOS'
 ```
+
+### Creating a Release
+
+Release packaging is triggered by pushing a version tag that starts with `v`, for example:
+
+```bash
+git tag v0.1.0
+git push origin main v0.1.0
+```
+
+The GitHub Action builds the Release app, packages it as `Todo-Block-macOS.zip`, and attaches it to the GitHub Release. You can also run the workflow manually from GitHub Actions to generate a downloadable build artifact without publishing a GitHub Release.
 
 ### Code Style
 

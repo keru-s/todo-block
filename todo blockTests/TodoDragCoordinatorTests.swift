@@ -15,10 +15,12 @@ final class TodoDragCoordinatorTests: XCTestCase {
     override func setUp() async throws {
         coordinator = TodoDragCoordinator.shared
         coordinator.cancelDrag()
+        coordinator.removeAllSidebarTargets()
     }
 
     override func tearDown() async throws {
         coordinator.cancelDrag()
+        coordinator.removeAllSidebarTargets()
     }
 
     // MARK: - Lifecycle

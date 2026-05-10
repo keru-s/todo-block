@@ -30,6 +30,7 @@ Temporary Items
 build/
 DerivedData/
 .derivedData/
+release/
 
 ## User settings
 xcuserdata/
@@ -55,4 +56,5 @@ xcuserdata/
 # Other
 *.os_build_search_paths
 *.xcuserstate
+*.profraw
 .idea
