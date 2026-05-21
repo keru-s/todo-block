@@ -355,24 +355,36 @@ final class TodoStore {
         getOrCreateSection(for: Date())
     }
 
-    /// 获取或创建指定日期的 DaySection
+    /// 获取或创建指定日期的 DaySection。
+    /// 若新建则 bump refreshTrigger + scheduleSave；命中现存 section 时为 no-op。
+    /// 内部写路径（createItem / restoreItem / moveItemWithChildren）已在末尾统一 bump+save，
+    /// 应改用 `ensureSectionMaterialized(for:)` 跳过这层冗余触发。
+    @discardableResult
     func getOrCreateSection(for date: Date) -> DaySection {
+        let (section, didCreate) = ensureSectionMaterialized(for: date)
+        if didCreate {
+            refreshTrigger += 1
+            scheduleSave()
+        }
+        return section
+    }
+
+    /// 仅落实 DaySection 在 cache + modelContext 中的存在，不 bump 也不 schedule save。
+    /// 用于"调用方自己稍后会统一 bump+save"的内部写路径。
+    @discardableResult
+    private func ensureSectionMaterialized(for date: Date) -> (section: DaySection, didCreate: Bool) {
         let targetDate = Calendar.current.startOfDay(for: date)
 
         if let existing = validDaySections.first(where: {
             Calendar.current.isDate($0.date, inSameDayAs: targetDate)
         }) {
-            return existing
+            return (existing, false)
         }
 
         let newSection = DaySection(date: targetDate, sortOrder: Double(Date().timeIntervalSince1970))
         daySectionsCache[newSection.id] = newSection
-
         modelContext?.insert(newSection)
-        refreshTrigger += 1
-        scheduleSave()
-
-        return newSection
+        return (newSection, true)
     }
 
     /// 删除 DaySection
@@ -471,7 +483,7 @@ final class TodoStore {
         }
 
         if containerKind == .scheduled {
-            _ = getOrCreateSection(for: normalizedDate)
+            _ = ensureSectionMaterialized(for: normalizedDate)
         }
 
         let newItem = TodoItem(
@@ -538,7 +550,7 @@ final class TodoStore {
         )
 
         if restoredItem.containerKind == .scheduled {
-            _ = getOrCreateSection(for: restoredItem.dayDate)
+            _ = ensureSectionMaterialized(for: restoredItem.dayDate)
         }
 
         todoItemsCache[restoredItem.id] = restoredItem
@@ -653,7 +665,7 @@ final class TodoStore {
         }
 
         if case .scheduled(let date) = normalizedDestination {
-            _ = getOrCreateSection(for: date)
+            _ = ensureSectionMaterialized(for: date)
         }
 
         for (offset, movingItem) in itemsToMove.enumerated() {
