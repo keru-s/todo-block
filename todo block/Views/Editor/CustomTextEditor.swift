@@ -50,7 +50,7 @@ struct CustomTextEditor: NSViewRepresentable {
             onCompositionChange(composing)
         }
 
-        applyStyle(to: textView)
+        applyStyle(to: textView, coordinator: context.coordinator, force: true)
 
         return textView
     }
@@ -59,6 +59,7 @@ struct CustomTextEditor: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.hasMultipleSelection = hasMultipleSelection
 
+        var textWasReplaced = false
         if context.coordinator.isApplyingProgrammaticText == false,
             nsView.isComposingText == false,
             nsView.string != text
@@ -66,10 +67,11 @@ struct CustomTextEditor: NSViewRepresentable {
             context.coordinator.isApplyingProgrammaticText = true
             nsView.string = text
             context.coordinator.isApplyingProgrammaticText = false
+            textWasReplaced = true
         }
 
         if nsView.isComposingText == false {
-            applyStyle(to: nsView)
+            applyStyle(to: nsView, coordinator: context.coordinator, force: textWasReplaced)
         }
 
         if shouldFocus {
@@ -94,19 +96,26 @@ struct CustomTextEditor: NSViewRepresentable {
                 shouldFocus = false
             }
         }
-
-        Task { @MainActor in
-            nsView.invalidateIntrinsicContentSize()
-        }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    private func applyStyle(to textView: NSTextView) {
-        let currentText = textView.string
-        let range = NSRange(location: 0, length: currentText.count)
+    fileprivate func applyStyle(
+        to textView: NSTextView,
+        coordinator: Coordinator,
+        force: Bool = false
+    ) {
+        // textStorage.setAttributes 会触发 layoutManager 失效，进而引发 SwiftUI 重新测量。
+        // 仅在样式真的需要更新时执行，避免每次 body 重算都触发布局。
+        if force == false, coordinator.lastAppliedIsCompleted == isCompleted {
+            return
+        }
+        coordinator.lastAppliedIsCompleted = isCompleted
+
+        let length = (textView.string as NSString).length
+        let range = NSRange(location: 0, length: length)
 
         textView.textStorage?.beginEditing()
         textView.textStorage?.setAttributes(
@@ -127,6 +136,7 @@ extension CustomTextEditor {
         var parent: CustomTextEditor
         var hasMultipleSelection: Bool = false
         var isApplyingProgrammaticText: Bool = false
+        var lastAppliedIsCompleted: Bool?
 
         init(_ parent: CustomTextEditor) {
             self.parent = parent
@@ -146,7 +156,7 @@ extension CustomTextEditor {
             if let textView = notification.object as? CustomNSTextView {
                 parent.onCompositionChange(textView.isComposingText)
                 if textView.isComposingText == false {
-                    parent.applyStyle(to: textView)
+                    parent.applyStyle(to: textView, coordinator: self, force: true)
                 }
             }
         }
@@ -156,7 +166,7 @@ extension CustomTextEditor {
                 parent.onCompositionChange(false)
                 Task { @MainActor in
                     if textView.isComposingText == false {
-                        self.parent.applyStyle(to: textView)
+                        self.parent.applyStyle(to: textView, coordinator: self, force: true)
                     }
                 }
             }

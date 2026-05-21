@@ -124,6 +124,13 @@ final class TodoStore {
         dropIndicatorResetTrigger += 1
     }
 
+    /// 通知所有依赖派生集合（items(for:)/longTermItems 等）的视图刷新。
+    /// 仅在改变了"哪些 item 属于哪个 bucket / 顺序如何"的写操作末尾调用；
+    /// 字段级编辑（title/isCompleted/indentLevel）由 @Bindable item 自动驱动，无需调用。
+    func bumpRefreshTrigger() {
+        refreshTrigger += 1
+    }
+
     private func loadFromDatabase() {
         guard let modelContext = modelContext else { return }
 
@@ -199,6 +206,7 @@ final class TodoStore {
         )
 
         if hasChanges {
+            refreshTrigger += 1
             scheduleSave()
         }
     }
@@ -352,6 +360,7 @@ final class TodoStore {
         daySectionsCache[newSection.id] = newSection
 
         modelContext?.insert(newSection)
+        refreshTrigger += 1
         scheduleSave()
 
         return newSection
@@ -424,6 +433,7 @@ final class TodoStore {
         todoItemsCache[newItem.id] = newItem
 
         modelContext?.insert(newItem)
+        refreshTrigger += 1
         scheduleSave()
 
         undoManager.registerCreateItem(
@@ -439,6 +449,7 @@ final class TodoStore {
 
         todoItemsCache.removeValue(forKey: item.id)
         modelContext?.delete(item)
+        refreshTrigger += 1
         scheduleSave()
     }
 
@@ -446,6 +457,7 @@ final class TodoStore {
     func deleteItemWithoutUndo(_ item: TodoItem) {
         todoItemsCache.removeValue(forKey: item.id)
         modelContext?.delete(item)
+        refreshTrigger += 1
         scheduleSave()
     }
 
@@ -469,6 +481,7 @@ final class TodoStore {
 
         todoItemsCache[restoredItem.id] = restoredItem
         modelContext?.insert(restoredItem)
+        refreshTrigger += 1
         scheduleSave()
     }
 
@@ -597,14 +610,13 @@ final class TodoStore {
         let movedSnapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
         undoManager.registerMoveItems(from: snapshots, to: movedSnapshots, store: self)
 
+        refreshTrigger += 1
         scheduleSave()
     }
 
     // MARK: - 异步保存
 
     func scheduleSave() {
-        refreshTrigger += 1
-
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(Int(saveDebounceInterval * 1000)))

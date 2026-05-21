@@ -36,7 +36,6 @@ struct TodoItemView: View {
     @State private var isHoveringDragHandle: Bool = false
     @State private var editingText: String = ""
     @State private var shouldFocus: Bool = false
-    @State private var refreshId: UUID = UUID()
     @State private var isComposingText: Bool = false
 
     private var store: TodoStore { TodoStore.shared }
@@ -73,7 +72,6 @@ struct TodoItemView: View {
                 editingText: $editingText,
                 shouldFocus: $shouldFocus,
                 isComposingText: $isComposingText,
-                refreshId: refreshId,
                 hasMultipleSelection: hasMultipleSelection,
                 cursorPosition: cursorPosition,
                 preferredHorizontalOffset: preferredHorizontalOffset,
@@ -121,9 +119,6 @@ struct TodoItemView: View {
             } else if oldValue == item.id {
                 shouldFocus = false
             }
-        }
-        .onChange(of: item.isCompleted) { _, _ in
-            refreshId = UUID()
         }
         .onAppear {
             editingText = item.title
@@ -230,7 +225,6 @@ private struct TodoItemEditorContainer: View {
     @Binding var editingText: String
     @Binding var shouldFocus: Bool
     @Binding var isComposingText: Bool
-    let refreshId: UUID
     let hasMultipleSelection: Bool
     let cursorPosition: Int
     let preferredHorizontalOffset: CGFloat?
@@ -272,7 +266,6 @@ private struct TodoItemEditorContainer: View {
                     .allowsHitTesting(false)
             }
         }
-        .id(refreshId)
         .onChange(of: item.title) { _, newValue in
             if editingText != newValue {
                 editingText = newValue

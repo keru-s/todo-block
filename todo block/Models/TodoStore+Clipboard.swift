@@ -96,6 +96,7 @@ extension TodoStore {
             item.dayDate = newDateStart
             item.updatedAt = Date()
         }
+        bumpRefreshTrigger()
         scheduleSave()
     }
 
