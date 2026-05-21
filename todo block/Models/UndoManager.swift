@@ -7,11 +7,6 @@
 
 import Foundation
 
-// MARK: - 焦点恢复通知
-
-extension Notification.Name {
-    static let focusRequest = Notification.Name("focusRequest")
-}
 // MARK: - TodoItem 快照（用于恢复已删除或移动的项目）
 
 struct TodoItemSnapshot {
