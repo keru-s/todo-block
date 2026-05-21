@@ -61,6 +61,7 @@ final class TodoStore {
         self.modelContext = modelContext
         loadFromDatabase()
         migrateCachedItemsIfNeeded()
+        cleanupAllOrphanSections()
     }
 
     /// 用于测试：重置状态
@@ -383,6 +384,49 @@ final class TodoStore {
         scheduleSave()
     }
 
+    /// 若指定 scheduled 日期下已无任何 item，则同步删除对应 DaySection。
+    /// 调用方负责后续的 refreshTrigger / scheduleSave，避免重复触发。
+    private func cleanupSectionIfEmpty(scheduledDate: Date) {
+        let targetDate = Calendar.current.startOfDay(for: scheduledDate)
+        guard let section = validDaySections.first(where: {
+            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
+        }) else { return }
+
+        let hasItems = validTodoItems.contains { item in
+            item.containerKind == .scheduled
+                && Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate)
+        }
+        guard hasItems == false else { return }
+
+        daySectionsCache.removeValue(forKey: section.id)
+        modelContext?.delete(section)
+    }
+
+    /// 启动时回收没有任何 scheduled item 引用的 DaySection（清理旧版本累积的孤儿）。
+    private func cleanupAllOrphanSections() {
+        let calendar = Calendar.current
+        let scheduledDates: Set<Date> = Set(
+            validTodoItems
+                .filter { $0.containerKind == .scheduled }
+                .map { calendar.startOfDay(for: $0.dayDate) }
+        )
+
+        var didDelete = false
+        for section in validDaySections {
+            let sectionDate = calendar.startOfDay(for: section.date)
+            if scheduledDates.contains(sectionDate) == false {
+                daySectionsCache.removeValue(forKey: section.id)
+                modelContext?.delete(section)
+                didDelete = true
+            }
+        }
+
+        if didDelete {
+            refreshTrigger += 1
+            scheduleSave()
+        }
+    }
+
     // MARK: - TodoItem 操作
 
     /// 创建新的待办事项
@@ -455,16 +499,24 @@ final class TodoStore {
         let snapshot = TodoItemSnapshot(from: item)
         undoManager.registerDeleteItem(snapshot: snapshot, store: self)
 
+        let scheduledDate: Date? = item.containerKind == .scheduled ? item.dayDate : nil
         todoItemsCache.removeValue(forKey: item.id)
         modelContext?.delete(item)
+        if let scheduledDate {
+            cleanupSectionIfEmpty(scheduledDate: scheduledDate)
+        }
         refreshTrigger += 1
         scheduleSave()
     }
 
     /// 删除待办事项（不注册撤销，用于撤销操作内部调用）
     func deleteItemWithoutUndo(_ item: TodoItem) {
+        let scheduledDate: Date? = item.containerKind == .scheduled ? item.dayDate : nil
         todoItemsCache.removeValue(forKey: item.id)
         modelContext?.delete(item)
+        if let scheduledDate {
+            cleanupSectionIfEmpty(scheduledDate: scheduledDate)
+        }
         refreshTrigger += 1
         scheduleSave()
     }
@@ -619,6 +671,12 @@ final class TodoStore {
 
         let movedSnapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
         undoManager.registerMoveItems(from: snapshots, to: movedSnapshots, store: self)
+
+        // 若源是 scheduled 且目标 ≠ 源，源日期可能变成空 section，清理掉。
+        if case .scheduled(let sourceDate) = sourceDestination.normalized,
+           sourceDestination.normalized != normalizedDestination {
+            cleanupSectionIfEmpty(scheduledDate: sourceDate)
+        }
 
         refreshTrigger += 1
         scheduleSave()

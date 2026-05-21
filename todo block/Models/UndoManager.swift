@@ -217,6 +217,12 @@ final class TodoUndoManager {
     /// 注册移动 Items 的撤销
     func registerMoveItems(from oldSnapshots: [TodoItemSnapshot], to newSnapshots: [TodoItemSnapshot], store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            // 先把可能被孤儿清理删掉的源 DaySection 重建回来，否则下面写 dayDate
+            // 时该日没有 section，UI 端就会出现"item 有日期但月份列表里看不到"的悬空状态。
+            for snapshot in oldSnapshots
+            where snapshot.containerKindRaw == TodoContainerKind.scheduled.rawValue {
+                _ = store.getOrCreateSection(for: snapshot.dayDate)
+            }
             var anyApplied = false
             for snapshot in oldSnapshots {
                 if let item = store.todoItemsCache[snapshot.id] {
