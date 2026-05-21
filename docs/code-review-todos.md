@@ -18,53 +18,11 @@
 | 9 | 中 | `createItem` 调用 `getOrCreateSection` 后自己再 bump trigger + scheduleSave,触发双倍重算 | 拆分 `getOrCreateSection` 的"纯创建"与"触发"两步,内部写路径不再冗余 bump | `07c98f7` |
 | 10 | 低 | 死代码 `Notification.Name("focusRequest")` 已被 `focusRequestId` 取代 | 删除 | `91f1a29` |
 | — | 低 | `SidebarView` 年份标题 `Text("\(year) 年")` 走 LocalizedStringKey 被加千分位分隔符,显示为 "2.026" | 改用 `Text(verbatim:)` 跳过本地化 | `ebb9bad` |
+| 5 | 高 | `TodoClipboardManager` / `TodoReorderCommandManager` active context 被各 list view 反复 activate,主窗口 ↔ 菜单栏 popover 切换时 Cmd+C / Cmd+↑↓ 可能落到错误来源 | 删除冗余 bindContexts;新增 `.menuBarPopoverWillShow` / `.menuBarPopoverDidClose` 通知,popover 显示时 MenuBarView re-bind、popover 关闭后主窗口 active list re-bind | `11fb709` |
+| 6 | 高 | `MenuBarStatusItemController.installIfNeeded` 重复调用都重建 NSHostingController,popover 正在显示时替换 contentViewController 有 dismiss 风险 | hosting controller 仅首调创建,后续整体 return;NSPopover 生命周期通过 NotificationCenter 观察(避免 popover.delegate=self 导致 XCUIApplication.terminate() 60s 超时) | `9eb4421` |
+| 11 | 中 | 三处 `#Preview` 各自创建 ModelContainer 后调用 `TodoStore.shared.initialize(with:)`,Canvas 同时开多个 Preview 会反复 reset 单例 | 新增 `TodoPreviewSupport.sharedContainer`(static let in-memory),Preview 统一走 `TodoPreviewSupport.bootstrap()` 共用同一个 ModelContext | `da210c4` |
 
 > 已加 3 个回归测试: `testRestoreInDebounceWindowDoesNotConflict`、`testStaleUndoSkipsToNextStep`、`testBatchDeleteSupportsRedo`。
-
----
-
-## 未修复 — 高优先级
-
-### #5 `bindContextsIfNeeded()` 频繁调用,跨窗口作用域错乱
-
-**位置**: `Views/Main/TodoListView.swift`、`Views/Main/LongTermListView.swift`、`Views/MenuBar/MenuBarView.swift`
-
-**问题**: 每个列表 view 在 `onAppear` + 多个 `onChange` 回调里反复调用 `TodoClipboardManager.shared.activateListContext(...)` 和 `TodoReorderCommandManager.shared.activateListContext(...)`。这两个 manager 是单例,activate 会切换 active scope。
-
-**风险**:
-- 当用户在主窗口和菜单栏 popover 之间快速切换时,active scope 可能错位
-- 复制/粘贴或键盘重排可能落到非预期的列表上
-- 多窗口场景(若将来支持)行为更不可预测
-
-**目标**: 让 active context 由"用户最后聚焦的窗口/列表"单点决定,而不是每个 view 各自抢着 activate。
-
-**改动量**: 中。需要重新设计 manager 的 active context 切换协议。
-
----
-
-### #6 菜单栏 hosting 反复重建 + popover 闪退风险
-
-**位置**: `MenuBarView` 相关 + `todo_blockApp.swift` 的 `MenuBarExtra` 集成
-
-**问题**: 菜单栏 popover 每次显示时,`NSPopover.contentViewController` 被替换为新的 `NSHostingController`,旧的 controller 持有的 SwiftUI 视图层 + closure 引用未必立即释放。如果 popover 正在显示中切换 contentViewController,在 macOS 上有概率立即关闭 popover。
-
-**目标**:
-- 菜单栏 hosting controller 复用一份,内部状态用 SwiftUI 自身的 binding 驱动
-- 避免在 popover 显示期间替换 contentViewController
-
-**改动量**: 中,涉及 AppKit↔SwiftUI 桥接代码。
-
----
-
-## 未修复 — 中优先级
-
-### #11 三处 `#Preview` 都执行 `TodoStore.shared.initialize(with:)`
-
-**位置**: `TodoItemView.swift:296`、`DaySectionView.swift:481`、`TodoListView.swift:158`
-
-**问题**: 多个 Preview 同时打开会互相 reset 单例,Preview Canvas 容易崩。不影响 Release,只影响开发体验。
-
-**修复思路**: 给 Preview 用一个隔离的 `TodoStore` 实例(注入或测试专用初始化),不要共享 `.shared`。
 
 ---
 
