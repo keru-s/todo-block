@@ -26,9 +26,7 @@ struct LongTermListView: View {
                         onItemCreated: { itemId in
                             scrollToItem(itemId, proxy: proxy)
                         },
-                        onInteraction: {
-                            bindContextsIfNeeded()
-                        }
+                        onInteraction: {}
                     )
 
                     LongTermBucketView(
@@ -38,9 +36,7 @@ struct LongTermListView: View {
                         onItemCreated: { itemId in
                             scrollToItem(itemId, proxy: proxy)
                         },
-                        onInteraction: {
-                            bindContextsIfNeeded()
-                        }
+                        onInteraction: {}
                     )
                 }
                 .padding()
@@ -50,13 +46,9 @@ struct LongTermListView: View {
                 bindContextsIfNeeded()
             }
             .onChange(of: selectionManager.focusedItemId) { _, newValue in
-                bindContextsIfNeeded()
                 if let itemId = newValue {
                     scrollToItem(itemId, proxy: proxy)
                 }
-            }
-            .onChange(of: selectionManager.selectedItemIds) { _, _ in
-                bindContextsIfNeeded()
             }
             .onChange(of: isActiveContext) { _, newValue in
                 guard newValue else { return }
@@ -64,9 +56,11 @@ struct LongTermListView: View {
             }
             .onChange(of: store.focusRequestId) { _, newValue in
                 guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-                bindContextsIfNeeded()
                 selectionManager.restoreFocus(to: itemId)
                 scrollToItem(itemId, proxy: proxy)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
+                bindContextsIfNeeded()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

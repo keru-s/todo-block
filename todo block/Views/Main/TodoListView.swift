@@ -45,9 +45,7 @@ struct TodoListView: View {
                                 onItemCreated: { itemId in
                                     scrollToItem(itemId, proxy: proxy)
                                 },
-                                onInteraction: {
-                                    bindContextsIfNeeded()
-                                }
+                                onInteraction: {}
                             )
                             .id(section.id)
                         }
@@ -56,7 +54,6 @@ struct TodoListView: View {
                 }
                 .gesture(
                     TapGesture().onEnded {
-                        bindContextsIfNeeded()
                         selectionManager.clearSelection()
                     }
                 )
@@ -89,29 +86,29 @@ struct TodoListView: View {
                 bindContextsIfNeeded()
             }
             .onChange(of: selectionManager.focusedItemId) { _, newValue in
-                bindContextsIfNeeded()
                 if let itemId = newValue {
                     scrollToItem(itemId, proxy: proxy)
                 }
-            }
-            .onChange(of: selectionManager.selectedItemIds) { _, _ in
-                bindContextsIfNeeded()
             }
             .onChange(of: isActiveContext) { _, newValue in
                 guard newValue else { return }
                 bindContextsIfNeeded()
             }
+            .onChange(of: clipboardScope) { _, _ in
+                bindContextsIfNeeded()
+            }
             .onChange(of: store.focusRequestId) { _, newValue in
                 guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-                bindContextsIfNeeded()
                 selectionManager.restoreFocus(to: itemId)
                 scrollToItem(itemId, proxy: proxy)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
+                bindContextsIfNeeded()
             }
         }
     }
 
     private func addTodaySection(proxy: ScrollViewProxy) {
-        bindContextsIfNeeded()
         let hadTodaySection = hasTodaySection
         let section = store.getOrCreateTodaySection()
         if hadTodaySection == false {

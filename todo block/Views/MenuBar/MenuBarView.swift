@@ -108,6 +108,9 @@ struct MenuBarView: View {
         .onAppear {
             bindContexts()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
+            bindContexts()
+        }
         .gesture(
             TapGesture().onEnded {
                 handleBackgroundTap()
@@ -116,23 +119,15 @@ struct MenuBarView: View {
         )
         .onChange(of: store.focusRequestId) { _, newValue in
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-            bindContexts()
             selectionManager.restoreFocus(to: itemId)
         }
         .onChange(of: todayItems.dropResetSnapshot) { _, _ in
             if TodoDragCoordinator.shared.isDragging == false, draggingItemId == nil {
                 dropState = .none
             }
-            bindContexts()
         }
         .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
             dropState = .none
-        }
-        .onChange(of: selectionManager.focusedItemId) { _, _ in
-            bindContexts()
-        }
-        .onChange(of: selectionManager.selectedItemIds) { _, _ in
-            bindContexts()
         }
     }
 
@@ -174,12 +169,10 @@ struct MenuBarView: View {
                             )
                         },
                         onSelect: { shiftPressed in
-                            bindContexts()
                             selectionManager.handleSelect(
                                 item: item, allItems: items, shiftPressed: shiftPressed)
                         },
                         onFocus: { shiftPressed, cursorPosition in
-                            bindContexts()
                             selectionManager.handleSelect(
                                 item: item, allItems: items, shiftPressed: shiftPressed,
                                 cursorPosition: cursorPosition)
@@ -208,9 +201,7 @@ struct MenuBarView: View {
                                 preferredHorizontalOffset: horizontalOffset
                             )
                         },
-                        onActivateInteraction: {
-                            bindContexts()
-                        }
+                        onActivateInteraction: {}
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
@@ -260,14 +251,12 @@ struct MenuBarView: View {
 
 private extension MenuBarView {
     func addTodayItem() {
-        bindContexts()
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(dayDate: Date())
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
     func createNewItemAfter(_ item: TodoItem) {
-        bindContexts()
         let newItem = store.createItem(
             dayDate: Date(),
             afterItem: item,
@@ -289,7 +278,6 @@ private extension MenuBarView {
     }
 
     func handleBackgroundTap() {
-        bindContexts()
         selectionManager.clearSelection()
     }
 
