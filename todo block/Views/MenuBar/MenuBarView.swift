@@ -22,7 +22,7 @@ struct MenuBarView: View {
     // 状态管理
     @State private var selectionManager = SelectionManager()
     @State private var dropState: TodoListDropState = .none
-    @State private var itemFrames: [UUID: CGRect] = [:]
+    @State private var frameTracker = DropFrameTracker()
     @State private var draggingItemId: UUID?
 
     private var store: TodoStore { TodoStore.shared }
@@ -65,8 +65,8 @@ struct MenuBarView: View {
                 .frame(minHeight: 50, maxHeight: 350)
                 .contentShape(.rect)
                 .coordinateSpace(name: "menubar-drop-area")
-                .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { value in
-                    itemFrames = value
+                .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { [frameTracker] value in
+                    frameTracker.itemFrames = value
                 }
             }
 
@@ -228,7 +228,7 @@ struct MenuBarView: View {
             TodoDropIndicatorOverlay(
                 dropState: dropState,
                 items: items,
-                itemFrames: itemFrames,
+                itemFrames: frameTracker.itemFrames,
                 itemHeight: itemHeight,
                 indentWidth: indentWidth
             )
@@ -299,7 +299,7 @@ private extension MenuBarView {
         dropState = MenuBarManualReorderEngine.dropState(
             for: location,
             items: items,
-            itemFrames: itemFrames,
+            itemFrames: frameTracker.itemFrames,
             itemHeight: itemHeight,
             indentWidth: indentWidth
         )
@@ -311,7 +311,7 @@ private extension MenuBarView {
         let finalDropState = MenuBarManualReorderEngine.dropState(
             for: location,
             items: items,
-            itemFrames: itemFrames,
+            itemFrames: frameTracker.itemFrames,
             itemHeight: itemHeight,
             indentWidth: indentWidth
         )

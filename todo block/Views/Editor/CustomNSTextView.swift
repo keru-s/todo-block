@@ -37,8 +37,15 @@ final class CustomNSTextView: NSTextView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
+        // 仅在宽度变化（影响文本换行）时主动失效内置尺寸。
+        // 高度变化是 invalidateIntrinsicContentSize 自身的产物，
+        // 再次 invalidate 会与 SwiftUI 的 sizeThatFits 形成自反循环，
+        // 表现为 100% CPU 卡死。文本内容变化已由 didChangeText() 覆盖。
+        let widthChanged = abs(newSize.width - frame.width) > 0.5
         super.setFrameSize(newSize)
-        invalidateIntrinsicContentSize()
+        if widthChanged {
+            invalidateIntrinsicContentSize()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

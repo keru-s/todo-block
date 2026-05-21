@@ -42,6 +42,14 @@ struct TodoDropItemFramePreferenceKey: PreferenceKey {
     }
 }
 
+/// 拖放系统专用的 frame 缓存。引用类型,赋值它的属性不会触发 SwiftUI body 重算,
+/// 用于打破 GeometryReader → @State 写入 → body 重算 → GeometryReader 重测的反馈循环。
+@MainActor
+final class DropFrameTracker {
+    var itemFrames: [UUID: CGRect] = [:]
+    var listGlobalFrame: CGRect = .zero
+}
+
 struct TodoInsertionIndicator: View {
     static let visualHeight: CGFloat = 4
 

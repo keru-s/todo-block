@@ -163,8 +163,7 @@ private struct DaySectionTodoListView: View {
     let onAddItem: () -> Void
     let onCreateItemAfter: (TodoItem) -> Void
 
-    @State private var itemFrames: [UUID: CGRect] = [:]
-    @State private var listGlobalFrame: CGRect = .zero
+    @State private var frameTracker = DropFrameTracker()
     private let itemHeight: CGFloat = 28
 
     private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
@@ -263,20 +262,23 @@ private struct DaySectionTodoListView: View {
                 }
             }
             .coordinateSpace(name: dropCoordinateSpaceName)
-            .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { itemFrames = $0 }
+            .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { [frameTracker] in
+                frameTracker.itemFrames = $0
+            }
             .background {
                 GeometryReader { proxy in
                     Color.clear
                         .onAppear {
-                            listGlobalFrame = proxy.frame(in: .global)
+                            let frame = proxy.frame(in: .global)
+                            frameTracker.listGlobalFrame = frame
                             coordinator.registerDropZone(
                                 id: dropCoordinateSpaceName,
                                 destination: destination,
-                                frame: listGlobalFrame
+                                frame: frame
                             )
                         }
-                        .onChange(of: proxy.frame(in: .global)) { _, newValue in
-                            listGlobalFrame = newValue
+                        .onChange(of: proxy.frame(in: .global)) { [frameTracker] _, newValue in
+                            frameTracker.listGlobalFrame = newValue
                             coordinator.updateDropZoneFrame(
                                 id: dropCoordinateSpaceName,
                                 frame: newValue
@@ -291,7 +293,7 @@ private struct DaySectionTodoListView: View {
             TodoDropIndicatorOverlay(
                 dropState: dropState,
                 items: items,
-                itemFrames: itemFrames,
+                itemFrames: frameTracker.itemFrames,
                 itemHeight: itemHeight,
                 indentWidth: indentWidth
             )
@@ -310,6 +312,7 @@ private struct DaySectionTodoListView: View {
     // MARK: - Drop state observation
 
     private func updateDropStateFromCoordinator() {
+        let listGlobalFrame = frameTracker.listGlobalFrame
         guard coordinator.isDragging,
             let globalLoc = coordinator.globalDragLocation,
             listGlobalFrame.width > 0,
@@ -334,7 +337,7 @@ private struct DaySectionTodoListView: View {
         let newState = TodoDropLocationEngine.dropState(
             for: localPoint,
             items: items,
-            itemFrames: itemFrames,
+            itemFrames: frameTracker.itemFrames,
             itemHeight: itemHeight,
             indentWidth: indentWidth
         )
