@@ -214,11 +214,13 @@ struct MenuBarView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: TodoDropItemFramePreferenceKey.self,
-                                value: [item.id: proxy.frame(in: .named("menubar-drop-area"))]
-                            )
+                        if draggingItemId != nil {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TodoDropItemFramePreferenceKey.self,
+                                    value: [item.id: proxy.frame(in: .named("menubar-drop-area"))]
+                                )
+                            }
                         }
                     }
                     .id(item.id)

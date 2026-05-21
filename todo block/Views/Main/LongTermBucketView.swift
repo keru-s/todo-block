@@ -195,11 +195,13 @@ private struct LongTermBucketListView: View {
                         )
                         .id(item.id)
                         .background {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: TodoDropItemFramePreferenceKey.self,
-                                    value: [item.id: proxy.frame(in: .named(dropCoordinateSpaceName))]
-                                )
+                            if coordinator.isDragging {
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: TodoDropItemFramePreferenceKey.self,
+                                        value: [item.id: proxy.frame(in: .named(dropCoordinateSpaceName))]
+                                    )
+                                }
                             }
                         }
                     }
