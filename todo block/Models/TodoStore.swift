@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import SwiftData
 
 /// 单例数据存储，内存缓存 + 异步持久化
@@ -14,6 +15,9 @@ import SwiftData
 @Observable
 final class TodoStore {
     static let shared = TodoStore()
+
+    @ObservationIgnored
+    private static let logger = Logger(subsystem: "com.insight.to-do-block", category: "persistence")
 
     // MARK: - 内存缓存
 
@@ -28,6 +32,10 @@ final class TodoStore {
 
     /// 焦点恢复请求：撤销后需要聚焦的 item ID
     var focusRequestId: UUID?
+
+    /// 最近一次持久化失败的错误。出错时 modelContext 已被 rollback，
+    /// UI 可订阅此属性做提示（本仓库暂未实现 banner）。
+    private(set) var lastSaveError: Error?
 
     // MARK: - 撤销管理
 
@@ -463,6 +471,8 @@ final class TodoStore {
 
     /// 恢复已删除的待办事项
     func restoreItem(from snapshot: TodoItemSnapshot) {
+        // 让 pending 的 delete 先落盘，避免与下方 insert 撞 @Attribute(.unique) UUID
+        flushPendingChangesSync()
         let restoredItem = TodoItem(
             id: snapshot.id,
             title: snapshot.title,
@@ -633,10 +643,42 @@ final class TodoStore {
     }
 
     private func performSave() async {
+        guard let modelContext else { return }
+        guard modelContext.hasChanges else {
+            lastSaveError = nil
+            return
+        }
         do {
-            try modelContext?.save()
+            try modelContext.save()
+            lastSaveError = nil
         } catch {
-            print("保存失败: \(error)")
+            Self.logger.error(
+                "performSave failed: \(error.localizedDescription, privacy: .public)")
+            modelContext.rollback()
+            lastSaveError = error
+        }
+    }
+
+    /// 同步落盘当前所有 pending changes。用于必须打破 debounce 的关键路径，
+    /// 例如撤销恢复（避免与同 UUID 的 pending delete 撞 unique 约束）。
+    @discardableResult
+    func flushPendingChangesSync() -> Bool {
+        saveTask?.cancel()
+        saveTask = nil
+        guard let modelContext, modelContext.hasChanges else {
+            lastSaveError = nil
+            return true
+        }
+        do {
+            try modelContext.save()
+            lastSaveError = nil
+            return true
+        } catch {
+            Self.logger.error(
+                "flushPendingChangesSync failed: \(error.localizedDescription, privacy: .public)")
+            modelContext.rollback()
+            lastSaveError = error
+            return false
         }
     }
 }

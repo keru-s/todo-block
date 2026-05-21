@@ -294,6 +294,83 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate))
     }
 
+    // MARK: - 回归测试：撤销链路 × SwiftData 持久化边界
+
+    /// #1: 在 deleteItem 的 debounce 窗口内立即撤销，restoreItem 应先 flush pending delete，
+    /// 不应触发 @Attribute(.unique) UUID 冲突。
+    func testRestoreInDebounceWindowDoesNotConflict() throws {
+        let store = TodoStore.shared
+        let date = Date()
+        let item = store.createItem(title: "race", dayDate: date)
+        let originalId = item.id
+        store.undoManager.clear()
+
+        // 让 store 持有一些尚未落盘的 changes
+        item.title = "edited"
+        store.scheduleSave()
+
+        // 删除并立即撤销（在 300ms debounce 内）
+        store.deleteItem(item)
+        XCTAssertEqual(store.items(for: date).count, 0)
+        store.undo()
+        XCTAssertEqual(store.items(for: date).count, 1)
+
+        // 把所有挂起的变更落盘，验证数据库内仅有一条同 id
+        let context = descriptor.mainContext
+        try context.save()
+        let fetched = try context.fetch(
+            FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == originalId })
+        )
+        XCTAssertEqual(fetched.count, 1, "唯一约束：数据库内不应同时存在两条同 id 的 item")
+        XCTAssertNil(store.lastSaveError, "保存不应出错")
+    }
+
+    /// #3: 失效 undo（目标 item 已被外部路径删除）应自动跳过到下一个仍有效的 undo 步骤。
+    func testStaleUndoSkipsToNextStep() async throws {
+        let store = TodoStore.shared
+        let date = Date()
+
+        store.undoManager.clear()
+        let a = store.createItem(title: "A", dayDate: date)
+        _ = store.createItem(title: "B", dayDate: date)
+
+        // 绕过 deleteItem 注册的 undo，模拟"其他路径删除了 a"
+        store.deleteItemWithoutUndo(a)
+        XCTAssertEqual(store.items(for: date).count, 1)
+
+        // 栈顶 undo（创建 B）仍有效
+        store.undo()
+        XCTAssertEqual(store.items(for: date).count, 0)
+
+        // 再撤销：命中"创建 A"的 undo，但 A 已不在 cache → skipStaleUndo 触发
+        // skipStaleUndo 用 Task 异步再 undo 一次，等一个 main tick
+        store.undo()
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertFalse(store.canUndo, "失效 undo 步骤应被跳过，整个栈应清空")
+    }
+
+    /// #7: 批量删除的撤销必须能 redo，与单条 registerDeleteItem 行为对称。
+    func testBatchDeleteSupportsRedo() {
+        let store = TodoStore.shared
+        let date = Date()
+
+        let items = (0..<3).map { store.createItem(title: "item \($0)", dayDate: date) }
+        let snapshots = items.map { TodoItemSnapshot(from: $0) }
+        store.undoManager.clear()
+
+        for item in items { store.deleteItemWithoutUndo(item) }
+        store.undoManager.registerDeleteItems(snapshots: snapshots, store: store)
+        XCTAssertEqual(store.items(for: date).count, 0)
+
+        store.undo()
+        XCTAssertEqual(store.items(for: date).count, 3)
+        XCTAssertTrue(store.canRedo, "批量删除撤销后必须能 redo")
+
+        store.redo()
+        XCTAssertEqual(store.items(for: date).count, 0, "redo 应再次批量删除")
+        XCTAssertTrue(store.canUndo, "redo 后应能再 undo")
+    }
+
     private func fixedDate(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year
