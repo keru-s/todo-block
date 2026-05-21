@@ -25,19 +25,23 @@ final class MenuBarStatusItemController: NSObject {
         super.init()
         configurePopover()
         configureContextMenu()
+        observePopoverLifecycle()
     }
 
+    /// Installs the status bar item and creates the popover's hosting controller
+    /// exactly once. Subsequent calls are no-ops — we deliberately keep the same
+    /// NSHostingController so MenuBarView's SwiftUI state survives across popover
+    /// show/close cycles, and so we never swap contentViewController while the
+    /// popover is being shown (which has been observed to dismiss the popover
+    /// unexpectedly on macOS).
     func installIfNeeded(
         modelContainer: ModelContainer,
         openMainWindow: @escaping () -> Void
     ) {
+        if isInstalled { return }
+
         self.modelContainer = modelContainer
         self.openMainWindow = openMainWindow
-
-        if isInstalled {
-            updatePopoverContent()
-            return
-        }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = item.button else { return }
@@ -50,13 +54,36 @@ final class MenuBarStatusItemController: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         statusItem = item
+        installPopoverContent(modelContainer: modelContainer)
         isInstalled = true
-        updatePopoverContent()
     }
 
     private func configurePopover() {
         popover.behavior = .transient
         popover.animates = true
+    }
+
+    /// We observe `NSPopover.willShowNotification` / `didCloseNotification`
+    /// instead of becoming `popover.delegate = self`. In testing,
+    /// setting the popover delegate caused UI test runners to hang on
+    /// `app.terminate()` (XCTest's graceful terminate failed to complete,
+    /// timing out at 60s). Notification-based observation is delegate-free
+    /// and avoids that interaction.
+    private func observePopoverLifecycle() {
+        NotificationCenter.default.addObserver(
+            forName: NSPopover.willShowNotification,
+            object: popover,
+            queue: .main
+        ) { _ in
+            NotificationCenter.default.post(name: .menuBarPopoverWillShow, object: nil)
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSPopover.didCloseNotification,
+            object: popover,
+            queue: .main
+        ) { _ in
+            NotificationCenter.default.post(name: .menuBarPopoverDidClose, object: nil)
+        }
     }
 
     private func configureContextMenu() {
@@ -80,9 +107,7 @@ final class MenuBarStatusItemController: NSObject {
         contextMenu.addItem(quitItem)
     }
 
-    private func updatePopoverContent() {
-        guard let modelContainer else { return }
-
+    private func installPopoverContent(modelContainer: ModelContainer) {
         let rootView = MenuBarView(onOpenMainWindow: { [weak self] in
             self?.performOpenMainWindow()
         })
@@ -142,3 +167,4 @@ final class MenuBarStatusItemController: NSObject {
         NSApp.terminate(nil)
     }
 }
+
