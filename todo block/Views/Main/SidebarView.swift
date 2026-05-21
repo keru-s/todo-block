@@ -65,7 +65,7 @@ struct SidebarView: View {
                         .tag(destination)
                     }
                 } header: {
-                    Text("\(yearGroup.year) 年")
+                    Text(verbatim: "\(yearGroup.year) 年")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
