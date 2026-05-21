@@ -142,7 +142,8 @@ struct MenuBarView: View {
         let items = todayItems
 
         return ZStack(alignment: .topLeading) {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            // 用 VStack 而非 LazyVStack,见 TodoListView 中的注释。
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(items.enumerated(), id: \.element.id) { _, item in
                     TodoItemView(
                         item: item,

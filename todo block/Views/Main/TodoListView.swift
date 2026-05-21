@@ -34,7 +34,10 @@ struct TodoListView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 24) {
+                    // 用 VStack 而非 LazyVStack: LazyVStack 的 prefetch 与
+                    // NSViewRepresentable (CustomTextEditor) 的 intrinsicContentSize
+                    // 测量在滚动期间会形成不收敛的 layout 循环,导致 100% CPU 卡死。
+                    VStack(alignment: .leading, spacing: 24) {
                         ForEach(daySections) { section in
                             DaySectionView(
                                 section: section,

@@ -12,6 +12,7 @@
 | 7 | 高 | `registerDeleteItems`(批量删除)没有 redo,与单条删除不对称 | 改为 self-referential undo+redo,重做后再注册撤销 | `3c961aa` |
 | — | 致命(性能) | `CustomNSTextView.setFrameSize` 无条件 `invalidateIntrinsicContentSize` 形成自反循环,卡死时 100% CPU + 1.4 GB 物理内存 | 仅在宽度变化时 invalidate,高度变化由 `didChangeText()` 自带覆盖 | `d39350b` |
 | — | 防御性 | DaySection / LongTermBucket / MenuBar 中 `@State [UUID:CGRect]` 拖放 frame 缓存有 GeometryReader→@State→body 层级反馈环风险 | 引入 `DropFrameTracker` 引用类型,frame 写入不再驱动 SwiftUI invalidation | `d39350b` |
+| — | 致命(性能) | TodoListView / MenuBarView 用 `LazyVStack` 与 `CustomTextEditor` (NSViewRepresentable) 的 `intrinsicContentSize` 测量在滚动期间产生不收敛的 `LazyLayoutViewCache.signalPrefetch` 循环,卡死复现路径:打开应用 → 月份页面快速滚动 | 改为 `VStack`(eager 渲染),代价是首屏渲染所有 item(实测 ~300 个 item 仍秒级渲染,可接受) | 待提交 |
 
 > 已加 3 个回归测试: `testRestoreInDebounceWindowDoesNotConflict`、`testStaleUndoSkipsToNextStep`、`testBatchDeleteSupportsRedo`。
 
