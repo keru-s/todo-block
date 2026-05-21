@@ -482,13 +482,10 @@ private struct DaySectionEmptyStateView: View {
 }
 
 #Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
+    let container = TodoPreviewSupport.bootstrap()
 
     let section = DaySection(date: Date(), title: "01-17")
     container.mainContext.insert(section)
-
-    TodoStore.shared.initialize(with: container.mainContext)
 
     return DaySectionView(
         section: section,

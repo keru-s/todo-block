@@ -157,11 +157,8 @@ struct TodoListView: View {
 }
 
 #Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
-    
-    TodoStore.shared.initialize(with: container.mainContext)
-    
+    let container = TodoPreviewSupport.bootstrap()
+
     return TodoListView(year: 2026, month: 1)
         .modelContainer(container)
 }

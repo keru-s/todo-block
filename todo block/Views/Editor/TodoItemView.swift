@@ -287,13 +287,10 @@ private struct PreviewContent: View {
     let item: TodoItem
 
     init() {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try! ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
+        container = TodoPreviewSupport.bootstrap()
 
         item = TodoItem(title: "测试待办事项", indentLevel: 0)
         container.mainContext.insert(item)
-
-        TodoStore.shared.initialize(with: container.mainContext)
     }
 
     var body: some View {
