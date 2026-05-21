@@ -12,30 +12,18 @@
 | 7 | 高 | `registerDeleteItems`(批量删除)没有 redo,与单条删除不对称 | 改为 self-referential undo+redo,重做后再注册撤销 | `3c961aa` |
 | — | 致命(性能) | `CustomNSTextView.setFrameSize` 无条件 `invalidateIntrinsicContentSize` 形成自反循环,卡死时 100% CPU + 1.4 GB 物理内存 | 仅在宽度变化时 invalidate,高度变化由 `didChangeText()` 自带覆盖 | `d39350b` |
 | — | 防御性 | DaySection / LongTermBucket / MenuBar 中 `@State [UUID:CGRect]` 拖放 frame 缓存有 GeometryReader→@State→body 层级反馈环风险 | 引入 `DropFrameTracker` 引用类型,frame 写入不再驱动 SwiftUI invalidation | `d39350b` |
-| — | 致命(性能) | TodoListView / MenuBarView 用 `LazyVStack` 与 `CustomTextEditor` (NSViewRepresentable) 的 `intrinsicContentSize` 测量在滚动期间产生不收敛的 `LazyLayoutViewCache.signalPrefetch` 循环,卡死复现路径:打开应用 → 月份页面快速滚动 | 改为 `VStack`(eager 渲染),代价是首屏渲染所有 item(实测 ~300 个 item 仍秒级渲染,可接受) | 待提交 |
+| — | 致命(性能) | TodoListView / MenuBarView 用 `LazyVStack` 与 `CustomTextEditor` (NSViewRepresentable) 的 `intrinsicContentSize` 测量在滚动期间产生不收敛的 `LazyLayoutViewCache.signalPrefetch` 循环,卡死复现路径:打开应用 → 月份页面快速滚动 | 改为 `VStack`(eager 渲染),代价是首屏渲染所有 item(实测 ~300 个 item 仍秒级渲染,可接受) | `025d42b` |
+| 4 | 高 | 拖放系统全程挂载 per-item `GeometryReader` 收集 frame,平时不拖动也在每次 layout 被驱动 | per-item frame 收集用 `if coordinator.isDragging` / `if draggingItemId != nil` 守卫,仅在拖动期间挂载;`DropFrameTracker` 与列表级 GeometryReader 不动 | `0db6fd0` |
+| 8 | 中 | 孤儿 `DaySection` 不会被清理,长期累积空白日期条目 | `deleteItem` / `deleteItemWithoutUndo` 末尾检查所属 section items 是否为空,空则一并删除 | `89bb3b3` |
+| 9 | 中 | `createItem` 调用 `getOrCreateSection` 后自己再 bump trigger + scheduleSave,触发双倍重算 | 拆分 `getOrCreateSection` 的"纯创建"与"触发"两步,内部写路径不再冗余 bump | `07c98f7` |
+| 10 | 低 | 死代码 `Notification.Name("focusRequest")` 已被 `focusRequestId` 取代 | 删除 | `91f1a29` |
+| — | 低 | `SidebarView` 年份标题 `Text("\(year) 年")` 走 LocalizedStringKey 被加千分位分隔符,显示为 "2.026" | 改用 `Text(verbatim:)` 跳过本地化 | `ebb9bad` |
 
 > 已加 3 个回归测试: `testRestoreInDebounceWindowDoesNotConflict`、`testStaleUndoSkipsToNextStep`、`testBatchDeleteSupportsRedo`。
 
 ---
 
 ## 未修复 — 高优先级
-
-### #4 拖放系统的 GeometryReader+@State 反馈环根治
-
-**位置**: `Views/Editor/DaySectionView.swift`、`Views/Main/LongTermBucketView.swift`、`Views/MenuBar/MenuBarView.swift`
-
-**当前状态**: 已通过 `DropFrameTracker` 把 frame 写入从 SwiftUI 观察链路上拿走(防御性修复),消除了一类反馈环。但底层架构仍是"全程挂载 GeometryReader 收集所有 item frame",平时不拖动也在做无谓测量。
-
-**目标**: 改成**仅在拖动时**收集 frame,即:
-- `coordinator.isDragging` 为 false 时不挂载 frame-collecting GeometryReader
-- 拖动开始时一次性测量所有 item 的当前 frame,写入 coordinator
-- 拖动过程中如布局变化(很少发生)再增量更新
-
-**收益**: 平时(99% 的时间)零 GeometryReader 开销,内存占用更低,对未来 SwiftUI 行为变化更鲁棒。
-
-**改动量**: 中等。3 个 view 文件 + 可能需要在 `TodoDragCoordinator` 上加 frame 缓存。
-
----
 
 ### #5 `bindContextsIfNeeded()` 频繁调用,跨窗口作用域错乱
 
@@ -69,36 +57,6 @@
 ---
 
 ## 未修复 — 中优先级
-
-### #8 孤儿 `DaySection` 不会被清理
-
-**位置**: `Models/TodoStore.swift`
-
-**问题**: 删除某日最后一项 todo 时,对应的 `DaySection` 不会被回收(没有 `@Relationship` cascade 也没有清理逻辑)。`sections(year:month:)` 和 `availableMonths()` 会一直返回空白日期,数据库长期累积无用条目。
-
-**修复思路**: `deleteItem` / `deleteItemWithoutUndo` 末尾检查所属 `DaySection` 的 items 是否为空,若空则一并删除(注意 undo 协作)。
-
----
-
-### #9 `createItem` 触发双倍 refreshTrigger 与 scheduleSave
-
-**位置**: `Models/TodoStore.swift:381-443`
-
-**问题**: 调用 `getOrCreateSection`(line 363) bump trigger + schedule save 一次,然后自己 bump(line 436) + schedule save 再一次。每次新建条目浪费一次全列表重算和一次 task 取消/重建。
-
-**修复思路**: `getOrCreateSection` 拆出 "纯创建" 和 "trigger+schedule" 两步,由调用方决定是否触发。
-
----
-
-### #10 死代码 `Notification.Name("focusRequest")`
-
-**位置**: `Models/UndoManager.swift:12-14`
-
-**问题**: 声明了 Notification 名但全文无 post / addObserver,已被 `focusRequestId` 取代。
-
-**修复**: 直接删除。
-
----
 
 ### #11 三处 `#Preview` 都执行 `TodoStore.shared.initialize(with:)`
 
