@@ -15,7 +15,7 @@ struct LongTermBucketView: View {
     var onItemCreated: ((UUID) -> Void)?
     var onInteraction: (() -> Void)?
 
-    private let indentWidth: CGFloat = 24
+    private let indentWidth: CGFloat = TodoDesignTokens.indentWidth
     @State private var dropState: TodoListDropState = .none
     private var store: TodoStore { TodoStore.shared }
     private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
@@ -47,8 +47,8 @@ struct LongTermBucketView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.accentColor.opacity(0.05))
+            RoundedRectangle(cornerRadius: TodoDesignTokens.bucketCornerRadius)
+                .fill(TodoDesignTokens.bucketTint)
         )
         .onChange(of: todoItems.dropResetSnapshot) { _, _ in
             if coordinator.isDragging == false {
@@ -112,7 +112,7 @@ private struct LongTermBucketListView: View {
     let onCreateItemAfter: (TodoItem) -> Void
 
     @State private var frameTracker = DropFrameTracker()
-    private let itemHeight: CGFloat = 28
+    private let itemHeight: CGFloat = TodoDesignTokens.itemHeight
 
     private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
 

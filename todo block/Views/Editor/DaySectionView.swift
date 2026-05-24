@@ -14,7 +14,7 @@ struct DaySectionView: View {
     var onItemCreated: ((UUID) -> Void)?
     var onInteraction: (() -> Void)?
 
-    private let indentWidth: CGFloat = 24
+    private let indentWidth: CGFloat = TodoDesignTokens.indentWidth
     @State private var dropState: TodoListDropState = .none
     @State private var showDatePicker: Bool = false
     @State private var selectedDate: Date = Date()
@@ -50,8 +50,8 @@ struct DaySectionView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.accentColor.opacity(0.05))
+            RoundedRectangle(cornerRadius: TodoDesignTokens.bucketCornerRadius)
+                .fill(TodoDesignTokens.bucketTint)
         )
         .onAppear {
             selectedDate = section.date
@@ -164,7 +164,7 @@ private struct DaySectionTodoListView: View {
     let onCreateItemAfter: (TodoItem) -> Void
 
     @State private var frameTracker = DropFrameTracker()
-    private let itemHeight: CGFloat = 28
+    private let itemHeight: CGFloat = TodoDesignTokens.itemHeight
 
     private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
 

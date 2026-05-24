@@ -80,7 +80,7 @@ struct TodoListView: View {
                             .padding(.trailing, 12)
                     }
                 }
-                .background(Color(NSColor.windowBackgroundColor))
+                .background(TodoDesignTokens.windowBackground)
             }
             .onAppear {
                 bindContextsIfNeeded()

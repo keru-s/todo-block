@@ -15,8 +15,8 @@ struct MenuBarView: View {
         self.onOpenMainWindow = onOpenMainWindow
     }
 
-    private let indentWidth: CGFloat = 24
-    private let itemHeight: CGFloat = 28
+    private let indentWidth: CGFloat = TodoDesignTokens.indentWidth
+    private let itemHeight: CGFloat = TodoDesignTokens.itemHeight
     private let dropAreaInset = TodoInsertionIndicator.visualHeight + 8
 
     // 状态管理
@@ -104,7 +104,7 @@ struct MenuBarView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 320)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(TodoDesignTokens.windowBackground)
         .onAppear {
             bindContexts()
         }

@@ -104,7 +104,7 @@ private struct SidebarDropTargetRow<Content: View>: View {
             }
             .listRowBackground(
                 isHighlighted
-                    ? Color.accentColor.opacity(0.2)
+                    ? TodoDesignTokens.selectionTint
                     : nil
             )
     }

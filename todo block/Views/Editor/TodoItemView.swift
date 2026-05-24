@@ -31,7 +31,7 @@ struct TodoItemView: View {
     var onMoveDown: (Int, CGFloat?) -> Void
     var onActivateInteraction: () -> Void = {}
 
-    private let indentWidth: CGFloat = 24
+    private let indentWidth: CGFloat = TodoDesignTokens.indentWidth
 
     @State private var isHoveringDragHandle: Bool = false
     @State private var editingText: String = ""
@@ -96,7 +96,7 @@ struct TodoItemView: View {
             )
         }
         .padding(.vertical, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .background(isSelected ? TodoDesignTokens.selectionTint : Color.clear)
         .contentShape(.rect)
         .simultaneousGesture(
             TapGesture()
@@ -190,8 +190,8 @@ struct TodoItemDragPreviewView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(NSColor.windowBackgroundColor))
-        .clipShape(.rect(cornerRadius: 6))
+        .background(TodoDesignTokens.windowBackground)
+        .clipShape(.rect(cornerRadius: TodoDesignTokens.dragPreviewCornerRadius))
         .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
     }
 }
