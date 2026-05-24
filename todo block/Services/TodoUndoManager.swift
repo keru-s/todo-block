@@ -184,34 +184,45 @@ final class TodoUndoManager {
 
     /// 注册缩进变化的撤销
     func registerIndentChange(itemId: UUID, oldIndent: Int, newIndent: Int, store: TodoStore) {
-        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-            guard let item = store.todoItemsCache[itemId] else {
-                self?.skipStaleUndo()
-                return
-            }
-            item.indentLevel = oldIndent
-            item.updatedAt = Date()
-            self?.registerIndentChange(
-                itemId: itemId, oldIndent: newIndent, newIndent: oldIndent, store: store)
-            store.scheduleSave()
-        }
-        nsUndoManager.setActionName("缩进")
+        registerItemFieldChange(
+            itemId: itemId, oldValue: oldIndent, newValue: newIndent,
+            actionName: "缩进", store: store,
+            apply: { $0.indentLevel = $1 }
+        )
     }
 
     /// 注册标题变化的撤销
     func registerTitleChange(itemId: UUID, oldTitle: String, newTitle: String, store: TodoStore) {
+        registerItemFieldChange(
+            itemId: itemId, oldValue: oldTitle, newValue: newTitle,
+            actionName: "编辑", store: store,
+            apply: { $0.title = $1 }
+        )
+    }
+
+    /// 单字段改写的对称撤销模板：失效跳过 → 应用 oldValue → 反向自重注册 → 调度保存。
+    private func registerItemFieldChange<Value>(
+        itemId: UUID,
+        oldValue: Value,
+        newValue: Value,
+        actionName: String,
+        store: TodoStore,
+        apply: @escaping (TodoItem, Value) -> Void
+    ) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             guard let item = store.todoItemsCache[itemId] else {
                 self?.skipStaleUndo()
                 return
             }
-            item.title = oldTitle
+            apply(item, oldValue)
             item.updatedAt = Date()
-            self?.registerTitleChange(
-                itemId: itemId, oldTitle: newTitle, newTitle: oldTitle, store: store)
+            self?.registerItemFieldChange(
+                itemId: itemId, oldValue: newValue, newValue: oldValue,
+                actionName: actionName, store: store, apply: apply
+            )
             store.scheduleSave()
         }
-        nsUndoManager.setActionName("编辑")
+        nsUndoManager.setActionName(actionName)
     }
 
     /// 注册移动 Items 的撤销
