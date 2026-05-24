@@ -58,3 +58,4 @@ xcuserdata/
 *.xcuserstate
 *.profraw
 .idea
+.codepilot-uploads/
