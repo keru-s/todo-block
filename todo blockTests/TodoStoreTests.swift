@@ -647,6 +647,151 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(TodoStore.shared.items(for: day).map(\.id), [item.id])
     }
 
+    // MARK: - moveItemWithChildren（带子项的 reorder）回归测试
+
+    /// 回归用例：目标列表中 afterItem 与下一项 sortOrder 距离很小（< 0.001 * childCount）
+    /// 时，子项的固定步进会把它们推到 nextItem 之后，导致父子分离。
+    /// 真实数据示例：[..., a:5500.0, b:5500.001, c:5500.002, ...]
+    /// 把另一组 [parent, child1, child2] 移到 a 之后：
+    /// midpoint = (5500.0+5500.001)/2 = 5500.0005，子项 = 5500.0015/5500.0025，
+    /// 大于 b 的 5500.001 — 排序后变成 [a, parent, b, child1, c, child2]。
+    func testMoveParentIntoTightlyPackedSiblingsKeepsChildrenAdjacent() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+
+        // 目标列表：sortOrder 密集排布的三个相邻项
+        let a = store.createItem(title: "a", dayDate: day)
+        let b = store.createItem(title: "b", dayDate: day, afterItem: a)
+        _ = store.createItem(title: "c", dayDate: day, afterItem: b)
+        // 把 a/b 的 sortOrder 调整成 1.000/1.001（模拟历史密集插入产物）
+        a.sortOrder = 1.000
+        b.sortOrder = 1.001
+        store.items(for: day).first { $0.title == "c" }?.sortOrder = 1.002
+
+        // 源列表：parent + 2 child（在同一天的末尾，sortOrder >> 1.x）
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let child1 = store.createItem(title: "child1", dayDate: day, afterItem: parent, indentLevel: 1)
+        _ = store.createItem(title: "child2", dayDate: day, afterItem: child1, indentLevel: 1)
+
+        // 把 parent 移到 a 之后
+        store.moveItemWithChildren(
+            parent,
+            to: .scheduled(date: day),
+            afterItem: a,
+            newIndentLevel: 0
+        )
+
+        // 期望 child 紧跟 parent，不被 b/c 隔开
+        let actual = store.items(for: day).map(\.title)
+        let actualWithOrder = store.items(for: day).map { "\($0.title)@\($0.sortOrder)" }
+        XCTAssertEqual(
+            actual,
+            ["a", "parent", "child1", "child2", "b", "c"],
+            "Actual order: \(actualWithOrder)"
+        )
+    }
+
+
+    /// 同日内将带 child 的 parent 向下移到 anchor 之后，child 必须跟随。
+    func testMoveParentWithChildrenWithinSameDayCarriesChildren() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+
+        let parent = store.createItem(title: "parent", dayDate: day)
+        let child1 = store.createItem(title: "child1", dayDate: day, afterItem: parent, indentLevel: 1)
+        let child2 = store.createItem(title: "child2", dayDate: day, afterItem: child1, indentLevel: 1)
+        let anchor = store.createItem(title: "anchor", dayDate: day, afterItem: child2)
+
+        store.moveItemWithChildren(
+            parent,
+            to: .scheduled(date: day),
+            afterItem: anchor,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(
+            store.items(for: day).map(\.title),
+            ["anchor", "parent", "child1", "child2"]
+        )
+        XCTAssertEqual(child1.indentLevel, 1)
+        XCTAssertEqual(child2.indentLevel, 1)
+    }
+
+    /// 走 TodoReorderMoveEngine（UI 拖放实际路径），二级 parent 带三级 child 向下移动。
+    func testReorderEngineMovesLevel2ParentWithLevel3Child() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+
+        let top = store.createItem(title: "top", dayDate: day)  // indent 0
+        let parent = store.createItem(title: "parent", dayDate: day, afterItem: top, indentLevel: 1)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
+        let after = store.createItem(title: "after", dayDate: day, afterItem: child, indentLevel: 1)
+
+        // 模拟 UI：将 parent (indent 1) 拖到 after (indent 1) 下方
+        let items = store.items(for: day)
+        let afterIndex = items.firstIndex(where: { $0.id == after.id })!
+        TodoReorderMoveEngine.performMove(
+            draggedId: parent.id,
+            toIndex: afterIndex + 1,  // 插入 after 之后
+            indentLevel: 1,
+            items: items,
+            destination: .scheduled(date: day),
+            store: store
+        )
+
+        XCTAssertEqual(
+            store.items(for: day).map(\.title),
+            ["top", "after", "parent", "child"]
+        )
+    }
+
+    /// 走 TodoKeyboardReorderEngine（快捷键 Cmd+↑↓ 实际路径），二级 parent 向下，三级 child 必须跟随。
+    func testKeyboardReorderMovesLevel2ParentWithLevel3ChildDown() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+
+        let top = store.createItem(title: "top", dayDate: day)
+        let parent = store.createItem(title: "parent", dayDate: day, afterItem: top, indentLevel: 1)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
+        _ = store.createItem(title: "after", dayDate: day, afterItem: child, indentLevel: 1)
+
+        let moved = TodoKeyboardReorderEngine.move(
+            itemId: parent.id,
+            direction: .down,
+            items: store.items(for: day),
+            destination: .scheduled(date: day),
+            store: store
+        )
+
+        XCTAssertTrue(moved)
+        XCTAssertEqual(
+            store.items(for: day).map(\.title),
+            ["top", "after", "parent", "child"]
+        )
+    }
+
+    /// 跨日移动带 child 的 parent，child.dayDate 必须跟随。
+    func testMoveParentWithChildrenAcrossDaysCarriesChildren() {
+        let store = TodoStore.shared
+        let from = date(year: 2026, month: 5, day: 24)
+        let to = date(year: 2026, month: 5, day: 25)
+
+        let parent = store.createItem(title: "parent", dayDate: from)
+        let child = store.createItem(title: "child", dayDate: from, afterItem: parent, indentLevel: 1)
+        let anchor = store.createItem(title: "anchor", dayDate: to)
+
+        store.moveItemWithChildren(
+            parent,
+            to: .scheduled(date: to),
+            afterItem: anchor,
+            newIndentLevel: 0
+        )
+
+        XCTAssertEqual(store.items(for: from).map(\.title), [])
+        XCTAssertEqual(store.items(for: to).map(\.title), ["anchor", "parent", "child"])
+        XCTAssertTrue(Calendar.current.isDate(child.dayDate, inSameDayAs: to))
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

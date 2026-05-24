@@ -240,20 +240,34 @@ extension TodoStore {
 
         let targetItems = items(in: normalizedDestination).filter { movingIds.contains($0.id) == false }
 
+        // 计算 baseSortOrder + stepSize：必须保证 itemsToMove 落点全在
+        // (afterItem, nextItem) 这个 gap 内，否则带 child 移动时 child 会越过
+        // nextItem 排到后面，看起来像"父项移走了 child 没跟上"。
+        // 固定 0.001 步进在历史密集插入产生的小 gap（如 0.001）下会触发。
         let baseSortOrder: Double
+        let stepSize: Double
         if let afterItem,
             let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id })
         {
             if afterIndex + 1 < targetItems.count {
                 let nextItem = targetItems[afterIndex + 1]
-                baseSortOrder = (afterItem.sortOrder + nextItem.sortOrder) / 2
+                let gap = nextItem.sortOrder - afterItem.sortOrder
+                // 把 gap 平均分给 (itemsToMove.count + 1) 个间隔，
+                // baseSortOrder 占第 1 格，余下 N 个 child 各占 1 格，
+                // 最后一个 child 离 nextItem 还有 1 格缓冲。
+                let slots = Double(itemsToMove.count + 1)
+                stepSize = gap / slots
+                baseSortOrder = afterItem.sortOrder + stepSize
             } else {
                 baseSortOrder = afterItem.sortOrder + 1000
+                stepSize = 0.001
             }
         } else if let firstItem = targetItems.first {
             baseSortOrder = firstItem.sortOrder - 1000
+            stepSize = 0.001
         } else {
             baseSortOrder = 1000
+            stepSize = 0.001
         }
 
         if case .scheduled(let date) = normalizedDestination {
@@ -265,7 +279,7 @@ extension TodoStore {
             if case .scheduled(let date) = normalizedDestination {
                 movingItem.dayDate = date
             }
-            movingItem.sortOrder = baseSortOrder + Double(offset) * 0.001
+            movingItem.sortOrder = baseSortOrder + Double(offset) * stepSize
             movingItem.indentLevel = max(
                 0,
                 min(TodoItem.maxIndentLevel, movingItem.indentLevel + indentDelta)
