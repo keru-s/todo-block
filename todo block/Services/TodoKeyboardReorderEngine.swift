@@ -67,7 +67,15 @@ enum TodoKeyboardReorderEngine {
         switch direction {
         case .up:
             guard currentIndex > 0 else { return nil }
-            targetInsertIndex = currentIndex - 1
+            // 跳过前面属于"别人 block"的更深 child 项，落到那个 block 的锚之前。
+            // 否则当前项会被插到上一个 sibling 的 children 中间（视觉上"父子被劈开"）。
+            // 与 .down 用 blockEnd() 跳过下一个 block 的语义对称。
+            let currentIndent = items[currentIndex].indentLevel
+            var anchor = currentIndex - 1
+            while anchor > 0 && items[anchor].indentLevel > currentIndent {
+                anchor -= 1
+            }
+            targetInsertIndex = anchor
         case .down:
             let currentBlockEnd = blockEnd(startingAt: currentIndex, items: items)
             let nextBlockStart = currentBlockEnd + 1
