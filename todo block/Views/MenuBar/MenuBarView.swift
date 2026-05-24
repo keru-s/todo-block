@@ -324,6 +324,7 @@ private extension MenuBarView {
 }
 
 #Preview {
-    MenuBarView()
-        .modelContainer(for: [TodoItem.self, DaySection.self], inMemory: true)
+    let container = TodoPreviewSupport.bootstrap()
+    return MenuBarView()
+        .modelContainer(container)
 }

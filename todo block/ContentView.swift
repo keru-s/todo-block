@@ -64,6 +64,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
-        .modelContainer(for: [TodoItem.self, DaySection.self], inMemory: true)
+    let container = TodoPreviewSupport.bootstrap()
+    return ContentView()
+        .modelContainer(container)
 }

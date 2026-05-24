@@ -87,6 +87,7 @@ struct LongTermListView: View {
 }
 
 #Preview {
-    LongTermListView()
-        .modelContainer(for: [TodoItem.self, DaySection.self], inMemory: true)
+    let container = TodoPreviewSupport.bootstrap()
+    return LongTermListView()
+        .modelContainer(container)
 }

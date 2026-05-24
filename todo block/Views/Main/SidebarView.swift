@@ -111,7 +111,8 @@ private struct SidebarDropTargetRow<Content: View>: View {
 }
 
 #Preview {
-    SidebarView(
+    let container = TodoPreviewSupport.bootstrap()
+    return SidebarView(
         selectedDestination: .constant(
             .month(
                 year: Calendar.current.component(.year, from: Date()),
@@ -119,5 +120,5 @@ private struct SidebarDropTargetRow<Content: View>: View {
             )
         )
     )
-    .modelContainer(for: [TodoItem.self, DaySection.self], inMemory: true)
+    .modelContainer(container)
 }
