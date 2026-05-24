@@ -13,12 +13,8 @@ struct LongTermRow: View {
     var body: some View {
         HStack {
             Image(systemName: "infinity")
-            if isSelected {
-                Text("长期")
-                    .bold()
-            } else {
-                Text("长期")
-            }
+            Text("长期")
+                .fontWeight(isSelected ? .bold : .regular)
         }
         .padding(.vertical, 4)
         .contentShape(.rect)
@@ -32,12 +28,8 @@ struct MonthRow: View {
 
     var body: some View {
         HStack {
-            if isSelected {
-                Text("\(month) 月")
-                    .bold()
-            } else {
-                Text("\(month) 月")
-            }
+            Text("\(month) 月")
+                .fontWeight(isSelected ? .bold : .regular)
         }
         .padding(.vertical, 4)
         .contentShape(.rect)

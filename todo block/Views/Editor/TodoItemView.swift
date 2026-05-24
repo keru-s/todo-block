@@ -176,14 +176,23 @@ private struct TodoItemDragHandleView: View {
     }
 }
 
+/// 共享的完成态图标:统一 row checkbox 与 drag preview 的 icon 渲染。
+private struct TodoCheckboxIcon: View {
+    let isCompleted: Bool
+
+    var body: some View {
+        Image(systemName: isCompleted ? "checkmark.square.fill" : "square")
+            .font(.system(size: 14))
+            .foregroundStyle(isCompleted ? .green : .gray)
+    }
+}
+
 struct TodoItemDragPreviewView: View {
     let item: TodoItem
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
-                .font(.system(size: 14))
-                .foregroundStyle(item.isCompleted ? .green : .gray)
+            TodoCheckboxIcon(isCompleted: item.isCompleted)
             Text(item.title.isEmpty ? "待办事项" : item.title)
                 .font(.system(size: 14))
                 .lineLimit(1)
@@ -202,9 +211,7 @@ private struct TodoItemCheckboxView: View {
 
     var body: some View {
         Button(action: onToggle) {
-            Image(systemName: isCompleted ? "checkmark.square.fill" : "square")
-                .font(.system(size: 14))
-                .foregroundStyle(isCompleted ? .green : .gray)
+            TodoCheckboxIcon(isCompleted: isCompleted)
         }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
