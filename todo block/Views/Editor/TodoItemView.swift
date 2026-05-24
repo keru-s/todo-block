@@ -115,7 +115,7 @@ struct TodoItemView: View {
         .onChange(of: focusedItemId) { oldValue, newValue in
             if newValue == item.id {
                 editingText = item.title
-                scheduleFocus(after: .milliseconds(50))
+                shouldFocus = true
             } else if oldValue == item.id {
                 shouldFocus = false
             }
@@ -123,20 +123,13 @@ struct TodoItemView: View {
         .onAppear {
             editingText = item.title
             if isFocused {
-                scheduleFocus(after: .milliseconds(100))
+                shouldFocus = true
             }
         }
     }
 
     private func toggleComplete() {
         store.toggleComplete(item)
-    }
-
-    private func scheduleFocus(after delay: Duration) {
-        Task { @MainActor in
-            try? await Task.sleep(for: delay)
-            shouldFocus = true
-        }
     }
 }
 

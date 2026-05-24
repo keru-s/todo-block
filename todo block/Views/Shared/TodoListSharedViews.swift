@@ -74,6 +74,33 @@ struct TodoInsertionIndicator: View {
     }
 }
 
+/// 框选拖动期间, 把鼠标点击映射回某个 item.
+/// 优先返回纵向区间命中的 item, 命中失败时回落到与点击 y 距离最近者,
+/// 这样拖出列表上下边界时仍能选中头/尾。
+enum TodoDragSelectionHitTester {
+    static func nearestItemId(
+        at point: CGPoint,
+        items: [TodoItem],
+        itemFrames: [UUID: CGRect]
+    ) -> UUID? {
+        guard items.isEmpty == false else { return nil }
+
+        var best: (id: UUID, distance: CGFloat)?
+        for item in items {
+            guard let frame = itemFrames[item.id] else { continue }
+            if frame.minY <= point.y && point.y <= frame.maxY {
+                return item.id
+            }
+            let distance: CGFloat =
+                point.y < frame.minY ? frame.minY - point.y : point.y - frame.maxY
+            if best == nil || distance < best!.distance {
+                best = (item.id, distance)
+            }
+        }
+        return best?.id
+    }
+}
+
 struct TodoDropIndicatorOverlay: View {
     let dropState: TodoListDropState
     let items: [TodoItem]

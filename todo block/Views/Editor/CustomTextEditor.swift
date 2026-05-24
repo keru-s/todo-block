@@ -193,6 +193,11 @@ extension CustomTextEditor {
                     return true
                 }
 
+                // 创建新 item 前先放弃 first responder。
+                // 否则 SwiftUI 把焦点切到新 item 之前，
+                // 紧跟其后的 Tab/退格等命令会被旧 NSTextView 截获，
+                // 落到旧 item 的 onTab/onBackspace 闭包上。
+                textView.window?.makeFirstResponder(nil)
                 parent.onReturn()
                 return true
             }

@@ -195,12 +195,15 @@ private struct DaySectionTodoListView: View {
                             useSystemDragAndDrop: false,
                             handleDragCoordinateSpace: .global,
                             onHandleDragBegan: {
+                                guard selectionManager.isDragSelecting == false else { return }
                                 coordinator.beginDrag(itemId: item.id)
                             },
                             onHandleDragChanged: { location in
+                                guard selectionManager.isDragSelecting == false else { return }
                                 coordinator.updateDrag(globalLocation: location)
                             },
                             onHandleDragEnded: { location in
+                                guard selectionManager.isDragSelecting == false else { return }
                                 coordinator.updateDrag(globalLocation: location)
                                 finalizeDrop()
                             },
@@ -251,13 +254,11 @@ private struct DaySectionTodoListView: View {
                         )
                         .id(item.id)
                         .background {
-                            if coordinator.isDragging {
-                                GeometryReader { proxy in
-                                    Color.clear.preference(
-                                        key: TodoDropItemFramePreferenceKey.self,
-                                        value: [item.id: proxy.frame(in: .named(dropCoordinateSpaceName))]
-                                    )
-                                }
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TodoDropItemFramePreferenceKey.self,
+                                    value: [item.id: proxy.frame(in: .named(dropCoordinateSpaceName))]
+                                )
                             }
                         }
                     }
@@ -288,8 +289,22 @@ private struct DaySectionTodoListView: View {
                         }
                 }
             }
+            .onAppear {
+                OptionDragSelectionMonitor.shared.register(
+                    .init(
+                        id: dropCoordinateSpaceName,
+                        frameTracker: frameTracker,
+                        itemsProvider: { [store, sectionDate] in
+                            store.items(for: sectionDate)
+                        },
+                        selectionManager: selectionManager,
+                        onInteraction: onInteraction
+                    )
+                )
+            }
             .onDisappear {
                 coordinator.unregisterDropZone(id: dropCoordinateSpaceName)
+                OptionDragSelectionMonitor.shared.unregister(id: dropCoordinateSpaceName)
             }
 
             TodoDropIndicatorOverlay(
