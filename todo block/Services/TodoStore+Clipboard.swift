@@ -104,7 +104,12 @@ extension TodoStore {
         let oldIndent = item.indentLevel
         item.indent()
         guard item.indentLevel != oldIndent else { return }
-        registerIndentChange(itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
+        undoManager.registerIndentChange(
+            itemId: item.id,
+            oldIndent: oldIndent,
+            newIndent: item.indentLevel,
+            store: self
+        )
         scheduleSave()
     }
 
@@ -112,7 +117,12 @@ extension TodoStore {
         let oldIndent = item.indentLevel
         item.outdent()
         guard item.indentLevel != oldIndent else { return }
-        registerIndentChange(itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
+        undoManager.registerIndentChange(
+            itemId: item.id,
+            oldIndent: oldIndent,
+            newIndent: item.indentLevel,
+            store: self
+        )
         scheduleSave()
     }
 }

@@ -147,7 +147,12 @@ final class UndoManagerTests: XCTestCase {
         // 增加缩进
         let oldIndent = item.indentLevel
         item.indentLevel = 1  // 手动设置缩进
-        store.registerIndentChange(itemId: item.id, oldIndent: oldIndent, newIndent: item.indentLevel)
+        store.undoManager.registerIndentChange(
+            itemId: item.id,
+            oldIndent: oldIndent,
+            newIndent: item.indentLevel,
+            store: store
+        )
 
         XCTAssertEqual(item.indentLevel, 1)
 

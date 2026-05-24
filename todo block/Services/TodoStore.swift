@@ -17,35 +17,43 @@ final class TodoStore {
     static let shared = TodoStore()
 
     @ObservationIgnored
-    private static let logger = Logger(subsystem: "com.insight.to-do-block", category: "persistence")
+    static let logger = Logger(subsystem: "com.insight.to-do-block", category: "persistence")
 
     // MARK: - 内存缓存
+    // 注：以下属性丢掉了 `private(set)` 以便 TodoStore 的 extension 文件
+    // (TodoStore+DaySectionMaintenance / TodoStore+Persistence) 跨文件读写。
+    // 视图层不应直接修改这些缓存——通过公共 API（createItem / deleteItem / ...）。
 
-    private(set) var todoItemsCache: [UUID: TodoItem] = [:]
-    private(set) var daySectionsCache: [UUID: DaySection] = [:]
+    var todoItemsCache: [UUID: TodoItem] = [:]
+    var daySectionsCache: [UUID: DaySection] = [:]
 
     /// 刷新触发器：每次数据变化时递增，强制依赖它的视图刷新
-    private(set) var refreshTrigger: Int = 0
+    var refreshTrigger: Int = 0
 
     /// 拖拽指示线重置触发器：拖拽结束后统一清理所有列表的插入提示线
-    private(set) var dropIndicatorResetTrigger: Int = 0
+    var dropIndicatorResetTrigger: Int = 0
 
     /// 焦点恢复请求：撤销后需要聚焦的 item ID
     var focusRequestId: UUID?
 
     /// 最近一次持久化失败的错误。出错时 modelContext 已被 rollback，
     /// UI 可订阅此属性做提示（本仓库暂未实现 banner）。
-    private(set) var lastSaveError: Error?
+    var lastSaveError: Error?
 
     // MARK: - 撤销管理
 
     let undoManager = TodoUndoManager()
 
-    // MARK: - 私有属性
+    // MARK: - 内部状态（@ObservationIgnored，extension 跨文件需要访问）
 
-    private var modelContext: ModelContext?
-    private var saveTask: Task<Void, Never>?
-    private let saveDebounceInterval: TimeInterval = 0.3
+    @ObservationIgnored
+    var modelContext: ModelContext?
+
+    @ObservationIgnored
+    var saveTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    let saveDebounceInterval: TimeInterval = 0.3
 
     private init() {}
 
@@ -108,18 +116,6 @@ final class TodoStore {
         undoManager.nsUndoManager
     }
 
-    /// 注册缩进变化（供视图层调用）
-    func registerIndentChange(itemId: UUID, oldIndent: Int, newIndent: Int) {
-        undoManager.registerIndentChange(
-            itemId: itemId, oldIndent: oldIndent, newIndent: newIndent, store: self)
-    }
-
-    /// 注册标题变化（供视图层调用）
-    func registerTitleChange(itemId: UUID, oldTitle: String, newTitle: String) {
-        undoManager.registerTitleChange(
-            itemId: itemId, oldTitle: oldTitle, newTitle: newTitle, store: self)
-    }
-
     /// 触发一次焦点恢复请求（用于撤销/重做后的光标恢复）
     func requestFocus(_ itemId: UUID?) {
         focusRequestId = nil
@@ -176,23 +172,23 @@ final class TodoStore {
         refreshTrigger += 1
     }
 
-    private func isValid(model item: TodoItem) -> Bool {
+    func isValid(model item: TodoItem) -> Bool {
         guard item.isDeleted == false else { return false }
         guard let modelContext else { return true }
         return item.modelContext === modelContext
     }
 
-    private func isValid(model section: DaySection) -> Bool {
+    func isValid(model section: DaySection) -> Bool {
         guard section.isDeleted == false else { return false }
         guard let modelContext else { return true }
         return section.modelContext === modelContext
     }
 
-    private var validTodoItems: [TodoItem] {
+    var validTodoItems: [TodoItem] {
         todoItemsCache.values.filter { isValid(model: $0) }
     }
 
-    private var validDaySections: [DaySection] {
+    var validDaySections: [DaySection] {
         daySectionsCache.values.filter { isValid(model: $0) }
     }
 
@@ -324,96 +320,7 @@ final class TodoStore {
         return uniqueMonths
     }
 
-    // MARK: - DaySection 操作
-
-    /// 获取或创建今日的 DaySection
-    func getOrCreateTodaySection() -> DaySection {
-        getOrCreateSection(for: Date())
-    }
-
-    /// 获取或创建指定日期的 DaySection。
-    /// 若新建则 bump refreshTrigger + scheduleSave；命中现存 section 时为 no-op。
-    /// 内部写路径（createItem / restoreItem / moveItemWithChildren）已在末尾统一 bump+save，
-    /// 应改用 `ensureSectionMaterialized(for:)` 跳过这层冗余触发。
-    @discardableResult
-    func getOrCreateSection(for date: Date) -> DaySection {
-        let (section, didCreate) = ensureSectionMaterialized(for: date)
-        if didCreate {
-            refreshTrigger += 1
-            scheduleSave()
-        }
-        return section
-    }
-
-    /// 仅落实 DaySection 在 cache + modelContext 中的存在，不 bump 也不 schedule save。
-    /// 用于"调用方自己稍后会统一 bump+save"的内部写路径。
-    @discardableResult
-    private func ensureSectionMaterialized(for date: Date) -> (section: DaySection, didCreate: Bool) {
-        let targetDate = Calendar.current.startOfDay(for: date)
-
-        if let existing = validDaySections.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
-        }) {
-            return (existing, false)
-        }
-
-        let newSection = DaySection(date: targetDate, sortOrder: Double(Date().timeIntervalSince1970))
-        daySectionsCache[newSection.id] = newSection
-        modelContext?.insert(newSection)
-        return (newSection, true)
-    }
-
-    /// 删除 DaySection
-    func deleteSection(_ section: DaySection) {
-        daySectionsCache.removeValue(forKey: section.id)
-        modelContext?.delete(section)
-
-        refreshTrigger += 1
-        scheduleSave()
-    }
-
-    /// 若指定 scheduled 日期下已无任何 item，则同步删除对应 DaySection。
-    /// 调用方负责后续的 refreshTrigger / scheduleSave，避免重复触发。
-    private func cleanupSectionIfEmpty(scheduledDate: Date) {
-        let targetDate = Calendar.current.startOfDay(for: scheduledDate)
-        guard let section = validDaySections.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
-        }) else { return }
-
-        let hasItems = validTodoItems.contains { item in
-            item.containerKind == .scheduled
-                && Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate)
-        }
-        guard hasItems == false else { return }
-
-        daySectionsCache.removeValue(forKey: section.id)
-        modelContext?.delete(section)
-    }
-
-    /// 启动时回收没有任何 scheduled item 引用的 DaySection（清理旧版本累积的孤儿）。
-    private func cleanupAllOrphanSections() {
-        let calendar = Calendar.current
-        let scheduledDates: Set<Date> = Set(
-            validTodoItems
-                .filter { $0.containerKind == .scheduled }
-                .map { calendar.startOfDay(for: $0.dayDate) }
-        )
-
-        var didDelete = false
-        for section in validDaySections {
-            let sectionDate = calendar.startOfDay(for: section.date)
-            if scheduledDates.contains(sectionDate) == false {
-                daySectionsCache.removeValue(forKey: section.id)
-                modelContext?.delete(section)
-                didDelete = true
-            }
-        }
-
-        if didDelete {
-            refreshTrigger += 1
-            scheduleSave()
-        }
-    }
+    // MARK: - DaySection 操作（实现移至 TodoStore+DaySectionMaintenance.swift）
 
     // MARK: - TodoItem 操作
 
@@ -670,61 +577,5 @@ final class TodoStore {
         scheduleSave()
     }
 
-    // MARK: - 异步保存
-
-    func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: .milliseconds(Int(saveDebounceInterval * 1000)))
-            guard Task.isCancelled == false else { return }
-            await performSave()
-        }
-    }
-
-    func saveNow() {
-        saveTask?.cancel()
-        Task {
-            await performSave()
-        }
-    }
-
-    private func performSave() async {
-        guard let modelContext else { return }
-        guard modelContext.hasChanges else {
-            lastSaveError = nil
-            return
-        }
-        do {
-            try modelContext.save()
-            lastSaveError = nil
-        } catch {
-            Self.logger.error(
-                "performSave failed: \(error.localizedDescription, privacy: .public)")
-            modelContext.rollback()
-            lastSaveError = error
-        }
-    }
-
-    /// 同步落盘当前所有 pending changes。用于必须打破 debounce 的关键路径，
-    /// 例如撤销恢复（避免与同 UUID 的 pending delete 撞 unique 约束）。
-    @discardableResult
-    func flushPendingChangesSync() -> Bool {
-        saveTask?.cancel()
-        saveTask = nil
-        guard let modelContext, modelContext.hasChanges else {
-            lastSaveError = nil
-            return true
-        }
-        do {
-            try modelContext.save()
-            lastSaveError = nil
-            return true
-        } catch {
-            Self.logger.error(
-                "flushPendingChangesSync failed: \(error.localizedDescription, privacy: .public)")
-            modelContext.rollback()
-            lastSaveError = error
-            return false
-        }
-    }
+    // MARK: - 异步保存（实现移至 TodoStore+Persistence.swift）
 }
