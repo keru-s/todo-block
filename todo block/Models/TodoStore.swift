@@ -46,7 +46,6 @@ final class TodoStore {
     private var modelContext: ModelContext?
     private var saveTask: Task<Void, Never>?
     private let saveDebounceInterval: TimeInterval = 0.3
-    private let schemaVersionDefaultsKey = "todo.block.schema.version"
 
     private init() {}
 
@@ -60,7 +59,6 @@ final class TodoStore {
         saveTask?.cancel()
         self.modelContext = modelContext
         loadFromDatabase()
-        migrateCachedItemsIfNeeded()
         cleanupAllOrphanSections()
     }
 
@@ -196,28 +194,6 @@ final class TodoStore {
 
     private var validDaySections: [DaySection] {
         daySectionsCache.values.filter { isValid(model: $0) }
-    }
-
-    private func migrateCachedItemsIfNeeded() {
-        let storedVersion = UserDefaults.standard.integer(forKey: schemaVersionDefaultsKey)
-        guard storedVersion < TodoModelContainerFactory.currentModelVersion else { return }
-
-        var hasChanges = false
-        for item in todoItemsCache.values where item.containerKindRaw.isEmpty {
-            item.containerKindRaw = TodoContainerKind.scheduled.rawValue
-            item.updatedAt = Date()
-            hasChanges = true
-        }
-
-        UserDefaults.standard.set(
-            TodoModelContainerFactory.currentModelVersion,
-            forKey: schemaVersionDefaultsKey
-        )
-
-        if hasChanges {
-            refreshTrigger += 1
-            scheduleSave()
-        }
     }
 
     // MARK: - 查询方法（从缓存）

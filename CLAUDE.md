@@ -57,7 +57,7 @@ Two `@Model` types in `todo block/Models/`:
 - `TodoItem` — `id`, `title`, `isCompleted`, `indentLevel` (0–4), `sortOrder` (Double), `containerKindRaw` (`scheduled` / `longTermUrgent` / `longTermImportant`), `dayDate` (start-of-day).
 - `DaySection` — date-keyed grouping header with editable title.
 
-No SwiftData relationships; items belong to a section by matching `dayDate`/`containerKind`. Schema version is tracked manually via `TodoModelContainerFactory.currentModelVersion` and `UserDefaults` key `todo.block.schema.version`; bump and add a migration when changing the schema.
+No SwiftData relationships; items belong to a section by matching `dayDate`/`containerKind`. No manual schema version tracking — every `@Model` field carries a default value, so SwiftData lightweight migration handles new fields automatically. The `TodoItem.containerKind` getter has a `?? .scheduled` fallback as a defensive layer for any pre-v2 row that might still carry an empty `containerKindRaw`.
 
 ### Undo / Redo
 
