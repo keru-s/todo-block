@@ -22,14 +22,6 @@ extension TodoStore {
         }
     }
 
-    /// 立即落盘（取消未触发的 debounce）。
-    func saveNow() {
-        saveTask?.cancel()
-        Task {
-            await performSave()
-        }
-    }
-
     /// 同步落盘当前所有 pending changes。用于必须打破 debounce 的关键路径，
     /// 例如撤销恢复（避免与同 UUID 的 pending delete 撞 unique 约束）。
     @discardableResult

@@ -170,25 +170,69 @@ final class SelectionManagerDeleteTests: XCTestCase {
         selectionManager = SelectionManager()
     }
 
-    /// 6. [SKIPPED until Stage 9] 接通批量撤销后：多选删除应注册单步 undo，actionName 为 "批量删除"
-    func testDeleteSelectedItemsRegistersSingleBatchUndo() throws {
-        throw XCTSkip(
-            "Will pass after Stage 9 (P2-1) wires SelectionManager.deleteSelectedItems → TodoStore.deleteItemsAsBatch"
+    /// 6. 接通批量撤销后：多选删除应注册单步 undo，actionName 为 "批量删除"
+    func testDeleteSelectedItemsRegistersSingleBatchUndo() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 11, day: 1)
+        let items = (0..<3).map { store.createItem(title: "i\($0)", dayDate: day) }
+        store.undoManager.clear()
+
+        selectionManager.selectedItemIds = Set(items.map(\.id))
+        selectionManager.focusedItemId = items[0].id
+        selectionManager.lastSelectedId = items[0].id
+        selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
+
+        XCTAssertTrue(store.canUndo, "批量删除后应可撤销")
+        XCTAssertEqual(
+            store.nsUndoManager.undoActionName,
+            "批量删除",
+            "actionName 应为单步'批量删除',而非逐条'删除'"
         )
+
+        // 关键断言：一次 undo 即恢复全部 3 条 → 证明只注册了一步 undo
+        store.undo()
+        XCTAssertEqual(store.items(for: day).count, 3, "一次 undo 应恢复全部")
     }
 
-    /// 7. [SKIPPED until Stage 9] 单次 Cmd+Z 应恢复全部被删 item
-    func testUndoBatchDeleteRestoresAllItemsInOriginalOrder() throws {
-        throw XCTSkip(
-            "Will pass after Stage 9 (P2-1) wires SelectionManager.deleteSelectedItems → TodoStore.deleteItemsAsBatch"
-        )
+    /// 7. 单次 Cmd+Z 应恢复全部被删 item，且顺序与删除前一致
+    func testUndoBatchDeleteRestoresAllItemsInOriginalOrder() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 11, day: 2)
+        let items = (0..<3).map { store.createItem(title: "i\($0)", dayDate: day) }
+        let originalIds = items.map(\.id)
+        store.undoManager.clear()
+
+        selectionManager.selectedItemIds = Set(items.map(\.id))
+        selectionManager.focusedItemId = items[0].id
+        selectionManager.lastSelectedId = items[0].id
+        selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
+
+        XCTAssertEqual(store.items(for: day).count, 0, "前置:全部删除")
+
+        store.undo()
+
+        let restored = store.items(for: day).map(\.id)
+        XCTAssertEqual(restored, originalIds, "undo 后顺序应与删除前一致")
     }
 
-    /// 8. [SKIPPED until Stage 9] 单次 Cmd+Shift+Z 应再次批量删除
-    func testRedoBatchDeleteRemovesAllItems() throws {
-        throw XCTSkip(
-            "Will pass after Stage 9 (P2-1) wires SelectionManager.deleteSelectedItems → TodoStore.deleteItemsAsBatch"
-        )
+    /// 8. 单次 Cmd+Shift+Z 应再次批量删除（与 undo 对称）
+    func testRedoBatchDeleteRemovesAllItems() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 11, day: 3)
+        let items = (0..<3).map { store.createItem(title: "i\($0)", dayDate: day) }
+        store.undoManager.clear()
+
+        selectionManager.selectedItemIds = Set(items.map(\.id))
+        selectionManager.focusedItemId = items[0].id
+        selectionManager.lastSelectedId = items[0].id
+        selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
+
+        store.undo()
+        XCTAssertEqual(store.items(for: day).count, 3, "前置:undo 已恢复")
+
+        store.redo()
+        XCTAssertEqual(store.items(for: day).count, 0, "redo 应再次批量删除")
+        XCTAssertTrue(store.canUndo, "redo 后应能再 undo")
     }
 
     /// 9. 焦点回退：上方有未删项时焦点向上，否则向下

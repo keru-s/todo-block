@@ -74,19 +74,6 @@ final class TodoItem {
         }
     }
     
-    /// 标记完成/未完成
-    func toggleComplete() {
-        isCompleted.toggle()
-        updatedAt = Date()
-    }
-    
-    /// 格式化日期显示（如 "01-17"）
-    var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd"
-        return formatter.string(from: dayDate)
-    }
-    
     /// 获取所属月份（用于按月分组）
     var yearMonth: String {
         let formatter = DateFormatter()

@@ -78,11 +78,6 @@ final class TodoStore {
         clearCachesAndState(clearUndo: true)
     }
 
-    /// 重新从数据库加载缓存（用于外部数据变更后的显式同步）
-    func reloadFromPersistentStore() {
-        loadFromDatabase()
-    }
-
     // MARK: - 撤销操作
 
     /// 执行撤销操作
@@ -416,6 +411,38 @@ final class TodoStore {
         scheduleSave()
     }
 
+    /// 批量删除若干 item，注册单步撤销（"批量删除"）。
+    /// 与逐条 `deleteItem` 相比，撤销原子性更高：一次 Cmd+Z 即可恢复全部。
+    /// SelectionManager.deleteSelectedItems 是主要调用方。
+    func deleteItemsAsBatch(_ items: [TodoItem]) {
+        guard items.isEmpty == false else { return }
+
+        let snapshots = items.map { TodoItemSnapshot(from: $0) }
+
+        // 收集需要事后清理的 scheduled section 日期，去重
+        var scheduledDatesToCheck: Set<Date> = []
+        for item in items where item.containerKind == .scheduled {
+            scheduledDatesToCheck.insert(Calendar.current.startOfDay(for: item.dayDate))
+        }
+
+        // 全量删除（不在循环内注册逐条 undo）
+        for item in items {
+            todoItemsCache.removeValue(forKey: item.id)
+            modelContext?.delete(item)
+        }
+
+        // 删完后再回收空 section（顺序敏感：所有 item 已离开 cache，cleanup 才能识别空）
+        for date in scheduledDatesToCheck {
+            cleanupSectionIfEmpty(scheduledDate: date)
+        }
+
+        // 单步注册批量撤销
+        undoManager.registerDeleteItems(snapshots: snapshots, store: self)
+
+        refreshTrigger += 1
+        scheduleSave()
+    }
+
     /// 恢复已删除的待办事项
     func restoreItem(from snapshot: TodoItemSnapshot) {
         // 让 pending 的 delete 先落盘，避免与下方 insert 撞 @Attribute(.unique) UUID
@@ -485,16 +512,6 @@ final class TodoStore {
         )
 
         scheduleSave()
-    }
-
-    /// 兼容旧接口：移动待办事项到指定日期
-    func moveItem(_ item: TodoItem, toDate: Date, afterItem: TodoItem?) {
-        moveItemWithChildren(
-            item,
-            to: .scheduled(date: toDate),
-            afterItem: afterItem,
-            newIndentLevel: item.indentLevel
-        )
     }
 
     /// 移动待办事项及其子项到新位置

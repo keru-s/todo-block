@@ -250,10 +250,8 @@ final class SelectionManager {
             }
         }
 
-        // 执行删除
-        for item in itemsToDelete {
-            store.deleteItem(item)
-        }
+        // 单步批量删除：一次 Cmd+Z 整体恢复，避免逐条注册撤销
+        store.deleteItemsAsBatch(itemsToDelete)
 
         // 重置状态
         selectedItemIds.removeAll()
