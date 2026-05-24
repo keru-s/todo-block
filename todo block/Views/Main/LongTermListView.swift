@@ -74,12 +74,8 @@ struct LongTermListView: View {
 
     private func bindContextsIfNeeded() {
         guard isActiveContext else { return }
-        TodoClipboardManager.shared.activateListContext(
+        ActiveListCommandContext.bind(
             scope: .longTerm,
-            store: store,
-            selectionManager: selectionManager
-        )
-        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )

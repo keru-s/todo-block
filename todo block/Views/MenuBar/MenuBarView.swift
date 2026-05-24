@@ -266,12 +266,8 @@ private extension MenuBarView {
     }
 
     func bindContexts() {
-        TodoClipboardManager.shared.activateListContext(
+        ActiveListCommandContext.bind(
             scope: .today,
-            store: store,
-            selectionManager: selectionManager
-        )
-        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )

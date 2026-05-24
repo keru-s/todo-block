@@ -141,12 +141,8 @@ struct TodoListView: View {
 
     private func bindContextsIfNeeded() {
         guard isActiveContext else { return }
-        TodoClipboardManager.shared.activateListContext(
+        ActiveListCommandContext.bind(
             scope: clipboardScope,
-            store: store,
-            selectionManager: selectionManager
-        )
-        TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
         )
