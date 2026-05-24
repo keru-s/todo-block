@@ -486,6 +486,34 @@ final class UndoManagerTests: XCTestCase {
         )
     }
 
+    // MARK: - registerTitleChange 对称性（Phase 1.D）
+
+    /// 11. 标题变更 undo / redo 对称
+    /// 直接走 store.undoManager 的 API（不经过 store 上的转发 wrapper），
+    /// 这样 P0-2 阶段如果删除 store.registerTitleChange 转发也不需要改测试。
+    func testRegisterTitleChangeUndoRedoSymmetry() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "v1", dayDate: Date())
+        store.undoManager.clear()
+
+        let oldTitle = item.title
+        item.title = "v2"
+        store.undoManager.registerTitleChange(
+            itemId: item.id,
+            oldTitle: oldTitle,
+            newTitle: "v2",
+            store: store
+        )
+
+        XCTAssertTrue(store.canUndo)
+        store.undo()
+        XCTAssertEqual(item.title, "v1", "undo 应还原标题")
+
+        XCTAssertTrue(store.canRedo)
+        store.redo()
+        XCTAssertEqual(item.title, "v2", "redo 应再次应用变更")
+    }
+
     private func fixedDate(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

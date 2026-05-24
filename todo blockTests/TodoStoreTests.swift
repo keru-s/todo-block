@@ -510,6 +510,143 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(item.indentLevel, 0)
     }
 
+    // MARK: - Persistence (Phase 1.A，保护 P0-2 拆分)
+
+    /// 1. scheduleSave 在 0.3s debounce 后会自动落盘
+    func testScheduleSaveEventuallyPersistsViaDebounce() async throws {
+        let store = TodoStore.shared
+        _ = store.createItem(title: "debounced", dayDate: Date())
+
+        XCTAssertTrue(descriptor.mainContext.hasChanges, "前置：创建后应有 pending 变更")
+
+        // 等待 > 0.3s debounce + 一点 buffer
+        try await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertFalse(
+            descriptor.mainContext.hasChanges,
+            "debounce 后 scheduleSave 应已自动落盘"
+        )
+        XCTAssertNil(store.lastSaveError)
+    }
+
+    /// 2. flushPendingChangesSync 同步落盘 pending 变更并返回 true
+    func testFlushPendingChangesSyncSavesAndReturnsTrue() {
+        let store = TodoStore.shared
+        _ = store.createItem(title: "to-flush", dayDate: Date())
+        XCTAssertTrue(descriptor.mainContext.hasChanges)
+
+        let didSave = store.flushPendingChangesSync()
+
+        XCTAssertTrue(didSave)
+        XCTAssertFalse(descriptor.mainContext.hasChanges, "flush 后不应再有 pending 变更")
+        XCTAssertNil(store.lastSaveError)
+    }
+
+    // MARK: - Section maintenance (Phase 1.B，保护 P0-2 拆分)
+
+    /// 3. getOrCreateSection 对同一日期幂等：只创建一次
+    func testGetOrCreateSectionIsIdempotentForSameDate() {
+        let store = TodoStore.shared
+        let target = date(year: 2026, month: 5, day: 24)
+
+        let s1 = store.getOrCreateSection(for: target)
+        let s2 = store.getOrCreateSection(for: target)
+
+        XCTAssertEqual(s1.id, s2.id, "同一日期应返回同一 section")
+        let matching = store.sections(year: 2026, month: 5)
+            .filter { Calendar.current.isDate($0.date, inSameDayAs: target) }
+        XCTAssertEqual(matching.count, 1, "缓存内仅应留一份 section")
+    }
+
+    /// 4. initialize 时孤儿 section（无对应 scheduled item）应被清理
+    func testInitializeCleansUpOrphanSections() throws {
+        let context = descriptor.mainContext
+        let orphanDate = date(year: 2026, month: 6, day: 1)
+
+        // 直接通过 context 插入孤儿 section，绕过 store 的关联管理
+        let orphan = DaySection(date: orphanDate, sortOrder: 1)
+        context.insert(orphan)
+        try context.save()
+
+        // 重新 init store，触发 cleanupAllOrphanSections
+        TodoStore.shared.reset()
+        TodoStore.shared.initialize(with: context)
+
+        let store = TodoStore.shared
+        XCTAssertFalse(
+            store.sections(year: 2026, month: 6)
+                .contains { Calendar.current.isDate($0.date, inSameDayAs: orphanDate) },
+            "孤儿 section 应在 initialize 时被清理"
+        )
+    }
+
+    /// 5. cleanupSectionIfEmpty 反向：仍有 sibling item 时 section 必须保留
+    func testDeleteItemKeepsSectionWhenSiblingsRemain() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 10)
+
+        let first = store.createItem(title: "first", dayDate: day)
+        _ = store.createItem(title: "second", dayDate: day)
+
+        store.deleteItem(first)
+
+        XCTAssertEqual(store.items(for: day).count, 1, "应剩 1 条")
+        XCTAssertTrue(
+            store.sections(year: 2026, month: 7)
+                .contains { Calendar.current.isDate($0.date, inSameDayAs: day) },
+            "仍有 item，section 不应被清理"
+        )
+    }
+
+    // MARK: - No-migration contract (Phase 1.E，保护 P0-6 删除迁移)
+
+    /// 12. 现行 schema 数据 round-trip：raw="scheduled" 的 item 加载后能正常显示
+    func testInitializeAcceptsCurrentSchemaItemsWithoutMigration() throws {
+        let context = descriptor.mainContext
+        let day = date(year: 2026, month: 8, day: 15)
+
+        let item = TodoItem(
+            title: "current schema",
+            indentLevel: 0,
+            sortOrder: 1,
+            containerKindRaw: TodoContainerKind.scheduled.rawValue,
+            dayDate: day
+        )
+        context.insert(item)
+        try context.save()
+
+        TodoStore.shared.reset()
+        TodoStore.shared.initialize(with: context)
+
+        let visible = TodoStore.shared.items(for: day)
+        XCTAssertEqual(visible.map(\.id), [item.id])
+        XCTAssertEqual(item.containerKind, .scheduled)
+    }
+
+    /// 13. 空 containerKindRaw 通过 getter `?? .scheduled` 兜底仍可见为 scheduled。
+    /// 删除迁移后 raw 值不再被强制写回 "scheduled"，但 UI 行为不应变。
+    func testInitializeFiltersLegacyEmptyContainerKindGracefully() throws {
+        let context = descriptor.mainContext
+        let day = date(year: 2026, month: 9, day: 1)
+
+        let item = TodoItem(
+            title: "legacy",
+            indentLevel: 0,
+            sortOrder: 1,
+            containerKindRaw: "",  // 模拟 v1 数据
+            dayDate: day
+        )
+        context.insert(item)
+        try context.save()
+
+        TodoStore.shared.reset()
+        TodoStore.shared.initialize(with: context)
+
+        // 通过 getter 兜底应被识别为 scheduled，能正常出现在 items(for:)
+        XCTAssertEqual(item.containerKind, .scheduled)
+        XCTAssertEqual(TodoStore.shared.items(for: day).map(\.id), [item.id])
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

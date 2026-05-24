@@ -206,4 +206,59 @@ final class TodoDropLocationEngineTests: XCTestCase {
 
         XCTAssertNil(resolved)
     }
+
+    /// 14. resolve 对 containerKind 不敏感：相同 (items, location, frames) 在不同容器下结果一致。
+    /// 锁定 P0-1 抽通用列表后引擎层不会因容器变化而行为漂移的契约（Phase 1.F）。
+    func testResolveIsContainerKindAgnostic() {
+        func makeItems(_ kind: TodoContainerKind) -> [TodoItem] {
+            (0..<3).map { i in
+                TodoItem(
+                    title: "i\(i)",
+                    indentLevel: 0,
+                    sortOrder: Double(i),
+                    containerKindRaw: kind.rawValue,
+                    dayDate: Date()
+                )
+            }
+        }
+
+        func framesFor(_ items: [TodoItem]) -> [UUID: CGRect] {
+            var dict: [UUID: CGRect] = [:]
+            for (i, item) in items.enumerated() {
+                dict[item.id] = CGRect(x: 0, y: CGFloat(i) * 28, width: 240, height: 28)
+            }
+            return dict
+        }
+
+        let scheduled = makeItems(.scheduled)
+        let urgent = makeItems(.longTermUrgent)
+        let important = makeItems(.longTermImportant)
+
+        let probeLocation = CGPoint(x: 30, y: 35)
+
+        let r1 = TodoDropLocationEngine.resolve(
+            location: probeLocation,
+            items: scheduled,
+            itemFrames: framesFor(scheduled),
+            itemHeight: 28,
+            indentWidth: 24
+        )
+        let r2 = TodoDropLocationEngine.resolve(
+            location: probeLocation,
+            items: urgent,
+            itemFrames: framesFor(urgent),
+            itemHeight: 28,
+            indentWidth: 24
+        )
+        let r3 = TodoDropLocationEngine.resolve(
+            location: probeLocation,
+            items: important,
+            itemFrames: framesFor(important),
+            itemHeight: 28,
+            indentWidth: 24
+        )
+
+        XCTAssertEqual(r1, r2, "scheduled vs longTermUrgent 应得到相同 drop")
+        XCTAssertEqual(r2, r3, "longTermUrgent vs longTermImportant 应得到相同 drop")
+    }
 }
