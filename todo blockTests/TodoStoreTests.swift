@@ -9,19 +9,24 @@ import XCTest
 import SwiftData
 @testable import todo_block
 
+/// 注意：本套件和 UndoManagerTests / TodoKeyboardReorderEngineTests 都依赖
+/// `TodoStore.shared` 这一全局单例，靠 setUp 里 reset+initialize 隔离用例。
+/// 此前提是 xcodebuild test 在 macOS 平台默认**串行**执行 test class — 不要在
+/// scheme 里启用 parallel-testable（`-parallel-testing-enabled YES`），否则
+/// 跨 class 并行会互相 reset 单例状态、产生 flake。
 @MainActor
 final class TodoStoreTests: XCTestCase {
-    
+
     var descriptor: ModelContainer!
-    
-    override func setUp() async throws { 
+
+    override func setUp() async throws {
         // Use in-memory container for testing
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         descriptor = try ModelContainer(for: TodoItem.self, DaySection.self, configurations: config)
-        
+
         TodoStore.shared.reset()
         TodoStore.shared.initialize(with: descriptor.mainContext)
-        
+
         // Clear shared store cache between tests (important because it's a singleton)
         // Since we re-initialize with a fresh context, it should reload from empty
     }

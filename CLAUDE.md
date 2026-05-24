@@ -43,7 +43,11 @@ xcodebuild build -project "todo block.xcodeproj" -scheme "todo block" \
 
 ### Single source of truth: `TodoStore.shared`
 
-`TodoStore` (`todo block/Models/TodoStore.swift`) is the `@MainActor @Observable` singleton that owns **all** runtime state. The main window and menu-bar popover are bound to the same `ModelContainer` created in `todo_blockApp`, so both share `TodoStore.shared`'s in-memory caches (`todoItemsCache`, `daySectionsCache`) and stay live without any cross-window sync code.
+`TodoStore` (`todo block/Services/TodoStore.swift` + 4 extension files in same folder: `+ItemMutations`, `+Persistence`, `+DaySectionMaintenance`, `+Clipboard`) is the `@MainActor @Observable` singleton that owns **all** runtime state. The main window and menu-bar popover are bound to the same `ModelContainer` created in `todo_blockApp`, so both share `TodoStore.shared`'s in-memory caches (`todoItemsCache`, `daySectionsCache`) and stay live without any cross-window sync code.
+
+`Services/` also holds the other runtime singletons: `SelectionManager`, `TodoUndoManager`, `TodoClipboardManager`, `TodoReorderCommandManager`, `TodoKeyboardReorderEngine`, `ActiveListCommandContext` (thin facade binding both command managers in one call). `Models/` is reserved for `@Model` types only.
+
+⚠️ Extension-file split note: because Swift `private(set)` doesn't cross files, the caches and internal counters on `TodoStore` (e.g. `todoItemsCache`, `refreshTrigger`, `modelContext`) are declared as plain `internal var`. This is a deliberate friendship pattern with the 4 extension files — **do not write these from view code**. If you find yourself wanting to, you almost certainly want a mutation method instead.
 
 - Initialization is idempotent. `initialize(with:)` short-circuits when the same `ModelContext` is passed again, only reloading from the DB. Tests and `#Preview`s rely on this.
 - Writes go to the cache immediately, then a 0.3 s debounced `saveTask` flushes to SwiftData. **`restoreItem` calls `flushPendingChangesSync()` first** to avoid colliding with a pending delete under the unique constraint.
@@ -53,7 +57,7 @@ xcodebuild build -project "todo block.xcodeproj" -scheme "todo block" \
 
 ### Schema (SwiftData, local only, no CloudKit)
 
-Two `@Model` types in `todo block/Models/`:
+Two `@Model` types in `todo block/Models/` (folder reserved for `@Model` types only):
 - `TodoItem` — `id`, `title`, `isCompleted`, `indentLevel` (0–4), `sortOrder` (Double), `containerKindRaw` (`scheduled` / `longTermUrgent` / `longTermImportant`), `dayDate` (start-of-day).
 - `DaySection` — date-keyed grouping header with editable title.
 

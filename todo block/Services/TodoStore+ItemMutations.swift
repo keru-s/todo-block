@@ -9,7 +9,6 @@
 import Foundation
 import SwiftData
 
-@MainActor
 extension TodoStore {
     /// 创建新的待办事项
     func createItem(

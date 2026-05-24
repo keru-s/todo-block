@@ -33,10 +33,4 @@ enum ActiveListCommandContext {
             selectionManager: selectionManager
         )
     }
-
-    /// 清空两套命令上下文（当前未在视图层调用，留作 view 完全退场时使用）。
-    static func clear() {
-        TodoClipboardManager.shared.clearContext()
-        TodoReorderCommandManager.shared.clearContext()
-    }
 }

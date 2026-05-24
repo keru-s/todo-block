@@ -63,7 +63,7 @@ struct TodoDroppableList<EmptyContent: View>: View {
                 if items.isEmpty {
                     emptyContent()
                 } else {
-                    ForEach(items.enumerated(), id: \.element.id) { _, item in
+                    ForEach(items, id: \.id) { item in
                         rowView(for: item)
                             .id(item.id)
                             .background {

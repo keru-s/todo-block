@@ -151,7 +151,10 @@ final class TodoStore {
             }
         }
 
-        // 全量替换缓存，避免残留已失效的 SwiftData 实例
+        // 全量替换缓存，避免残留已失效的 SwiftData 实例。
+        // 同一 modelContext 内 fetch 返回的是 ID 稳定的同一组 @Model 实例，
+        // 所以即便整张表重新赋值，view 层已有的 @Bindable item 引用仍然有效，
+        // 不会出现"绑定到旧实例 / 视觉断裂"的问题。
         daySectionsCache = loadedSections
         todoItemsCache = loadedItems
         refreshTrigger += 1

@@ -37,7 +37,7 @@ You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with se
 - 视图拆分用 `View` struct，不要用 computed property（更利于复用、测试和性能）
 - 不滥用 `AnyView`
 - 不硬编码 padding 与 spacing，除非视觉上有明确需求
-- `ForEach` 直接用 `enumerated()` 序列：`ForEach(items.enumerated(), id: \.element.id)`
+- `ForEach`：需要 index 时用 `ForEach(items.enumerated(), id: \.element.id) { (index, item) in ... }`；不需要 index 时直接 `ForEach(items, id: \.id) { item in ... }`，不要无谓套 `enumerated()`
 
 ## GeometryReader 在 macOS 项目里的用法（注意事项）
 
