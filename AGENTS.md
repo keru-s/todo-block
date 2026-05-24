@@ -1,81 +1,78 @@
-# Agent guide for Swift and SwiftUI
+# Agent guide for the todo-block macOS app
 
-This repository contains an Xcode project written with Swift and SwiftUI. Please follow the guidelines below so that the development experience is built on modern, safe API usage.
-
+本仓是一个 macOS 原生应用，技术栈：SwiftUI + SwiftData + AppKit interop（NSPopover / NSEvent monitor / NSViewRepresentable）。下面这份指南给所有协作 agent 用——项目级特殊约定写在 `CLAUDE.md`，本文件提供跨项目通用的 Swift / SwiftUI 风格规则。
 
 ## Role
 
-You are a **Senior iOS Engineer**, specializing in SwiftUI, SwiftData, and related frameworks. Your code must always adhere to Apple's Human Interface Guidelines and App Review guidelines.
+You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with selective AppKit interop. Code must follow Apple Human Interface Guidelines for macOS.
 
+## Core targets
 
-## Core instructions
+- macOS 15.7 or later
+- Swift 6 strict concurrency（项目 pbxproj 中 `SWIFT_VERSION = 5.0` 是历史遗留，**新代码按 Swift 6 写**）
+- SwiftUI as the primary view layer, backed by `@Observable` classes for shared state
+- AppKit only when SwiftUI lacks the primitive（status item, popover lifecycle, NSEvent monitors, NSTextView 嵌入等）
+- 不引入第三方依赖；项目目前是纯 Apple framework
 
-- Target iOS 26.0 or later. (Yes, it definitely exists.)
-- Swift 6.2 or later, using modern Swift concurrency.
-- SwiftUI backed up by `@Observable` classes for shared data.
-- Do not introduce third-party frameworks without asking first.
-- Avoid UIKit unless requested.
+## Swift style
 
+- `@Observable` 类必须 `@MainActor`
+- 假定 strict Swift concurrency 全开
+- 优先 Swift-native API：`replacing(_:with:)`、`URL.documentsDirectory`、`appending(path:)`、`Date.now`
+- 数字格式用 `format: .number.precision(...)`；不写 `String(format:)`
+- 类型/枚举用静态成员查找：`.borderedProminent` 而非 `BorderedProminentButtonStyle()`
+- 不写 GCD：`Task` / `actor` / `await` / `Task.sleep(for:)`
+- 用户输入文本过滤用 `localizedStandardContains()` 而非 `contains()`
+- 避免强解包 `!` 和强 try `try!`，除非真不可恢复
 
-## Swift instructions
+## SwiftUI style
 
-- Always mark `@Observable` classes with `@MainActor`.
-- Assume strict Swift concurrency rules are being applied.
-- Prefer Swift-native alternatives to Foundation methods where they exist, such as using `replacing("hello", with: "world")` with strings rather than `replacingOccurrences(of: "hello", with: "world")`.
-- Prefer modern Foundation API, for example `URL.documentsDirectory` to find the app’s documents directory, and `appending(path:)` to append strings to a URL.
-- Never use C-style number formatting such as `Text(String(format: "%.2f", abs(myNumber)))`; always use `Text(abs(change), format: .number.precision(.fractionLength(2)))` instead.
-- Prefer static member lookup to struct instances where possible, such as `.circle` rather than `Circle()`, and `.borderedProminent` rather than `BorderedProminentButtonStyle()`.
-- Never use old-style Grand Central Dispatch concurrency such as `DispatchQueue.main.async()`. If behavior like this is needed, always use modern Swift concurrency.
-- Filtering text based on user-input must be done using `localizedStandardContains()` as opposed to `contains()`.
-- Avoid force unwraps and force `try` unless it is unrecoverable.
+- 用 `foregroundStyle()` 而非 `foregroundColor()`
+- 用 `clipShape(.rect(cornerRadius:))` 而非 `cornerRadius()`
+- 状态用 `@Observable` 类，不要 `ObservableObject`
+- `onChange()` 用双参或零参版本，不写单参旧 API
+- `onTapGesture()` 仅在需要点击位置/次数时用；其他场景用 `Button`
+- 不用 `UIScreen` / `UIGraphicsImageRenderer` / `UIDevice`（macOS 没有）
+- 不强制具体字号；优先 SwiftUI 语义字号 + Dynamic Type
+- 视图拆分用 `View` struct，不要用 computed property（更利于复用、测试和性能）
+- 不滥用 `AnyView`
+- 不硬编码 padding 与 spacing，除非视觉上有明确需求
+- `ForEach` 直接用 `enumerated()` 序列：`ForEach(items.enumerated(), id: \.element.id)`
 
+## GeometryReader 在 macOS 项目里的用法（注意事项）
 
-## SwiftUI instructions
+iOS 通用指南建议尽量避免 `GeometryReader`，但本仓的拖放/Option 拖选系统**依赖** GeometryReader 收集 frame —— 详见 CLAUDE.md "Drag & drop" / "Option-drag selection" 小节。新增类似系统时优先复用 `Views/Shared/TodoListSharedViews.swift` 中的 `DropFrameTracker`（**引用类型**，避免 GeometryReader → @State → body 反馈环），不要回到 `@State [UUID: CGRect]` 的写法。
 
-- Always use `foregroundStyle()` instead of `foregroundColor()`.
-- Always use `clipShape(.rect(cornerRadius:))` instead of `cornerRadius()`.
-- Always use the `Tab` API instead of `tabItem()`.
-- Never use `ObservableObject`; always prefer `@Observable` classes instead.
-- Never use the `onChange()` modifier in its 1-parameter variant; either use the variant that accepts two parameters or accepts none.
-- Never use `onTapGesture()` unless you specifically need to know a tap’s location or the number of taps. All other usages should use `Button`.
-- Never use `Task.sleep(nanoseconds:)`; always use `Task.sleep(for:)` instead.
-- Never use `UIScreen.main.bounds` to read the size of the available space.
-- Do not break views up using computed properties; place them into new `View` structs instead.
-- Do not force specific font sizes; prefer using Dynamic Type instead.
-- Use the `navigationDestination(for:)` modifier to specify navigation, and always use `NavigationStack` instead of the old `NavigationView`.
-- If using an image for a button label, always specify text alongside like this: `Button("Tap me", systemImage: "plus", action: myButtonAction)`.
-- When rendering SwiftUI views, always prefer using `ImageRenderer` to `UIGraphicsImageRenderer`.
-- Don’t apply the `fontWeight()` modifier unless there is good reason. If you want to make some text bold, always use `bold()` instead of `fontWeight(.bold)`.
-- Do not use `GeometryReader` if a newer alternative would work as well, such as `containerRelativeFrame()` or `visualEffect()`.
-- When making a `ForEach` out of an `enumerated` sequence, do not convert it to an array first. So, prefer `ForEach(x.enumerated(), id: \.element.id)` instead of `ForEach(Array(x.enumerated()), id: \.element.id)`.
-- When hiding scroll view indicators, use the `.scrollIndicators(.hidden)` modifier rather than using `showsIndicators: false` in the scroll view initializer.
-- Place view logic into view models or similar, so it can be tested.
-- Avoid `AnyView` unless it is absolutely required.
-- Avoid specifying hard-coded values for padding and stack spacing unless requested.
-- Avoid using UIKit colors in SwiftUI code.
+## SwiftData
 
+- 项目使用本地存储（**未启用 CloudKit**），所以可以使用 `@Attribute(.unique)`
+- 模型字段必须有默认值（用于 SwiftData 轻量迁移）
+- 模型类型放在 `Models/`；服务/状态类放在 `Services/`（重构后建立的层）
 
-## SwiftData instructions
+## AppKit interop（本仓特有）
 
-If SwiftData is configured to use CloudKit:
+- NSPopover：**不要设置 `popover.delegate`**——会导致 UI 测试 `XCUIApplication.terminate()` 挂 60 秒。生命周期事件用 `NSPopover.willShow / didCloseNotification` 监听
+- NSHostingController：在长生命周期 controller（如 `MenuBarStatusItemController`）里**只创建一次**，不要在 popover 显示期间替换 `contentViewController`
+- NSEvent.addLocalMonitorForEvents：在闭包里访问 SwiftUI `@MainActor` 状态时用 `MainActor.assumeIsolated { ... }`
+- NSViewRepresentable：实现 `setFrameSize` 时**只在宽度变化时**调用 `invalidateIntrinsicContentSize`，否则与 SwiftUI `sizeThatFits` 形成不收敛循环（具体见 `CustomTextEditor`）
 
-- Never use `@Attribute(.unique)`.
-- Model properties must always either have default values or be marked as optional.
-- All relationships must be marked optional.
+## Project layout
 
+- 数据模型 → `Models/`（仅 `@Model` 类型 + 值类型描述符）
+- 服务/状态/引擎 → `Services/`（store / undo / clipboard / reorder 等）
+- 视图 → `Views/Editor/`、`Views/Main/`、`Views/MenuBar/`、`Views/Shared/`
+- 共享视图工具 / design tokens → `Views/Shared/`
+- 测试在 `todo blockTests/`（XCTest）；目录名带空格，shell 命令记得加引号
 
-## Project structure
+## Testing
 
-- Use a consistent project structure, with folder layout determined by app features.
-- Follow strict naming conventions for types, properties, methods, and SwiftData models.
-- Break different types up into different Swift files rather than placing multiple structs, classes, or enums into a single file.
-- Write unit tests for core application logic.
-- Only write UI tests if unit tests are not possible.
-- Add code comments and documentation comments as needed.
-- If the project requires secrets such as API keys, never include them in the repository.
+- Pure logic / engines / store 必须有 XCTest 覆盖
+- Preview 块必须走 `TodoPreviewSupport.bootstrap()`，否则 Xcode Canvas 并发渲染会反复 reset `TodoStore.shared` 导致崩溃
+- 视图层目前没有 snapshot test，引擎层测试 + 手动验证清单兜底（详见 CLAUDE.md）
 
+## PR
 
-## PR instructions
-
-- If installed, make sure SwiftLint returns no warnings or errors before committing.
-
+- 每次提交前跑 `xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" -destination 'platform=macOS'`，测试全绿（含 skipped）才提交
+- Commit message 中文为主，前缀 `feat/fix/refactor/test/docs/chore:` 之一
+- 别提交 `*.xcuserstate`、`DerivedData/`、`.codepilot-uploads/` 等本地状态（已在 `.gitignore`）
+- 不向远端 push 时不要加 `--no-verify`、`--force` 等参数

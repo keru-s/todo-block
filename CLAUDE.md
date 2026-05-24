@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Native macOS to-do app, SwiftUI + SwiftData, single window + menu-bar popover sharing the same model container. Bundle ID `com.insight.to-do-block`. Deployment target **macOS 15.7**, built with Xcode 26. Note that `AGENTS.md` is shared Swift/SwiftUI agent guidance written for an iOS context — apply its **Swift/SwiftUI/SwiftData style rules**, but ignore "Target iOS 26" (this is a macOS app) and disregard the `@Attribute(.unique)` CloudKit prohibition (the schema does not use CloudKit).
+Native macOS to-do app, SwiftUI + SwiftData, single window + menu-bar popover sharing the same model container. Bundle ID `com.insight.to-do-block`. Deployment target **macOS 15.7**, built with Xcode 26. See `AGENTS.md` for general Swift / SwiftUI / SwiftData / AppKit-interop style; this file documents project-specific behavior, hazards, and conventions that override or extend it.
 
 The folder/target name `todo block` contains a space — always quote paths in shell commands and `xcodebuild` arguments.
 
