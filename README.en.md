@@ -26,11 +26,19 @@ Todo Block is a native macOS to-do app with nested tasks, keyboard-first workflo
 - Latest release page: [GitHub Releases](https://github.com/keru-s/todo-block/releases/latest)
 - Direct download: [Todo-Block-macOS.zip](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.zip)
 
-If macOS says the app is damaged or should be moved to the Trash, run:
+### Gatekeeper will block the first launch
+
+Releases are **ad-hoc signed** (no paid Apple Developer ID and no notarization), so the first launch triggers an "unidentified developer" or "app is damaged" warning. It has no effect on functionality or data. Use any of the workarounds below:
+
+**Option A (recommended)** — remove the browser-applied quarantine attribute in Terminal, then double-click as usual:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/todo block.app"
 ```
+
+**Option B** — in Applications, **right-click** (or Control-click) `todo block.app` → choose Open → click Open in the confirmation dialog. The system remembers the choice for future launches.
+
+**Option C** — after the first blocked attempt, open System Settings → Privacy & Security, scroll to the "todo block was blocked" entry, and click "Open Anyway".
 
 ## Requirements
 
