@@ -37,6 +37,18 @@ xcodebuild build -project "todo block.xcodeproj" -scheme "todo block" \
 
 **After every code change, automatically run the Debug build above so the user can immediately test the latest binary** — don't wait to be asked. If the build fails, fix it before declaring the task done.
 
+**After a successful build, kill the running instance and relaunch the freshly built `.app`** so the user sees the new menu-bar binary immediately rather than the stale one still in memory:
+
+```bash
+pkill -f "todo block.app" 2>/dev/null || true
+APP_PATH="$(xcodebuild -project 'todo block.xcodeproj' -scheme 'todo block' \
+  -configuration Debug -showBuildSettings 2>/dev/null \
+  | awk -F'= ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')"
+open "$APP_PATH/todo block.app"
+```
+
+Skip the relaunch step when the diff is docs-only (`*.md`, comments-only changes), when the user explicitly says they'll launch it themselves, or when the task only ran tests instead of a Debug build.
+
 **Release flow**: `git tag v0.1.0 && git push origin main v0.1.0` triggers `.github/workflows/objective-c-xcode.yml`, which builds Release unsigned and uploads `Todo-Block-macOS.zip` to the GitHub Release. See `PACKAGING.md` for manual archive/distribution.
 
 ## Architecture
