@@ -8,6 +8,17 @@
 import AppKit
 import SwiftUI
 
+/// 光标位置感知的 Enter 行为分档。`CustomTextEditor` 在拦截 Return 时
+/// 当场读取 selectedRange 算出该走哪一档，外层视图据此决定建项 / 拆项。
+enum EnterAction {
+    /// 光标在 title 最前方：上方新建同级空 item。
+    case insertSiblingAbove
+    /// 光标在 title 末尾或 title 为空：保持原行为，下方新建同级空 item。
+    case insertSiblingBelow
+    /// 光标在中间：当前 item title 截到 `newCurrentTitle`，下方紧邻新建子项 title = `childTitle`。
+    case splitIntoChild(newCurrentTitle: String, childTitle: String)
+}
+
 struct CustomTextEditor: NSViewRepresentable {
     @Binding var text: String
     var isCompleted: Bool
@@ -19,7 +30,7 @@ struct CustomTextEditor: NSViewRepresentable {
 
     var onTab: () -> Void
     var onShiftTab: () -> Void
-    var onReturn: () -> Void
+    var onReturn: (EnterAction) -> Void
     var onBackspace: () -> Void
     var onFocus: (Bool, Int?) -> Void = { _, _ in }
     var onCompositionChange: (Bool) -> Void = { _ in }
@@ -193,12 +204,40 @@ extension CustomTextEditor {
                     return true
                 }
 
+                // 选区不为空时，先删掉选区，等价于「先按 Delete 再按 Enter」，
+                // 删除走 NSTextView 自身的本地撤销栈。删完后 selectedRange.location
+                // 会落到原选区起点，再按光标位置走分档。
+                var range = textView.selectedRange()
+                if range.length > 0 {
+                    textView.insertText("", replacementRange: range)
+                    range = textView.selectedRange()
+                }
+
+                let fullText = textView.string
+                let length = (fullText as NSString).length
+                let cursor = range.location
+
+                let action: EnterAction
+                if length == 0 {
+                    action = .insertSiblingBelow
+                } else if cursor == 0 {
+                    action = .insertSiblingAbove
+                } else if cursor >= length {
+                    action = .insertSiblingBelow
+                } else {
+                    let nsText = fullText as NSString
+                    action = .splitIntoChild(
+                        newCurrentTitle: nsText.substring(to: cursor),
+                        childTitle: nsText.substring(from: cursor)
+                    )
+                }
+
                 // 创建新 item 前先放弃 first responder。
                 // 否则 SwiftUI 把焦点切到新 item 之前，
                 // 紧跟其后的 Tab/退格等命令会被旧 NSTextView 截获，
                 // 落到旧 item 的 onTab/onBackspace 闭包上。
                 textView.window?.makeFirstResponder(nil)
-                parent.onReturn()
+                parent.onReturn(action)
                 return true
             }
 

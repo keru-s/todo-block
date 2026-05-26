@@ -75,6 +75,64 @@ extension TodoStore {
         return newItem
     }
 
+    /// 在 `item` 前插入一条同级新 item。
+    /// 找同 container + 同 dayDate 里 sortOrder 紧挨着 item 的前驱，
+    /// 然后复用 `createItem(afterItem:)` 的 sortOrder 平均逻辑落点。
+    /// 若 item 已经是首项，走 `insertAtBeginning` 分支。
+    @discardableResult
+    func createItemBefore(_ item: TodoItem) -> TodoItem {
+        let predecessor = todoItemsCache.values
+            .filter {
+                $0.containerKindRaw == item.containerKindRaw
+                    && $0.dayDate == item.dayDate
+                    && $0.sortOrder < item.sortOrder
+            }
+            .max(by: { $0.sortOrder < $1.sortOrder })
+
+        return createItem(
+            dayDate: item.dayDate,
+            afterItem: predecessor,
+            indentLevel: item.indentLevel,
+            containerKind: item.containerKind,
+            insertAtBeginning: predecessor == nil
+        )
+    }
+
+    /// 把 `item` 的 title 在光标处切开。原 item 留下 `newCurrentTitle`，
+    /// 紧邻其下方插入一条 indent + 1 的子项（已达 max 时降级为同级 sibling），
+    /// title = `childTitle`。两个操作合并为 1 步撤销。
+    @discardableResult
+    func splitItem(_ item: TodoItem, newCurrentTitle: String, childTitle: String) -> TodoItem {
+        let oldTitle = item.title
+        let newIndent = min(item.indentLevel + 1, TodoItem.maxIndentLevel)
+
+        nsUndoManager.beginUndoGrouping()
+        defer {
+            nsUndoManager.endUndoGrouping()
+            nsUndoManager.setActionName("拆分")
+        }
+
+        item.title = newCurrentTitle
+        item.updatedAt = Date()
+        undoManager.registerTitleChange(
+            itemId: item.id,
+            oldTitle: oldTitle,
+            newTitle: newCurrentTitle,
+            store: self
+        )
+
+        let child = createItem(
+            title: childTitle,
+            dayDate: item.dayDate,
+            afterItem: item,
+            indentLevel: newIndent,
+            containerKind: item.containerKind
+        )
+
+        scheduleSave()
+        return child
+    }
+
     /// 删除待办事项
     func deleteItem(_ item: TodoItem) {
         let snapshot = TodoItemSnapshot(from: item)

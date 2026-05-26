@@ -25,7 +25,7 @@ struct TodoDroppableList<EmptyContent: View>: View {
     @Binding var dropState: TodoListDropState
     let store: TodoStore
     let onInteraction: (() -> Void)?
-    let onCreateItemAfter: (TodoItem) -> Void
+    let onEnterPressed: (TodoItem, EnterAction) -> Void
     let emptyContent: () -> EmptyContent
 
     @State private var frameTracker = DropFrameTracker()
@@ -43,7 +43,7 @@ struct TodoDroppableList<EmptyContent: View>: View {
         dropState: Binding<TodoListDropState>,
         store: TodoStore,
         onInteraction: (() -> Void)? = nil,
-        onCreateItemAfter: @escaping (TodoItem) -> Void,
+        onEnterPressed: @escaping (TodoItem, EnterAction) -> Void,
         @ViewBuilder emptyContent: @escaping () -> EmptyContent
     ) {
         self.items = items
@@ -53,7 +53,7 @@ struct TodoDroppableList<EmptyContent: View>: View {
         self._dropState = dropState
         self.store = store
         self.onInteraction = onInteraction
-        self.onCreateItemAfter = onCreateItemAfter
+        self.onEnterPressed = onEnterPressed
         self.emptyContent = emptyContent
     }
 
@@ -182,7 +182,7 @@ struct TodoDroppableList<EmptyContent: View>: View {
                     cursorPosition: cursorPosition
                 )
             },
-            onEnterPressed: { onCreateItemAfter(item) },
+            onEnterPressed: { action in onEnterPressed(item, action) },
             onDeletePressed: {
                 if selectionManager.selectedItemIds.contains(item.id) {
                     selectionManager.deleteSelectedItems(store: store) { [items] _ in items }

@@ -43,7 +43,7 @@ struct LongTermBucketView: View {
                 dropState: $dropState,
                 store: store,
                 onInteraction: onInteraction,
-                onCreateItemAfter: createNewItemAfter,
+                onEnterPressed: handleEnter,
                 emptyContent: {
                     LongTermBucketEmptyStateView(onAddItem: addNewItem)
                 }
@@ -80,17 +80,30 @@ private extension LongTermBucketView {
         onItemCreated?(newItem.id)
     }
 
-    func createNewItemAfter(_ item: TodoItem) {
-        let newItem = store.createItem(
-            dayDate: item.dayDate,
-            afterItem: item,
-            indentLevel: item.indentLevel,
-            containerKind: containerKind
-        )
+    func handleEnter(_ item: TodoItem, action: EnterAction) {
+        let newItem: TodoItem
+        switch action {
+        case .insertSiblingBelow:
+            newItem = store.createItem(
+                dayDate: item.dayDate,
+                afterItem: item,
+                indentLevel: item.indentLevel,
+                containerKind: containerKind
+            )
+        case .insertSiblingAbove:
+            newItem = store.createItemBefore(item)
+        case .splitIntoChild(let newCurrentTitle, let childTitle):
+            newItem = store.splitItem(
+                item,
+                newCurrentTitle: newCurrentTitle,
+                childTitle: childTitle
+            )
+        }
         selectionManager.handleSelect(
             item: newItem,
             allItems: todoItems,
-            shiftPressed: false
+            shiftPressed: false,
+            cursorPosition: 0
         )
         onItemCreated?(newItem.id)
     }

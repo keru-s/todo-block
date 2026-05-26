@@ -177,7 +177,7 @@ struct MenuBarView: View {
                                 item: item, allItems: items, shiftPressed: shiftPressed,
                                 cursorPosition: cursorPosition)
                         },
-                        onEnterPressed: { createNewItemAfter(item) },
+                        onEnterPressed: { action in handleEnter(item, action: action) },
                         onDeletePressed: {
                             if selectionManager.selectedItemIds.contains(item.id) {
                                 selectionManager.deleteSelectedItems(store: store) { _ in
@@ -256,13 +256,30 @@ private extension MenuBarView {
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
-    func createNewItemAfter(_ item: TodoItem) {
-        let newItem = store.createItem(
-            dayDate: Date(),
-            afterItem: item,
-            indentLevel: item.indentLevel
+    func handleEnter(_ item: TodoItem, action: EnterAction) {
+        let newItem: TodoItem
+        switch action {
+        case .insertSiblingBelow:
+            newItem = store.createItem(
+                dayDate: Date(),
+                afterItem: item,
+                indentLevel: item.indentLevel
+            )
+        case .insertSiblingAbove:
+            newItem = store.createItemBefore(item)
+        case .splitIntoChild(let newCurrentTitle, let childTitle):
+            newItem = store.splitItem(
+                item,
+                newCurrentTitle: newCurrentTitle,
+                childTitle: childTitle
+            )
+        }
+        selectionManager.handleSelect(
+            item: newItem,
+            allItems: todayItems,
+            shiftPressed: false,
+            cursorPosition: 0
         )
-        selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
     func bindContexts() {

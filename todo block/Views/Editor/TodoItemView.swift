@@ -25,7 +25,7 @@ struct TodoItemView: View {
 
     var onSelect: (Bool) -> Void = { _ in }
     var onFocus: (Bool, Int?) -> Void = { _, _ in }
-    var onEnterPressed: () -> Void
+    var onEnterPressed: (EnterAction) -> Void
     var onDeletePressed: () -> Void
     var onMoveUp: (Int, CGFloat?) -> Void
     var onMoveDown: (Int, CGFloat?) -> Void
@@ -231,7 +231,7 @@ private struct TodoItemEditorContainer: View {
     let verticalMoveDirection: VerticalMoveDirection?
     let onTab: () -> Void
     let onShiftTab: () -> Void
-    let onReturn: () -> Void
+    let onReturn: (EnterAction) -> Void
     let onBackspace: () -> Void
     let onFocus: (Bool, Int?) -> Void
     let onCompositionChange: (Bool) -> Void
@@ -298,7 +298,7 @@ private struct PreviewContent: View {
             item: item,
             allItems: [item],
             focusedItemId: .constant(item.id),
-            onEnterPressed: {},
+            onEnterPressed: { _ in },
             onDeletePressed: {},
             onMoveUp: { _, _ in },
             onMoveDown: { _, _ in }

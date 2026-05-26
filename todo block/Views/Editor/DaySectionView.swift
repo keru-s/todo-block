@@ -44,7 +44,7 @@ struct DaySectionView: View {
                 dropState: $dropState,
                 store: store,
                 onInteraction: onInteraction,
-                onCreateItemAfter: createNewItemAfter,
+                onEnterPressed: handleEnter,
                 emptyContent: {
                     DaySectionEmptyStateView(onAddItem: addNewItem)
                 }
@@ -88,16 +88,30 @@ struct DaySectionView: View {
         onItemCreated?(newItem.id)
     }
 
-    private func createNewItemAfter(_ item: TodoItem) {
-        let newItem = store.createItem(
-            dayDate: section.date,
-            afterItem: item,
-            indentLevel: item.indentLevel
-        )
+    private func handleEnter(_ item: TodoItem, action: EnterAction) {
+        let newItem: TodoItem
+        switch action {
+        case .insertSiblingBelow:
+            newItem = store.createItem(
+                dayDate: section.date,
+                afterItem: item,
+                indentLevel: item.indentLevel
+            )
+        case .insertSiblingAbove:
+            newItem = store.createItemBefore(item)
+        case .splitIntoChild(let newCurrentTitle, let childTitle):
+            newItem = store.splitItem(
+                item,
+                newCurrentTitle: newCurrentTitle,
+                childTitle: childTitle
+            )
+        }
+        // 新 item 焦点 + 光标落在 title 头部（case 3 的 child 已有文字，必须显式置 0）
         selectionManager.handleSelect(
             item: newItem,
             allItems: store.items(for: section.date),
-            shiftPressed: false
+            shiftPressed: false,
+            cursorPosition: 0
         )
         onItemCreated?(newItem.id)
     }
