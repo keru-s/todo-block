@@ -14,6 +14,7 @@ final class TodoEditorViewController: NSViewController {
 
     private var renderedSections: [TodoEditorSectionSnapshot] = []
     private var renderedEmptyTitle: String = ""
+    private var actions: TodoEditorActions = .readOnly
 
     override func loadView() {
         view = NSView()
@@ -21,8 +22,13 @@ final class TodoEditorViewController: NSViewController {
         configureEmptyLabel()
     }
 
-    func update(sections: [TodoEditorSectionSnapshot], emptyTitle: String) {
+    func update(
+        sections: [TodoEditorSectionSnapshot],
+        emptyTitle: String,
+        actions: TodoEditorActions
+    ) {
         loadViewIfNeeded()
+        self.actions = actions
 
         guard sections != renderedSections || emptyTitle != renderedEmptyTitle else {
             return
@@ -91,7 +97,7 @@ final class TodoEditorViewController: NSViewController {
         }
 
         for section in visibleSections {
-            let sectionView = TodoEditorSectionView(snapshot: section)
+            let sectionView = TodoEditorSectionView(snapshot: section, actions: actions)
             stackView.addArrangedSubview(sectionView)
             sectionView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
         }

@@ -11,7 +11,10 @@ final class TodoEditorSectionView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
 
-    init(snapshot: TodoEditorSectionSnapshot) {
+    private let actions: TodoEditorActions
+
+    init(snapshot: TodoEditorSectionSnapshot, actions: TodoEditorActions) {
+        self.actions = actions
         super.init(frame: .zero)
         configureViewHierarchy()
         apply(snapshot: snapshot)
@@ -54,10 +57,9 @@ final class TodoEditorSectionView: NSView {
         subtitleLabel.stringValue = snapshot.subtitle
 
         for item in snapshot.items {
-            let rowView = TodoEditorRowView(snapshot: item)
+            let rowView = TodoEditorRowView(snapshot: item, actions: actions)
             stackView.addArrangedSubview(rowView)
             rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
         }
     }
 }
-

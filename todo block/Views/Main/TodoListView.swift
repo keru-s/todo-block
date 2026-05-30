@@ -45,7 +45,8 @@ struct TodoListView: View {
                 if TodoEditorFeatureFlags.useAppKitMonthEditor {
                     TodoEditorRepresentable(
                         sections: appKitEditorSections,
-                        emptyTitle: "暂无待办"
+                        emptyTitle: "暂无待办",
+                        actions: appKitEditorActions
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -162,6 +163,22 @@ struct TodoListView: View {
             scope: clipboardScope,
             store: store,
             selectionManager: selectionManager
+        )
+    }
+
+    private var appKitEditorActions: TodoEditorActions {
+        TodoEditorActions(
+            titleChanged: { itemId, newTitle in
+                guard let item = store.todoItemsCache[itemId], item.title != newTitle else {
+                    return
+                }
+                item.title = newTitle
+                store.updateItem(item)
+            },
+            toggleCompleted: { itemId in
+                guard let item = store.todoItemsCache[itemId] else { return }
+                store.toggleComplete(item)
+            }
         )
     }
 }

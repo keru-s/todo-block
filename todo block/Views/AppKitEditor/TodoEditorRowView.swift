@@ -10,10 +10,15 @@ final class TodoEditorRowView: NSView {
     private let stackView = NSStackView()
     private let indentSpacer = NSView()
     private let handleLabel = NSTextField(labelWithString: "")
-    private let completionImageView = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
+    private let completionButton = NSButton()
+    private let titleTextView = TodoEditorTextView()
+    private let actions: TodoEditorActions
+    private var itemId: UUID?
+    private var indentConstraint: NSLayoutConstraint?
+    private var isApplyingSnapshot = false
 
-    init(snapshot: TodoEditorItemSnapshot) {
+    init(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions) {
+        self.actions = actions
         super.init(frame: .zero)
         configureViewHierarchy()
         apply(snapshot: snapshot)
@@ -38,20 +43,32 @@ final class TodoEditorRowView: NSView {
         handleLabel.textColor = .tertiaryLabelColor
         handleLabel.alignment = .center
 
-        completionImageView.symbolConfiguration = .init(pointSize: 14, weight: .regular)
-        completionImageView.contentTintColor = .secondaryLabelColor
+        completionButton.isBordered = false
+        completionButton.imagePosition = .imageOnly
+        completionButton.target = self
+        completionButton.action = #selector(toggleCompleted)
 
-        titleLabel.font = .preferredFont(forTextStyle: .body)
-        titleLabel.textColor = .labelColor
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.maximumNumberOfLines = 0
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleTextView.font = .preferredFont(forTextStyle: .body)
+        titleTextView.drawsBackground = false
+        titleTextView.isRichText = false
+        titleTextView.importsGraphics = false
+        titleTextView.isHorizontallyResizable = false
+        titleTextView.isVerticallyResizable = false
+        titleTextView.textContainerInset = NSSize(width: 0, height: 2)
+        titleTextView.textContainer?.lineFragmentPadding = 0
+        titleTextView.textContainer?.lineBreakMode = .byWordWrapping
+        titleTextView.textContainer?.widthTracksTextView = true
+        titleTextView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleTextView.onTextDidChange = { [weak self] newText in
+            guard let self, let itemId, isApplyingSnapshot == false else { return }
+            actions.titleChanged(itemId, newText)
+        }
 
         addSubview(stackView)
         stackView.addArrangedSubview(indentSpacer)
         stackView.addArrangedSubview(handleLabel)
-        stackView.addArrangedSubview(completionImageView)
-        stackView.addArrangedSubview(titleLabel)
+        stackView.addArrangedSubview(completionButton)
+        stackView.addArrangedSubview(titleTextView)
 
         NSLayoutConstraint.activate([
             stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -60,24 +77,34 @@ final class TodoEditorRowView: NSView {
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
             handleLabel.widthAnchor.constraint(equalToConstant: 20),
-            completionImageView.widthAnchor.constraint(equalToConstant: 20),
-            completionImageView.heightAnchor.constraint(equalToConstant: 20)
+            completionButton.widthAnchor.constraint(equalToConstant: 20),
+            completionButton.heightAnchor.constraint(equalToConstant: 20)
         ])
     }
 
     private func apply(snapshot: TodoEditorItemSnapshot) {
+        itemId = snapshot.id
+
         let indentWidth = CGFloat(snapshot.indentLevel) * TodoDesignTokens.indentWidth
-        indentSpacer.widthAnchor.constraint(equalToConstant: indentWidth).isActive = true
+        indentConstraint?.isActive = false
+        indentConstraint = indentSpacer.widthAnchor.constraint(equalToConstant: indentWidth)
+        indentConstraint?.isActive = true
 
         let symbolName = snapshot.isCompleted ? "checkmark.square.fill" : "square"
-        completionImageView.image = NSImage(
+        completionButton.image = NSImage(
             systemSymbolName: symbolName,
             accessibilityDescription: snapshot.isCompleted ? "已完成" : "未完成"
         )
-        completionImageView.contentTintColor = snapshot.isCompleted ? .systemGreen : .secondaryLabelColor
+        completionButton.contentTintColor = snapshot.isCompleted ? .systemGreen : .secondaryLabelColor
 
-        titleLabel.stringValue = snapshot.title.isEmpty ? "待办事项" : snapshot.title
-        titleLabel.textColor = snapshot.isCompleted ? .secondaryLabelColor : .labelColor
+        isApplyingSnapshot = true
+        titleTextView.string = snapshot.title
+        isApplyingSnapshot = false
+        titleTextView.textColor = snapshot.isCompleted ? .secondaryLabelColor : .labelColor
+    }
+
+    @objc private func toggleCompleted() {
+        guard let itemId else { return }
+        actions.toggleCompleted(itemId)
     }
 }
-
