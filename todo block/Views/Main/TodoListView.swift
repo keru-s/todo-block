@@ -21,6 +21,15 @@ struct TodoListView: View {
         store.sections(year: year, month: month)
     }
 
+    private var appKitEditorSections: [TodoEditorSectionSnapshot] {
+        daySections.map { section in
+            TodoEditorSectionSnapshot(
+                section: section,
+                items: store.items(for: section.date)
+            )
+        }
+    }
+
     private var clipboardScope: TodoClipboardScope {
         .scheduledMonth(year: year, month: month)
     }
@@ -33,30 +42,38 @@ struct TodoListView: View {
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                ScrollView {
-                    // 用 VStack 而非 LazyVStack: LazyVStack 的 prefetch 与
-                    // NSViewRepresentable (CustomTextEditor) 的 intrinsicContentSize
-                    // 测量在滚动期间会形成不收敛的 layout 循环,导致 100% CPU 卡死。
-                    VStack(alignment: .leading, spacing: 24) {
-                        ForEach(daySections) { section in
-                            DaySectionView(
-                                section: section,
-                                selectionManager: selectionManager,
-                                onItemCreated: { itemId in
-                                    scrollToItem(itemId, proxy: proxy)
-                                },
-                                onInteraction: {}
-                            )
-                            .id(section.id)
+                if TodoEditorFeatureFlags.useAppKitMonthEditor {
+                    TodoEditorRepresentable(
+                        sections: appKitEditorSections,
+                        emptyTitle: "暂无待办"
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        // 用 VStack 而非 LazyVStack: LazyVStack 的 prefetch 与
+                        // NSViewRepresentable (CustomTextEditor) 的 intrinsicContentSize
+                        // 测量在滚动期间会形成不收敛的 layout 循环,导致 100% CPU 卡死。
+                        VStack(alignment: .leading, spacing: 24) {
+                            ForEach(daySections) { section in
+                                DaySectionView(
+                                    section: section,
+                                    selectionManager: selectionManager,
+                                    onItemCreated: { itemId in
+                                        scrollToItem(itemId, proxy: proxy)
+                                    },
+                                    onInteraction: {}
+                                )
+                                .id(section.id)
+                            }
                         }
+                        .padding()
                     }
-                    .padding()
+                    .gesture(
+                        TapGesture().onEnded {
+                            selectionManager.clearSelection()
+                        }
+                    )
                 }
-                .gesture(
-                    TapGesture().onEnded {
-                        selectionManager.clearSelection()
-                    }
-                )
 
                 HStack {
                     Button(action: { addTodaySection(proxy: proxy) }) {
