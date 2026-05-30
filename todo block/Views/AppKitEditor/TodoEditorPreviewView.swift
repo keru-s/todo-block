@@ -11,13 +11,16 @@ struct TodoEditorPreviewView: View {
     let year: Int
     let month: Int
 
+    @State private var selectionManager = SelectionManager()
+
     private var store: TodoStore { TodoStore.shared }
 
     private var sections: [TodoEditorSectionSnapshot] {
         store.sections(year: year, month: month).map { section in
             TodoEditorSectionSnapshot(
                 section: section,
-                items: store.items(for: section.date)
+                items: store.items(for: section.date),
+                selectionManager: selectionManager
             )
         }
     }

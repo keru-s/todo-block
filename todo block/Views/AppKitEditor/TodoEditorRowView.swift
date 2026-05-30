@@ -4,18 +4,25 @@
 //
 
 import AppKit
+import SwiftUI
 
 @MainActor
 final class TodoEditorRowView: NSView {
     private let stackView = NSStackView()
     private let indentSpacer = NSView()
-    private let handleLabel = NSTextField(labelWithString: "")
+    private let handleView = TodoEditorDragHandleView()
     private let completionButton = NSButton()
     private let titleTextView = TodoEditorTextView()
     private let actions: TodoEditorActions
     private var itemId: UUID?
     private var indentConstraint: NSLayoutConstraint?
     private var isApplyingSnapshot = false
+    private var isComposingText = false
+    private var latestSnapshot: TodoEditorItemSnapshot?
+
+    var onDragBegan: ((UUID, NSPoint) -> Void)?
+    var onDragChanged: ((UUID, NSPoint) -> Void)?
+    var onDragEnded: ((UUID, NSPoint) -> Void)?
 
     init(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions) {
         self.actions = actions
@@ -38,11 +45,6 @@ final class TodoEditorRowView: NSView {
         stackView.distribution = .fill
         stackView.spacing = 6
 
-        handleLabel.stringValue = "≡"
-        handleLabel.font = .preferredFont(forTextStyle: .caption1)
-        handleLabel.textColor = .tertiaryLabelColor
-        handleLabel.alignment = .center
-
         completionButton.isBordered = false
         completionButton.imagePosition = .imageOnly
         completionButton.target = self
@@ -63,10 +65,48 @@ final class TodoEditorRowView: NSView {
             guard let self, let itemId, isApplyingSnapshot == false else { return }
             actions.titleChanged(itemId, newText)
         }
+        titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
+            guard let self, let itemId else { return }
+            actions.selectItem(itemId, shiftPressed, cursorPosition)
+        }
+        titleTextView.onCompositionChange = { [weak self] composing in
+            self?.isComposingText = composing
+        }
+        titleTextView.onCommand = { [weak self] command in
+            guard let self, let itemId else { return false }
+            switch command {
+            case .return(let action):
+                actions.enterPressed(itemId, action)
+            case .deleteBackward:
+                actions.deletePressed(itemId)
+            case .tab:
+                actions.indent(itemId)
+            case .backtab:
+                actions.outdent(itemId)
+            case .moveUp(let position, let horizontalOffset):
+                actions.moveFocus(itemId, .up, position, horizontalOffset)
+            case .moveDown(let position, let horizontalOffset):
+                actions.moveFocus(itemId, .down, position, horizontalOffset)
+            }
+            return true
+        }
+
+        handleView.onDragBegan = { [weak self] location in
+            guard let self, let itemId else { return }
+            onDragBegan?(itemId, location)
+        }
+        handleView.onDragChanged = { [weak self] location in
+            guard let self, let itemId else { return }
+            onDragChanged?(itemId, location)
+        }
+        handleView.onDragEnded = { [weak self] location in
+            guard let self, let itemId else { return }
+            onDragEnded?(itemId, location)
+        }
 
         addSubview(stackView)
         stackView.addArrangedSubview(indentSpacer)
-        stackView.addArrangedSubview(handleLabel)
+        stackView.addArrangedSubview(handleView)
         stackView.addArrangedSubview(completionButton)
         stackView.addArrangedSubview(titleTextView)
 
@@ -76,13 +116,15 @@ final class TodoEditorRowView: NSView {
             stackView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
-            handleLabel.widthAnchor.constraint(equalToConstant: 20),
+            handleView.widthAnchor.constraint(equalToConstant: 20),
+            handleView.heightAnchor.constraint(equalToConstant: 20),
             completionButton.widthAnchor.constraint(equalToConstant: 20),
             completionButton.heightAnchor.constraint(equalToConstant: 20)
         ])
     }
 
-    private func apply(snapshot: TodoEditorItemSnapshot) {
+    func apply(snapshot: TodoEditorItemSnapshot) {
+        latestSnapshot = snapshot
         itemId = snapshot.id
 
         let indentWidth = CGFloat(snapshot.indentLevel) * TodoDesignTokens.indentWidth
@@ -97,14 +139,62 @@ final class TodoEditorRowView: NSView {
         )
         completionButton.contentTintColor = snapshot.isCompleted ? .systemGreen : .secondaryLabelColor
 
-        isApplyingSnapshot = true
-        titleTextView.string = snapshot.title
-        isApplyingSnapshot = false
-        titleTextView.textColor = snapshot.isCompleted ? .secondaryLabelColor : .labelColor
+        titleTextView.deletesOnBackspace = snapshot.hasMultipleSelection
+
+        if titleTextView.string != snapshot.title && isComposingText == false {
+            isApplyingSnapshot = true
+            titleTextView.string = snapshot.title
+            isApplyingSnapshot = false
+        }
+        applyTextStyle(isCompleted: snapshot.isCompleted)
+
+        wantsLayer = true
+        layer?.backgroundColor = snapshot.isSelected
+            ? TodoDesignTokens.selectionTint.nsColor.cgColor
+            : NSColor.clear.cgColor
+
+        if snapshot.isFocused, window?.firstResponder !== titleTextView {
+            Task { @MainActor [weak self] in
+                guard let self, self.itemId == snapshot.id else { return }
+                titleTextView.focus(
+                    cursorPosition: snapshot.cursorPosition,
+                    preferredHorizontalOffset: snapshot.preferredHorizontalOffset,
+                    verticalMoveDirection: snapshot.verticalMoveDirection
+                )
+            }
+        }
     }
 
     @objc private func toggleCompleted() {
         guard let itemId else { return }
         actions.toggleCompleted(itemId)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if let itemId {
+            actions.selectItem(itemId, event.modifierFlags.contains(.shift), nil)
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func applyTextStyle(isCompleted: Bool) {
+        let range = NSRange(location: 0, length: (titleTextView.string as NSString).length)
+        titleTextView.textStorage?.beginEditing()
+        titleTextView.textStorage?.setAttributes(
+            [
+                .font: NSFont.preferredFont(forTextStyle: .body),
+                .foregroundColor: isCompleted ? NSColor.secondaryLabelColor : NSColor.labelColor,
+                .strikethroughStyle: isCompleted ? NSUnderlineStyle.single.rawValue : 0
+            ],
+            range: range
+        )
+        titleTextView.textStorage?.endEditing()
+        titleTextView.insertionPointColor = isCompleted ? .secondaryLabelColor : .labelColor
+    }
+}
+
+private extension Color {
+    var nsColor: NSColor {
+        NSColor(self)
     }
 }

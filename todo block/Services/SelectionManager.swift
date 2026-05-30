@@ -8,7 +8,7 @@
 import SwiftData
 import SwiftUI
 
-enum VerticalMoveDirection {
+enum VerticalMoveDirection: Equatable {
     case up
     case down
 }

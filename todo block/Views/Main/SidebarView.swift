@@ -13,8 +13,6 @@ struct SidebarView: View {
 
     @Binding var selectedDestination: SidebarDestination
 
-    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
-
     private var groupedMonths: [(year: Int, months: [Int])] {
         var yearMonths: [Int: Set<Int>] = [:]
 
@@ -45,9 +43,7 @@ struct SidebarView: View {
             }
         )) {
             Section {
-                SidebarDropTargetRow(destination: .longTerm) {
-                    LongTermRow(isSelected: selectedDestination == .longTerm)
-                }
+                LongTermRow(isSelected: selectedDestination == .longTerm)
                 .tag(SidebarDestination.longTerm)
             }
 
@@ -55,13 +51,11 @@ struct SidebarView: View {
                 Section {
                     ForEach(yearGroup.months, id: \.self) { month in
                         let destination = SidebarDestination.month(year: yearGroup.year, month: month)
-                        SidebarDropTargetRow(destination: destination) {
-                            MonthRow(
-                                year: yearGroup.year,
-                                month: month,
-                                isSelected: selectedDestination == destination
-                            )
-                        }
+                        MonthRow(
+                            year: yearGroup.year,
+                            month: month,
+                            isSelected: selectedDestination == destination
+                        )
                         .tag(destination)
                     }
                 } header: {
@@ -73,40 +67,6 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 150)
-    }
-}
-
-/// Wraps a sidebar row to register its frame as a drag-and-drop target
-/// and show a highlight when the pointer hovers during a drag.
-private struct SidebarDropTargetRow<Content: View>: View {
-    let destination: SidebarDestination
-    @ViewBuilder let content: Content
-
-    private var coordinator: TodoDragCoordinator { TodoDragCoordinator.shared }
-
-    private var isHighlighted: Bool {
-        coordinator.hoveredSidebarDestination == destination
-    }
-
-    var body: some View {
-        content
-            .background {
-                GeometryReader { proxy in
-                    let frame = proxy.frame(in: .global)
-                    Color.clear
-                        .onAppear {
-                            coordinator.registerSidebarTarget(destination, frame: frame)
-                        }
-                        .onChange(of: frame) { _, newValue in
-                            coordinator.registerSidebarTarget(destination, frame: newValue)
-                        }
-                }
-            }
-            .listRowBackground(
-                isHighlighted
-                    ? TodoDesignTokens.selectionTint
-                    : nil
-            )
     }
 }
 

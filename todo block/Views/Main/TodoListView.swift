@@ -25,7 +25,8 @@ struct TodoListView: View {
         daySections.map { section in
             TodoEditorSectionSnapshot(
                 section: section,
-                items: store.items(for: section.date)
+                items: store.items(for: section.date),
+                selectionManager: selectionManager
             )
         }
     }
@@ -40,120 +41,67 @@ struct TodoListView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                if TodoEditorFeatureFlags.useAppKitMonthEditor {
-                    TodoEditorRepresentable(
-                        sections: appKitEditorSections,
-                        emptyTitle: "暂无待办",
-                        actions: appKitEditorActions
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        // 用 VStack 而非 LazyVStack: LazyVStack 的 prefetch 与
-                        // NSViewRepresentable (CustomTextEditor) 的 intrinsicContentSize
-                        // 测量在滚动期间会形成不收敛的 layout 循环,导致 100% CPU 卡死。
-                        VStack(alignment: .leading, spacing: 24) {
-                            ForEach(daySections) { section in
-                                DaySectionView(
-                                    section: section,
-                                    selectionManager: selectionManager,
-                                    onItemCreated: { itemId in
-                                        scrollToItem(itemId, proxy: proxy)
-                                    },
-                                    onInteraction: {}
-                                )
-                                .id(section.id)
-                            }
-                        }
-                        .padding()
-                    }
-                    .gesture(
-                        TapGesture().onEnded {
-                            selectionManager.clearSelection()
-                        }
-                    )
-                }
+        VStack(spacing: 0) {
+            TodoEditorRepresentable(
+                sections: appKitEditorSections,
+                emptyTitle: "暂无待办",
+                actions: appKitEditorActions
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack {
-                    Button(action: { addTodaySection(proxy: proxy) }) {
-                        HStack {
-                            Image(systemName: "plus")
-                            Text(hasTodaySection ? "添加一个今日待办" : "添加今日分区")
-                        }
+            HStack {
+                Button(action: addTodaySection) {
+                    HStack {
+                        Image(systemName: "plus")
+                        Text(hasTodaySection ? "添加一个今日待办" : "添加今日分区")
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                    .font(.system(size: 14, weight: .medium))
-                    .padding(.horizontal)
-                    .padding(.vertical, 12)
-                    
-                    Spacer()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .font(.system(size: 14, weight: .medium))
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                
+                Spacer()
 
-                    if selectionManager.selectedItemIds.count > 1 {
-                        Text("已选 \(selectionManager.selectedItemIds.count) 项")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .padding(.trailing, 12)
-                    }
-                }
-                .background(TodoDesignTokens.windowBackground)
-            }
-            .onAppear {
-                bindContextsIfNeeded()
-            }
-            .onChange(of: selectionManager.focusedItemId) { _, newValue in
-                if let itemId = newValue {
-                    scrollToItem(itemId, proxy: proxy)
+                if selectionManager.selectedItemIds.count > 1 {
+                    Text("已选 \(selectionManager.selectedItemIds.count) 项")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, 12)
                 }
             }
-            .onChange(of: isActiveContext) { _, newValue in
-                guard newValue else { return }
-                bindContextsIfNeeded()
-            }
-            .onChange(of: clipboardScope) { _, _ in
-                bindContextsIfNeeded()
-            }
-            .onChange(of: store.focusRequestId) { _, newValue in
-                guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-                selectionManager.restoreFocus(to: itemId)
-                scrollToItem(itemId, proxy: proxy)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
-                bindContextsIfNeeded()
-            }
+            .background(TodoDesignTokens.windowBackground)
+        }
+        .onAppear {
+            bindContextsIfNeeded()
+        }
+        .onChange(of: isActiveContext) { _, newValue in
+            guard newValue else { return }
+            bindContextsIfNeeded()
+        }
+        .onChange(of: clipboardScope) { _, _ in
+            bindContextsIfNeeded()
+        }
+        .onChange(of: store.focusRequestId) { _, newValue in
+            guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
+            selectionManager.restoreFocus(to: itemId)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
+            bindContextsIfNeeded()
         }
     }
 
-    private func addTodaySection(proxy: ScrollViewProxy) {
-        let hadTodaySection = hasTodaySection
+    private func addTodaySection() {
         let section = store.getOrCreateTodaySection()
-        if hadTodaySection == false {
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(50))
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo(section.id, anchor: .center)
-                }
-            }
-            return
-        }
-
-        let newItem = store.createItem(dayDate: section.date)
-        selectionManager.handleSelect(
-            item: newItem,
-            allItems: store.items(for: section.date),
-            shiftPressed: false
-        )
-        scrollToItem(newItem.id, proxy: proxy)
-    }
-
-    private func scrollToItem(_ itemId: UUID, proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            withAnimation(.easeInOut(duration: 0.2)) {
-                proxy.scrollTo(itemId, anchor: .center)
-            }
+        if hasTodaySection {
+            let newItem = store.createItem(dayDate: section.date)
+            selectionManager.handleSelect(
+                item: newItem,
+                allItems: store.items(for: section.date),
+                shiftPressed: false,
+                cursorPosition: 0
+            )
         }
     }
 
@@ -167,17 +115,11 @@ struct TodoListView: View {
     }
 
     private var appKitEditorActions: TodoEditorActions {
-        TodoEditorActions(
-            titleChanged: { itemId, newTitle in
-                guard let item = store.todoItemsCache[itemId], item.title != newTitle else {
-                    return
-                }
-                item.title = newTitle
-                store.updateItem(item)
-            },
-            toggleCompleted: { itemId in
-                guard let item = store.todoItemsCache[itemId] else { return }
-                store.toggleComplete(item)
+        TodoEditorActionFactory.make(
+            store: store,
+            selectionManager: selectionManager,
+            sectionById: { sectionId in
+                daySections.first { $0.id == sectionId }
             }
         )
     }

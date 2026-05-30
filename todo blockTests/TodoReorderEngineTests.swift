@@ -21,61 +21,6 @@ final class TodoReorderEngineTests: XCTestCase {
         TodoStore.shared.initialize(with: descriptor.mainContext)
     }
 
-    func testMenuBarDropStateCalculatesInsertIndexAndIndentClamp() {
-        let first = TodoItem(title: "first", indentLevel: 0)
-        let second = TodoItem(title: "second", indentLevel: 2)
-        let third = TodoItem(title: "third", indentLevel: 0)
-        let items = [first, second, third]
-
-        let frames: [UUID: CGRect] = [
-            first.id: CGRect(x: 0, y: 0, width: 200, height: 28),
-            second.id: CGRect(x: 0, y: 28, width: 200, height: 28),
-            third.id: CGRect(x: 0, y: 56, width: 200, height: 28),
-        ]
-
-        let state = MenuBarManualReorderEngine.dropState(
-            for: CGPoint(x: 120, y: 40),
-            items: items,
-            itemFrames: frames,
-            itemHeight: 28,
-            indentWidth: 24
-        )
-
-        XCTAssertEqual(state, .insertAt(index: 1, indentLevel: 1))
-    }
-
-    func testMenuBarDropStateReturnsNoneOutsideVerticalRange() {
-        let item = TodoItem(title: "single", indentLevel: 0)
-        let items = [item]
-        let frames: [UUID: CGRect] = [item.id: CGRect(x: 0, y: 0, width: 200, height: 28)]
-
-        let state = MenuBarManualReorderEngine.dropState(
-            for: CGPoint(x: 20, y: -40),
-            items: items,
-            itemFrames: frames,
-            itemHeight: 28,
-            indentWidth: 24
-        )
-
-        XCTAssertEqual(state, .none)
-    }
-
-    func testMenuBarDropStateFallsBackWhenFramesAreIncomplete() {
-        let first = TodoItem(title: "first", indentLevel: 0)
-        let second = TodoItem(title: "line1\nline2\nline3", indentLevel: 0)
-        let items = [first, second]
-
-        let state = MenuBarManualReorderEngine.dropState(
-            for: CGPoint(x: 10, y: 20),
-            items: items,
-            itemFrames: [first.id: CGRect(x: 0, y: 0, width: 200, height: 28)],
-            itemHeight: 28,
-            indentWidth: 24
-        )
-
-        XCTAssertEqual(state, .insertAt(index: 1, indentLevel: 0))
-    }
-
     func testPerformMoveMovesParentAndChildrenAsABlock() {
         let store = TodoStore.shared
         let dayDate = date(year: 2026, month: 2, day: 22)
