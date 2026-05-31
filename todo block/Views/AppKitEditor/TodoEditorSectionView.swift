@@ -21,6 +21,9 @@ final class TodoEditorSectionView: NSView {
     var onDragBegan: ((UUID, NSPoint) -> Void)?
     var onDragChanged: ((UUID, NSPoint) -> Void)?
     var onDragEnded: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragEnded: (() -> Void)?
 
     init(snapshot: TodoEditorSectionSnapshot, actions: TodoEditorActions) {
         self.actions = actions
@@ -105,7 +108,16 @@ final class TodoEditorSectionView: NSView {
             rowView.onDragEnded = { [weak self] itemId, location in
                 self?.onDragEnded?(itemId, location)
             }
-            rowView.apply(snapshot: item)
+            rowView.onSelectionDragBegan = { [weak self] itemId, location in
+                self?.onSelectionDragBegan?(itemId, location)
+            }
+            rowView.onSelectionDragChanged = { [weak self] itemId, location in
+                self?.onSelectionDragChanged?(itemId, location)
+            }
+            rowView.onSelectionDragEnded = { [weak self] in
+                self?.onSelectionDragEnded?()
+            }
+            rowView.apply(snapshot: item, actions: self.actions)
             stackView.addArrangedSubview(rowView)
             rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
             nextRowsById[item.id] = rowView
@@ -122,6 +134,27 @@ final class TodoEditorSectionView: NSView {
     func contains(pointInDocument: CGPoint, documentView: NSView) -> Bool {
         let frame = convert(bounds, to: documentView)
         return frame.contains(pointInDocument)
+    }
+
+    func nearestItemId(at pointInDocument: CGPoint, documentView: NSView) -> UUID? {
+        guard rowViewsById.isEmpty == false else { return nil }
+
+        var best: (id: UUID, distance: CGFloat)?
+        for (id, rowView) in rowViewsById {
+            let frame = rowView.convert(rowView.bounds, to: documentView)
+            if frame.minY <= pointInDocument.y && pointInDocument.y <= frame.maxY {
+                return id
+            }
+
+            let distance = pointInDocument.y < frame.minY
+                ? frame.minY - pointInDocument.y
+                : pointInDocument.y - frame.maxY
+            if best == nil || distance < best!.distance {
+                best = (id, distance)
+            }
+        }
+
+        return best?.id
     }
 
     @objc private func addItem() {

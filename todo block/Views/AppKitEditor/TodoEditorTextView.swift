@@ -137,13 +137,28 @@ final class TodoEditorTextView: NSTextView {
             return false
         }
 
+        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+
+        if modifiers.contains(.command) {
+            if commandSelector == #selector(NSResponder.moveUp(_:))
+                || commandSelector == #selector(NSResponder.moveToBeginningOfDocument(_:))
+            {
+                return onCommand?(.moveItemUp) == true
+            }
+
+            if commandSelector == #selector(NSResponder.moveDown(_:))
+                || commandSelector == #selector(NSResponder.moveToEndOfDocument(_:))
+            {
+                return onCommand?(.moveItemDown) == true
+            }
+        }
+
         if commandSelector == #selector(NSResponder.insertLineBreak(_:)) {
             insertNewlineIgnoringFieldEditor(nil)
             return true
         }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
             if modifiers.contains(.shift) {
                 insertNewlineIgnoringFieldEditor(nil)
                 return true
@@ -284,4 +299,6 @@ enum TodoEditorTextCommand {
     case backtab
     case moveUp(Int, CGFloat?)
     case moveDown(Int, CGFloat?)
+    case moveItemUp
+    case moveItemDown
 }

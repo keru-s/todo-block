@@ -13,16 +13,22 @@ final class TodoEditorRowView: NSView {
     private let handleView = TodoEditorDragHandleView()
     private let completionButton = NSButton()
     private let titleTextView = TodoEditorTextView()
-    private let actions: TodoEditorActions
+    private var actions: TodoEditorActions
     private var itemId: UUID?
     private var indentConstraint: NSLayoutConstraint?
     private var isApplyingSnapshot = false
     private var isComposingText = false
     private var latestSnapshot: TodoEditorItemSnapshot?
+    private var selectionMouseDownTime: Date?
+    private var didStartDragSelection = false
+    private var prefersRowFirstResponder = false
 
     var onDragBegan: ((UUID, NSPoint) -> Void)?
     var onDragChanged: ((UUID, NSPoint) -> Void)?
     var onDragEnded: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
+    var onSelectionDragEnded: (() -> Void)?
 
     init(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions) {
         self.actions = actions
@@ -67,6 +73,7 @@ final class TodoEditorRowView: NSView {
         }
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
+            prefersRowFirstResponder = false
             actions.selectItem(itemId, shiftPressed, cursorPosition)
         }
         titleTextView.onCompositionChange = { [weak self] composing in
@@ -87,12 +94,18 @@ final class TodoEditorRowView: NSView {
                 actions.moveFocus(itemId, .up, position, horizontalOffset)
             case .moveDown(let position, let horizontalOffset):
                 actions.moveFocus(itemId, .down, position, horizontalOffset)
+            case .moveItemUp:
+                actions.moveItemByKeyboard(itemId, .up)
+            case .moveItemDown:
+                actions.moveItemByKeyboard(itemId, .down)
             }
             return true
         }
 
         handleView.onDragBegan = { [weak self] location in
             guard let self, let itemId else { return }
+            prefersRowFirstResponder = true
+            window?.makeFirstResponder(self)
             onDragBegan?(itemId, location)
         }
         handleView.onDragChanged = { [weak self] location in
@@ -123,7 +136,11 @@ final class TodoEditorRowView: NSView {
         ])
     }
 
-    func apply(snapshot: TodoEditorItemSnapshot) {
+    func apply(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions? = nil) {
+        if let actions {
+            self.actions = actions
+        }
+
         latestSnapshot = snapshot
         itemId = snapshot.id
 
@@ -153,7 +170,11 @@ final class TodoEditorRowView: NSView {
             ? TodoDesignTokens.selectionTint.nsColor.cgColor
             : NSColor.clear.cgColor
 
-        if snapshot.isFocused, window?.firstResponder !== titleTextView {
+        if snapshot.isFocused, prefersRowFirstResponder {
+            if window?.firstResponder !== self {
+                window?.makeFirstResponder(self)
+            }
+        } else if snapshot.isFocused, window?.firstResponder !== titleTextView {
             Task { @MainActor [weak self] in
                 guard let self, self.itemId == snapshot.id else { return }
                 titleTextView.focus(
@@ -162,6 +183,8 @@ final class TodoEditorRowView: NSView {
                     verticalMoveDirection: snapshot.verticalMoveDirection
                 )
             }
+        } else if snapshot.isFocused == false {
+            prefersRowFirstResponder = false
         }
     }
 
@@ -170,11 +193,66 @@ final class TodoEditorRowView: NSView {
         actions.toggleCompleted(itemId)
     }
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         if let itemId {
+            selectionMouseDownTime = Date()
+            didStartDragSelection = false
+            prefersRowFirstResponder = true
             actions.selectItem(itemId, event.modifierFlags.contains(.shift), nil)
+            window?.makeFirstResponder(self)
         }
         super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let itemId else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        if didStartDragSelection == false {
+            let elapsed = abs(selectionMouseDownTime?.timeIntervalSinceNow ?? 0)
+            guard elapsed >= 0.15 else { return }
+            didStartDragSelection = true
+            onSelectionDragBegan?(itemId, event.locationInWindow)
+        }
+
+        onSelectionDragChanged?(itemId, event.locationInWindow)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if didStartDragSelection {
+            onSelectionDragEnded?()
+        }
+        selectionMouseDownTime = nil
+        didStartDragSelection = false
+        super.mouseUp(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let itemId else {
+            super.keyDown(with: event)
+            return
+        }
+
+        if event.modifierFlags.contains(.command), event.keyCode == 126 {
+            actions.moveItemByKeyboard(itemId, .up)
+            return
+        }
+
+        if event.modifierFlags.contains(.command), event.keyCode == 125 {
+            actions.moveItemByKeyboard(itemId, .down)
+            return
+        }
+
+        if event.charactersIgnoringModifiers == " " {
+            actions.toggleCompleted(itemId)
+            return
+        }
+
+        super.keyDown(with: event)
     }
 
     private func applyTextStyle(isCompleted: Bool) {

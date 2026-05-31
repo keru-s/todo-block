@@ -19,6 +19,8 @@ final class TodoEditorViewController: NSViewController {
     private var sectionViewsById: [UUID: TodoEditorSectionView] = [:]
     private var draggingItemId: UUID?
     private var activeDrop: TodoEditorResolvedDrop?
+    private var dragSelectionSectionId: UUID?
+    private let dragSession = TodoEditorDragSession.shared
 
     override func loadView() {
         view = NSView()
@@ -114,6 +116,15 @@ final class TodoEditorViewController: NSViewController {
             sectionView.onDragEnded = { [weak self] itemId, location in
                 self?.handleDragEnded(itemId: itemId, windowLocation: location)
             }
+            sectionView.onSelectionDragBegan = { [weak self] itemId, location in
+                self?.handleSelectionDragBegan(itemId: itemId, windowLocation: location)
+            }
+            sectionView.onSelectionDragChanged = { [weak self] itemId, location in
+                self?.handleSelectionDragChanged(itemId: itemId, windowLocation: location)
+            }
+            sectionView.onSelectionDragEnded = { [weak self] in
+                self?.handleSelectionDragEnded()
+            }
             sectionView.apply(snapshot: section, actions: actions)
             stackView.addArrangedSubview(sectionView)
             sectionView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
@@ -124,12 +135,14 @@ final class TodoEditorViewController: NSViewController {
 
     private func handleDragBegan(itemId: UUID, windowLocation: NSPoint) {
         draggingItemId = itemId
+        dragSession.begin(itemId: itemId, screenLocation: screenLocation(from: windowLocation))
         actions.selectItem(itemId, false, nil)
         updateDrop(windowLocation: windowLocation)
     }
 
     private func handleDragChanged(itemId: UUID, windowLocation: NSPoint) {
         guard draggingItemId == itemId else { return }
+        dragSession.update(screenLocation: screenLocation(from: windowLocation))
         updateDrop(windowLocation: windowLocation)
     }
 
@@ -141,15 +154,44 @@ final class TodoEditorViewController: NSViewController {
             draggingItemId = nil
             activeDrop = nil
             dropIndicatorView.hide()
+            dragSession.end()
         }
 
-        guard let activeDrop else { return }
-        actions.moveDraggedItem(
-            itemId,
-            activeDrop.destination,
-            activeDrop.index,
-            activeDrop.indentLevel
-        )
+        if let activeDrop {
+            actions.moveDraggedItem(
+                itemId,
+                activeDrop.destination,
+                activeDrop.index,
+                activeDrop.indentLevel
+            )
+            return
+        }
+
+        if let sidebarDestination = dragSession.hoveredSidebarDestination {
+            actions.moveDraggedItemToSidebar(itemId, sidebarDestination)
+        }
+    }
+
+    private func handleSelectionDragBegan(itemId: UUID, windowLocation: NSPoint) {
+        dragSelectionSectionId = sectionSnapshot(containing: itemId)?.id
+        actions.beginDragSelection(itemId, nil)
+        handleSelectionDragChanged(itemId: itemId, windowLocation: windowLocation)
+    }
+
+    private func handleSelectionDragChanged(itemId: UUID, windowLocation: NSPoint) {
+        let point = documentView.convert(windowLocation, from: nil)
+        guard
+            let sectionId = dragSelectionSectionId,
+            let sectionView = sectionViewsById[sectionId],
+            let targetId = sectionView.nearestItemId(at: point, documentView: documentView)
+        else { return }
+
+        actions.updateDragSelection(targetId)
+    }
+
+    private func handleSelectionDragEnded() {
+        dragSelectionSectionId = nil
+        actions.endDragSelection()
     }
 
     private func updateDrop(windowLocation: NSPoint) {
@@ -185,6 +227,12 @@ final class TodoEditorViewController: NSViewController {
             }
         }
         return nil
+    }
+
+    private func sectionSnapshot(containing itemId: UUID) -> TodoEditorSectionSnapshot? {
+        renderedSections.first { section in
+            section.items.contains { $0.id == itemId }
+        }
     }
 
     private func resolveDrop(
@@ -243,6 +291,10 @@ final class TodoEditorViewController: NSViewController {
 
         let item = section.items[drop.index]
         return itemFrames[item.id]?.minY
+    }
+
+    private func screenLocation(from windowLocation: NSPoint) -> CGPoint {
+        view.window?.convertPoint(toScreen: windowLocation) ?? windowLocation
     }
 }
 

@@ -33,6 +33,24 @@ enum TodoEditorActionFactory {
                     cursorPosition: cursorPosition
                 )
             },
+            beginDragSelection: { itemId, cursorPosition in
+                guard let item = store.todoItemsCache[itemId] else { return }
+                selectionManager.beginDragSelection(
+                    item: item,
+                    allItems: store.items(in: store.destination(for: item)),
+                    cursorPosition: cursorPosition
+                )
+            },
+            updateDragSelection: { itemId in
+                guard let item = store.todoItemsCache[itemId] else { return }
+                selectionManager.updateDragSelection(
+                    to: item,
+                    allItems: store.items(in: store.destination(for: item))
+                )
+            },
+            endDragSelection: {
+                selectionManager.endDragSelection()
+            },
             addItem: { destination in
                 let normalizedDestination = destination.normalized
                 let newItem: TodoItem
@@ -121,6 +139,18 @@ enum TodoEditorActionFactory {
                     )
                 }
             },
+            moveItemByKeyboard: { itemId, direction in
+                guard let item = store.todoItemsCache[itemId] else { return }
+                let destination = store.destination(for: item)
+                _ = TodoKeyboardReorderEngine.move(
+                    itemId: itemId,
+                    direction: direction,
+                    items: store.items(in: destination),
+                    destination: destination,
+                    store: store
+                )
+                selectionManager.restoreFocus(to: itemId)
+            },
             moveDraggedItem: { itemId, destination, toIndex, indentLevel in
                 TodoReorderMoveEngine.performMove(
                     draggedId: itemId,
@@ -132,6 +162,28 @@ enum TodoEditorActionFactory {
                 )
                 selectionManager.restoreFocus(to: itemId)
             },
+            moveDraggedItemToSidebar: { itemId, destination in
+                guard let item = store.todoItemsCache[itemId] else { return }
+
+                switch destination {
+                case .longTerm:
+                    store.moveItemWithChildren(
+                        item,
+                        to: .longTerm(isUrgent: false),
+                        afterItem: nil,
+                        newIndentLevel: 0
+                    )
+                case .month(let year, let month):
+                    let target = store.tailItemForScheduledMonth(year: year, month: month)
+                    store.moveItemWithChildren(
+                        item,
+                        to: .scheduled(date: target.date),
+                        afterItem: nil,
+                        newIndentLevel: 0
+                    )
+                }
+                selectionManager.restoreFocus(to: itemId)
+            },
             sectionDateChanged: { sectionId, newDate in
                 guard let section = sectionById(sectionId) else { return }
                 store.updateSectionDate(section, to: newDate)
@@ -139,4 +191,3 @@ enum TodoEditorActionFactory {
         )
     }
 }
-

@@ -23,13 +23,18 @@ struct TodoEditorActions {
     var titleChanged: (UUID, String) -> Void = { _, _ in }
     var toggleCompleted: (UUID) -> Void = { _ in }
     var selectItem: (UUID, Bool, Int?) -> Void = { _, _, _ in }
+    var beginDragSelection: (UUID, Int?) -> Void = { _, _ in }
+    var updateDragSelection: (UUID) -> Void = { _ in }
+    var endDragSelection: () -> Void = {}
     var addItem: (TodoDropDestination) -> Void = { _ in }
     var enterPressed: (UUID, EnterAction) -> Void = { _, _ in }
     var deletePressed: (UUID) -> Void = { _ in }
     var indent: (UUID) -> Void = { _ in }
     var outdent: (UUID) -> Void = { _ in }
     var moveFocus: (UUID, TodoEditorFocusMoveDirection, Int, CGFloat?) -> Void = { _, _, _, _ in }
+    var moveItemByKeyboard: (UUID, TodoKeyboardReorderDirection) -> Void = { _, _ in }
     var moveDraggedItem: (UUID, TodoDropDestination, Int, Int) -> Void = { _, _, _, _ in }
+    var moveDraggedItemToSidebar: (UUID, SidebarDestination) -> Void = { _, _ in }
     var sectionDateChanged: (UUID, Date) -> Void = { _, _ in }
 
     static let readOnly = TodoEditorActions()
