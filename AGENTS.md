@@ -1,6 +1,6 @@
 # Agent guide for the todo-block macOS app
 
-本仓是一个 macOS 原生应用，技术栈：SwiftUI + SwiftData + AppKit interop（NSPopover / NSEvent monitor / NSViewRepresentable）。下面这份指南给所有协作 agent 用——项目级特殊约定写在 `CLAUDE.md`，本文件提供跨项目通用的 Swift / SwiftUI 风格规则。
+本仓是一个 macOS 原生应用，技术栈：SwiftUI + SwiftData + AppKit 编辑器（NSPopover / NSHostingController / NSViewControllerRepresentable / NSTextView）。下面这份指南给所有协作 agent 用——项目级特殊约定写在 `CLAUDE.md`，本文件提供跨项目通用的 Swift / SwiftUI / AppKit 风格规则。
 
 ## Role
 
@@ -10,8 +10,8 @@ You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with se
 
 - macOS 15.7 or later
 - Swift 6 strict concurrency（项目 pbxproj 中 `SWIFT_VERSION = 5.0` 是历史遗留，**新代码按 Swift 6 写**）
-- SwiftUI as the primary view layer, backed by `@Observable` classes for shared state
-- AppKit only when SwiftUI lacks the primitive（status item, popover lifecycle, NSEvent monitors, NSTextView 嵌入等）
+- SwiftUI owns the app shell, navigation, sidebar, and menu-bar popover shell, backed by `@Observable` classes for shared state
+- AppKit owns the task editor surface（row rendering, text editing, keyboard commands, selection, drag/drop）
 - 不引入第三方依赖；项目目前是纯 Apple framework
 
 ## Swift style
@@ -39,9 +39,9 @@ You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with se
 - 不硬编码 padding 与 spacing，除非视觉上有明确需求
 - `ForEach`：需要 index 时用 `ForEach(items.enumerated(), id: \.element.id) { (index, item) in ... }`；不需要 index 时直接 `ForEach(items, id: \.id) { item in ... }`，不要无谓套 `enumerated()`
 
-## GeometryReader 在 macOS 项目里的用法（注意事项）
+## AppKit 编辑器注意事项
 
-iOS 通用指南建议尽量避免 `GeometryReader`，但本仓的拖放/Option 拖选系统**依赖** GeometryReader 收集 frame —— 详见 CLAUDE.md "Drag & drop" / "Option-drag selection" 小节。新增类似系统时优先复用 `Views/Shared/TodoListSharedViews.swift` 中的 `DropFrameTracker`（**引用类型**，避免 GeometryReader → @State → body 反馈环），不要回到 `@State [UUID: CGRect]` 的写法。
+待办编辑区已经统一迁到 `Views/AppKitEditor/`。日期列表、长期列表、菜单栏列表都应该复用 `TodoEditorRepresentable`，不要再新增一套 SwiftUI 待办行编辑器。列表内部编辑、拖拽、拖选和快捷键优先放在 AppKit 编辑器里处理；数据变更继续通过 `TodoStore`、`SelectionManager` 和现有 reorder/clipboard/undo 服务完成。
 
 ## SwiftData
 
@@ -54,13 +54,13 @@ iOS 通用指南建议尽量避免 `GeometryReader`，但本仓的拖放/Option 
 - NSPopover：**不要设置 `popover.delegate`**——会导致 UI 测试 `XCUIApplication.terminate()` 挂 60 秒。生命周期事件用 `NSPopover.willShow / didCloseNotification` 监听
 - NSHostingController：在长生命周期 controller（如 `MenuBarStatusItemController`）里**只创建一次**，不要在 popover 显示期间替换 `contentViewController`
 - NSEvent.addLocalMonitorForEvents：在闭包里访问 SwiftUI `@MainActor` 状态时用 `MainActor.assumeIsolated { ... }`
-- NSViewRepresentable：实现 `setFrameSize` 时**只在宽度变化时**调用 `invalidateIntrinsicContentSize`，否则与 SwiftUI `sizeThatFits` 形成不收敛循环（具体见 `CustomTextEditor`）
+- NSViewRepresentable / NSViewControllerRepresentable：实现 `setFrameSize` 时避免无条件触发 layout invalidation；文本高度变化优先由 AppKit 编辑器内部收敛处理
 
 ## Project layout
 
 - 数据模型 → `Models/`（仅 `@Model` 类型 + 值类型描述符）
 - 服务/状态/引擎 → `Services/`（store / undo / clipboard / reorder 等）
-- 视图 → `Views/Editor/`、`Views/Main/`、`Views/MenuBar/`、`Views/Shared/`
+- 视图 → `Views/AppKitEditor/`、`Views/Main/`、`Views/MenuBar/`、`Views/Shared/`
 - 共享视图工具 / design tokens → `Views/Shared/`
 - 测试在 `todo blockTests/`（XCTest）；目录名带空格，shell 命令记得加引号
 
@@ -72,7 +72,7 @@ iOS 通用指南建议尽量避免 `GeometryReader`，但本仓的拖放/Option 
 
 ## PR
 
-- 每次提交前跑 `xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" -destination 'platform=macOS'`，测试全绿（含 skipped）才提交
+- 每次提交前跑 `xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:"todo blockTests"`，测试全绿才提交
 - Commit message 中文为主，前缀 `feat/fix/refactor/test/docs/chore:` 之一
 - 别提交 `*.xcuserstate`、`DerivedData/`、`.codepilot-uploads/` 等本地状态（已在 `.gitignore`）
 - 不向远端 push 时不要加 `--no-verify`、`--force` 等参数

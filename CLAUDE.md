@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Native macOS to-do app, SwiftUI + SwiftData, single window + menu-bar popover sharing the same model container. Bundle ID `com.insight.to-do-block`. Deployment target **macOS 15.7**, built with Xcode 26. See `AGENTS.md` for general Swift / SwiftUI / SwiftData / AppKit-interop style; this file documents project-specific behavior, hazards, and conventions that override or extend it.
+Native macOS to-do app, SwiftUI + SwiftData with an AppKit-backed task editor, single window + menu-bar popover sharing the same model container. Bundle ID `com.insight.to-do-block`. Deployment target **macOS 15.7**, built with Xcode 26. See `AGENTS.md` for general Swift / SwiftUI / SwiftData / AppKit-interop style; this file documents project-specific behavior, hazards, and conventions that override or extend it.
 
 The folder/target name `todo block` contains a space — always quote paths in shell commands and `xcodebuild` arguments.
 
@@ -18,9 +18,10 @@ open "todo block.xcodeproj"
 xcodebuild -project "todo block.xcodeproj" -scheme "todo block" \
   -destination 'platform=macOS' build
 
-# Run the full test suite (XCTest + Swift Testing both present)
+# Run unit tests (XCTest + Swift Testing both present; skip UI test runner locally)
 xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
-  -destination 'platform=macOS'
+  -destination 'platform=macOS' -parallel-testing-enabled NO \
+  -only-testing:"todo blockTests"
 
 # Run a single XCTest method
 xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
@@ -87,21 +88,25 @@ No SwiftData relationships; items belong to a section by matching `dayDate`/`con
 
 `TodoClipboardManager.shared` and `TodoReorderCommandManager.shared` hold closures to the currently-active list. The active list view rebinds its context on appear *and* on `menuBarPopoverWillShow` / `menuBarPopoverDidClose` so that Cmd+C / Cmd+↑↓ always target the visually-focused list. When adding new global commands, follow the same activate/clear pattern rather than introducing per-view singletons.
 
-### Inline editor (delicate)
+### AppKit editor
 
-`CustomTextEditor` is an `NSViewRepresentable` wrapping `CustomNSTextView`. Two hard-won invariants:
-1. `setFrameSize` only calls `invalidateIntrinsicContentSize` when **width** changes. Height changes are already covered by `didChangeText()`; re-invalidating on height churn forms a feedback loop with SwiftUI's `sizeThatFits` → 100% CPU hang.
-2. Lists embedding this editor use plain `VStack`, **not** `LazyVStack`. The combination of `LazyVStack` prefetch + `intrinsicContentSize` measurement produces a non-converging `LazyLayoutViewCache.signalPrefetch` loop. Eager rendering of ~300 items is acceptable.
+The task editor lives in `Views/AppKitEditor/` and is embedded through `TodoEditorRepresentable`. `TodoListView`, `LongTermListView`, and `MenuBarView` all use this same editor; do not reintroduce a second SwiftUI task editor path.
+
+- `TodoEditorViewController` owns the AppKit list surface, row reuse, drop indicator, and drag/selection routing.
+- `TodoEditorRowView` owns row-level input: checkbox, drag handle, `NSTextView`, row focus, Space toggle, Command+Up/Down, and left-button long-press multi-select.
+- `TodoEditorActionFactory` is the boundary back into `TodoStore` and `SelectionManager`. Keep persistence, reorder, undo, clipboard, and selection rules in services rather than duplicating them in views.
+- `TodoEditorTextView` preserves IME composition state. Do not handle destructive commands while `hasMarkedText()` is true.
 
 ### Drag & drop
 
-- `DropFrameTracker` (in `TodoListSharedViews.swift`) is a **reference type** holding `[UUID: CGRect]`. Writes don't invalidate SwiftUI, breaking the GeometryReader → `@State` → body cycle. Don't migrate it to `@State` of a value type.
-- Per-item `GeometryReader` for frame collection is mounted unconditionally (publishes into `DropFrameTracker.itemFrames` via preference). `OptionDragSelectionMonitor` needs frames available the instant the user presses Option+left-click, so we can't gate on `coordinator.isDragging` anymore. The feedback-loop risk is contained because `DropFrameTracker` is a reference type — writes don't invalidate SwiftUI.
-- `TodoDragCoordinator.shared` carries global drag location; `ContentView` renders the drag preview as a top-level overlay so it can cross list boundaries.
+- List-internal drag starts from `TodoEditorDragHandleView`; row-body left drag is reserved for long-press multi-select.
+- Drop resolution is AppKit-based: row frames are converted inside `TodoEditorViewController`, and the final move still goes through `TodoReorderMoveEngine.performMove`.
+- Cross-page/sidebar drag uses `TodoEditorDragSession.shared`. Sidebar targets report AppKit screen-space frames through `SidebarDropFrameReader`; editor drag events are converted to screen coordinates before hit-testing.
+- Dragging to the sidebar long-term entry moves the whole parent/child block to long-term important at root indent. Dragging to a month uses that month's latest scheduled date, or the clamped fallback date when the month is empty.
 
-### Option-drag selection
+### Selection
 
-`OptionDragSelectionMonitor.shared` (`Views/Shared/OptionDragSelectionMonitor.swift`) is a singleton that installs a single `NSEvent.addLocalMonitorForEvents` watching `.leftMouseDown/.leftMouseDragged/.leftMouseUp`. Without `.option` held it returns the event untouched (NSTextView gets text-selection as normal). With Option held and the hit point inside a registered list's global frame, it swallows the event chain, drives `SelectionManager.beginDragSelection / updateDragSelection / endDragSelection`, and converts AppKit window coords (bottom-left origin) to SwiftUI global coords (top-left origin) via `contentView.bounds.height - y`. Lists register/unregister in `.onAppear`/`.onDisappear` keyed by their `dropCoordinateSpaceName`. **Shift+click range-select is a separate path** (NSTextView's own `mouseDown:` reads `event.modifierFlags.contains(.shift)` and calls `SelectionManager.handleSelect(shiftPressed:)`) — don't conflate the two.
+Selection state remains in `SelectionManager`. The AppKit editor supports click select, Shift-click range select, and left-button long-press drag selection. Text selection still belongs to the row `NSTextView`, so keep row-body selection behavior separate from text-view mouse handling.
 
 ### Previews
 
@@ -109,7 +114,7 @@ All `#Preview` blocks must go through `TodoPreviewSupport.bootstrap()`, which sh
 
 ## Conventions specific to this repo
 
-- Test target name has a space: `"todo blockTests"`. The test bundle id is legacy `insight.notion-to-doTests` — don't "fix" it.
+- Test target name has a space: `"todo blockTests"`. The test bundle id is legacy `insight.notion-to-doTests` — don't "fix" it. For local verification, run `-only-testing:"todo blockTests"`; launching the UI test runner can trigger macOS "app is damaged" dialogs under unsigned local builds.
 - Project `SWIFT_VERSION` in pbxproj is `5.0`, but the code is written for **Swift 6** strict concurrency (per `AGENTS.md`). Treat new code as Swift 6 even though the build setting hasn't been bumped.
 - Both XCTest (`TodoStoreTests`, etc.) and Swift Testing (`todo_blockTests.swift`) are present; new tests for store/engine logic follow the existing XCTest style for consistency.
 - See `docs/code-review-todos.md` for the historical list of fixed perf/correctness issues — useful when a regression looks familiar.
