@@ -13,6 +13,7 @@ final class TodoEditorDragSession {
 
     private(set) var draggedItemId: UUID?
     private(set) var hoveredSidebarDestination: SidebarDestination?
+    @ObservationIgnored
     private var sidebarFrames: [SidebarDestination: CGRect] = [:]
 
     private init() {}
@@ -38,6 +39,7 @@ final class TodoEditorDragSession {
     }
 
     func registerSidebarTarget(_ destination: SidebarDestination, frame: CGRect) {
+        guard sidebarFrames[destination] != frame else { return }
         sidebarFrames[destination] = frame
     }
 }
