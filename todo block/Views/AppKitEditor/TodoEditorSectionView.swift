@@ -157,6 +157,12 @@ final class TodoEditorSectionView: NSView {
         return best?.id
     }
 
+    func resetDragHandleStates() {
+        for rowView in rowViewsById.values {
+            rowView.resetDragHandleState()
+        }
+    }
+
     @objc private func addItem() {
         guard let snapshot else { return }
         actions.addItem(snapshot.destination)

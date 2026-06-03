@@ -76,6 +76,19 @@ final class TodoEditorDragHandleView: NSView {
         if isDragging {
             onDragEnded?(event.locationInWindow)
         }
+        resetInteractionState()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            resetInteractionState()
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    func resetInteractionState() {
+        guard isHovering || isDragging else { return }
+        isHovering = false
         isDragging = false
         needsDisplay = true
     }
@@ -90,4 +103,3 @@ final class TodoEditorDragHandleView: NSView {
         )
     }
 }
-

@@ -148,6 +148,7 @@ final class TodoEditorViewController: NSViewController {
             activeDrop = nil
             dropIndicatorView.hide()
             dragSession.end()
+            resetDragHandleStates()
         }
 
         if let activeDrop {
@@ -289,6 +290,12 @@ final class TodoEditorViewController: NSViewController {
 
     private func screenLocation(from windowLocation: NSPoint) -> CGPoint {
         view.window?.convertPoint(toScreen: windowLocation) ?? windowLocation
+    }
+
+    private func resetDragHandleStates() {
+        for sectionView in sectionViewsById.values {
+            sectionView.resetDragHandleStates()
+        }
     }
 
     private func configureCallbacks(for sectionView: TodoEditorSectionView) {

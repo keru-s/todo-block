@@ -206,6 +206,10 @@ final class TodoEditorRowView: NSView {
         }
     }
 
+    func resetDragHandleState() {
+        handleView.resetInteractionState()
+    }
+
     @objc private func toggleCompleted() {
         guard let itemId else { return }
         actions.toggleCompleted(itemId)
