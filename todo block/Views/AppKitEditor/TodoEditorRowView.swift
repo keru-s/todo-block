@@ -12,6 +12,7 @@ final class TodoEditorRowView: NSView {
     private let indentSpacer = NSView()
     private let handleView = TodoEditorDragHandleView()
     private let completionButton = NSButton()
+    private let completionTrailingSpacer = NSView()
     private let titleTextView = TodoEditorTextView()
     private var actions: TodoEditorActions
     private var itemId: UUID?
@@ -50,7 +51,7 @@ final class TodoEditorRowView: NSView {
         stackView.orientation = .horizontal
         stackView.alignment = .top
         stackView.distribution = .fill
-        stackView.spacing = 6
+        stackView.spacing = 0
 
         completionButton.isBordered = false
         completionButton.imagePosition = .imageOnly
@@ -122,6 +123,7 @@ final class TodoEditorRowView: NSView {
         stackView.addArrangedSubview(indentSpacer)
         stackView.addArrangedSubview(handleView)
         stackView.addArrangedSubview(completionButton)
+        stackView.addArrangedSubview(completionTrailingSpacer)
         stackView.addArrangedSubview(titleTextView)
 
         NSLayoutConstraint.activate([
@@ -133,7 +135,8 @@ final class TodoEditorRowView: NSView {
             handleView.widthAnchor.constraint(equalToConstant: 20),
             handleView.heightAnchor.constraint(equalToConstant: 20),
             completionButton.widthAnchor.constraint(equalToConstant: 20),
-            completionButton.heightAnchor.constraint(equalToConstant: 20)
+            completionButton.heightAnchor.constraint(equalToConstant: 20),
+            completionTrailingSpacer.widthAnchor.constraint(equalToConstant: 6)
         ])
     }
 

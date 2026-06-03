@@ -208,6 +208,7 @@ final class TodoEditorViewController: NSViewController {
 
         if let indicatorY = indicatorY(for: resolved, section: section, itemFrames: frames, sectionView: sectionView) {
             dropIndicatorView.show(
+                x: sectionView.indicatorLeadingX(in: documentView),
                 y: indicatorY,
                 indentLevel: resolved.indentLevel,
                 width: documentView.bounds.width
@@ -253,19 +254,12 @@ final class TodoEditorViewController: NSViewController {
             }
         }
 
-        let handleCenterOffset: CGFloat = 10
-        let relativeX = max(0, point.x - sectionView.contentLeadingX(in: documentView) - handleCenterOffset)
-        var indentLevel = Int((relativeX / TodoDesignTokens.indentWidth).rounded())
-        if index > 0 {
-            indentLevel = min(indentLevel, section.items[index - 1].indentLevel + 1)
-        } else {
-            indentLevel = 0
-        }
-
-        return TodoEditorResolvedDrop(
+        return TodoEditorDropResolver.resolvedDrop(
             destination: section.destination,
             index: index,
-            indentLevel: min(indentLevel, TodoItem.maxIndentLevel)
+            x: point.x,
+            baseX: sectionView.contentLeadingX(in: documentView) + 20,
+            previousIndentLevel: index > 0 ? section.items[index - 1].indentLevel : nil
         )
     }
 
@@ -345,10 +339,33 @@ final class TodoEditorViewController: NSViewController {
     }
 }
 
-private struct TodoEditorResolvedDrop {
+struct TodoEditorResolvedDrop: Equatable {
     let destination: TodoDropDestination
     let index: Int
     let indentLevel: Int
+}
+
+enum TodoEditorDropResolver {
+    static func resolvedDrop(
+        destination: TodoDropDestination,
+        index: Int,
+        x: CGFloat,
+        baseX: CGFloat,
+        previousIndentLevel: Int?
+    ) -> TodoEditorResolvedDrop {
+        var indentLevel = Int(max(0, x - baseX) / TodoDesignTokens.indentWidth)
+        if let previousIndentLevel {
+            indentLevel = min(indentLevel, previousIndentLevel + 1)
+        } else {
+            indentLevel = 0
+        }
+
+        return TodoEditorResolvedDrop(
+            destination: destination,
+            index: index,
+            indentLevel: min(indentLevel, TodoItem.maxIndentLevel)
+        )
+    }
 }
 
 private final class TodoEditorDocumentView: NSView {

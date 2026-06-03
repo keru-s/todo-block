@@ -4,12 +4,12 @@
 //
 
 import AppKit
+import SwiftUI
 
 @MainActor
 final class TodoEditorSectionView: NSView {
     private let stackView = NSStackView()
     private let titleButton = NSButton(title: "", target: nil, action: nil)
-    private let subtitleLabel = NSTextField(labelWithString: "")
     private let emptyButton = NSButton(title: "添加待办", target: nil, action: nil)
 
     private var actions: TodoEditorActions
@@ -45,18 +45,14 @@ final class TodoEditorSectionView: NSView {
         stackView.orientation = .vertical
         stackView.alignment = .leading
         stackView.distribution = .fill
-        stackView.spacing = 6
+        stackView.spacing = 0
 
         titleButton.isBordered = false
         titleButton.alignment = .left
-        titleButton.font = .preferredFont(forTextStyle: .headline)
+        titleButton.font = .systemFont(ofSize: 20, weight: .bold)
         titleButton.contentTintColor = .labelColor
         titleButton.target = self
         titleButton.action = #selector(showDatePicker)
-
-        subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
-        subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.maximumNumberOfLines = 1
 
         emptyButton.isBordered = false
         emptyButton.image = NSImage(systemSymbolName: "plus.circle", accessibilityDescription: "添加待办")
@@ -65,15 +61,19 @@ final class TodoEditorSectionView: NSView {
         emptyButton.target = self
         emptyButton.action = #selector(addItem)
 
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(TodoDesignTokens.bucketTint).cgColor
+        layer?.cornerRadius = TodoDesignTokens.bucketCornerRadius
+
         addSubview(stackView)
         stackView.addArrangedSubview(titleButton)
-        stackView.addArrangedSubview(subtitleLabel)
+        stackView.setCustomSpacing(12, after: titleButton)
 
         NSLayoutConstraint.activate([
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stackView.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         ])
     }
 
@@ -85,12 +85,11 @@ final class TodoEditorSectionView: NSView {
 
         titleButton.title = snapshot.title
         titleButton.isEnabled = snapshot.editableDate != nil
-        subtitleLabel.stringValue = snapshot.subtitle
 
         if snapshot.items.isEmpty {
             removeRows(except: [])
             if snapshot.allowsAdding {
-                moveArrangedSubview(emptyButton, to: 2)
+                moveArrangedSubview(emptyButton, to: 1)
             } else {
                 removeArrangedSubviewIfNeeded(emptyButton, removeFromSuperview: true)
             }
@@ -107,7 +106,7 @@ final class TodoEditorSectionView: NSView {
             let rowView = existingRowView ?? TodoEditorRowView(snapshot: item, actions: self.actions)
             configureCallbacks(for: rowView)
             rowView.apply(snapshot: item, actions: self.actions)
-            moveArrangedSubview(rowView, to: offset + 2)
+            moveArrangedSubview(rowView, to: offset + 1)
             if rowWidthConstraintsById[item.id] == nil {
                 let constraint = rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor)
                 constraint.isActive = true
@@ -130,7 +129,11 @@ final class TodoEditorSectionView: NSView {
     }
 
     func contentLeadingX(in documentView: NSView) -> CGFloat {
-        convert(bounds, to: documentView).minX
+        stackView.convert(stackView.bounds, to: documentView).minX
+    }
+
+    func indicatorLeadingX(in documentView: NSView) -> CGFloat {
+        contentLeadingX(in: documentView)
     }
 
     func nearestItemId(at pointInDocument: CGPoint, documentView: NSView) -> UUID? {
