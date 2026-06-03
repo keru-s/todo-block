@@ -33,8 +33,11 @@ final class TodoEditorTextView: NSTextView {
     override func didChangeText() {
         super.didChangeText()
         invalidateIntrinsicContentSize()
-        onTextDidChange?(string)
-        onCompositionChange?(isComposingText)
+        let composing = isComposingText
+        onCompositionChange?(composing)
+        if composing == false {
+            onTextDidChange?(string)
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -62,6 +65,7 @@ final class TodoEditorTextView: NSTextView {
     override func unmarkText() {
         super.unmarkText()
         onCompositionChange?(false)
+        onTextDidChange?(string)
     }
 
     override func doCommand(by commandSelector: Selector) {

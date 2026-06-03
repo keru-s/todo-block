@@ -22,6 +22,7 @@ final class TodoEditorRowView: NSView {
     private var selectionMouseDownTime: Date?
     private var didStartDragSelection = false
     private var prefersRowFirstResponder = false
+    private var lastStyledCompleted: Bool?
 
     var onDragBegan: ((UUID, NSPoint) -> Void)?
     var onDragChanged: ((UUID, NSPoint) -> Void)?
@@ -158,12 +159,26 @@ final class TodoEditorRowView: NSView {
 
         titleTextView.deletesOnBackspace = snapshot.hasMultipleSelection
 
+        var didReplaceText = false
         if titleTextView.string != snapshot.title && isComposingText == false {
+            let wasFirstResponder = window?.firstResponder === titleTextView
+            let selectedRange = titleTextView.selectedRange()
             isApplyingSnapshot = true
             titleTextView.string = snapshot.title
+            if wasFirstResponder {
+                let length = (snapshot.title as NSString).length
+                titleTextView.setSelectedRange(
+                    NSRange(location: min(selectedRange.location, length), length: 0)
+                )
+            }
             isApplyingSnapshot = false
+            didReplaceText = true
         }
-        applyTextStyle(isCompleted: snapshot.isCompleted)
+        if isComposingText == false,
+           didReplaceText || lastStyledCompleted != snapshot.isCompleted {
+            applyTextStyle(isCompleted: snapshot.isCompleted)
+            lastStyledCompleted = snapshot.isCompleted
+        }
 
         wantsLayer = true
         layer?.backgroundColor = snapshot.isSelected
@@ -257,6 +272,8 @@ final class TodoEditorRowView: NSView {
 
     private func applyTextStyle(isCompleted: Bool) {
         let range = NSRange(location: 0, length: (titleTextView.string as NSString).length)
+        let wasFirstResponder = window?.firstResponder === titleTextView
+        let selectedRange = titleTextView.selectedRange()
         titleTextView.textStorage?.beginEditing()
         titleTextView.textStorage?.setAttributes(
             [
@@ -267,6 +284,12 @@ final class TodoEditorRowView: NSView {
             range: range
         )
         titleTextView.textStorage?.endEditing()
+        if wasFirstResponder {
+            let length = (titleTextView.string as NSString).length
+            titleTextView.setSelectedRange(
+                NSRange(location: min(selectedRange.location, length), length: 0)
+            )
+        }
         titleTextView.insertionPointColor = isCompleted ? .secondaryLabelColor : .labelColor
     }
 }

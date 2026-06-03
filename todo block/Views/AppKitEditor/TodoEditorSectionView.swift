@@ -15,6 +15,7 @@ final class TodoEditorSectionView: NSView {
     private var actions: TodoEditorActions
     private var snapshot: TodoEditorSectionSnapshot?
     private var rowViewsById: [UUID: TodoEditorRowView] = [:]
+    private var rowWidthConstraintsById: [UUID: NSLayoutConstraint] = [:]
     private var popover: NSPopover?
     private var activeDatePicker: NSDatePicker?
 
@@ -86,40 +87,32 @@ final class TodoEditorSectionView: NSView {
         titleButton.isEnabled = snapshot.editableDate != nil
         subtitleLabel.stringValue = snapshot.subtitle
 
-        removeRowsAndEmptyButtonFromStack()
-
         if snapshot.items.isEmpty {
+            removeRows(except: [])
             if snapshot.allowsAdding {
-                stackView.addArrangedSubview(emptyButton)
+                moveArrangedSubview(emptyButton, to: 2)
+            } else {
+                removeArrangedSubviewIfNeeded(emptyButton, removeFromSuperview: true)
             }
             return
         }
 
+        removeArrangedSubviewIfNeeded(emptyButton, removeFromSuperview: true)
+        let nextIds = Set(snapshot.items.map(\.id))
+        removeRows(except: nextIds)
+
         var nextRowsById: [UUID: TodoEditorRowView] = [:]
-        for item in snapshot.items {
+        for (offset, item) in snapshot.items.enumerated() {
             let existingRowView = rowViewsById[item.id]
             let rowView = existingRowView ?? TodoEditorRowView(snapshot: item, actions: self.actions)
-            rowView.onDragBegan = { [weak self] itemId, location in
-                self?.onDragBegan?(itemId, location)
-            }
-            rowView.onDragChanged = { [weak self] itemId, location in
-                self?.onDragChanged?(itemId, location)
-            }
-            rowView.onDragEnded = { [weak self] itemId, location in
-                self?.onDragEnded?(itemId, location)
-            }
-            rowView.onSelectionDragBegan = { [weak self] itemId, location in
-                self?.onSelectionDragBegan?(itemId, location)
-            }
-            rowView.onSelectionDragChanged = { [weak self] itemId, location in
-                self?.onSelectionDragChanged?(itemId, location)
-            }
-            rowView.onSelectionDragEnded = { [weak self] in
-                self?.onSelectionDragEnded?()
-            }
+            configureCallbacks(for: rowView)
             rowView.apply(snapshot: item, actions: self.actions)
-            stackView.addArrangedSubview(rowView)
-            rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+            moveArrangedSubview(rowView, to: offset + 2)
+            if rowWidthConstraintsById[item.id] == nil {
+                let constraint = rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor)
+                constraint.isActive = true
+                rowWidthConstraintsById[item.id] = constraint
+            }
             nextRowsById[item.id] = rowView
         }
         rowViewsById = nextRowsById
@@ -134,6 +127,10 @@ final class TodoEditorSectionView: NSView {
     func contains(pointInDocument: CGPoint, documentView: NSView) -> Bool {
         let frame = convert(bounds, to: documentView)
         return frame.contains(pointInDocument)
+    }
+
+    func contentLeadingX(in documentView: NSView) -> CGFloat {
+        convert(bounds, to: documentView).minX
     }
 
     func nearestItemId(at pointInDocument: CGPoint, documentView: NSView) -> UUID? {
@@ -219,10 +216,50 @@ final class TodoEditorSectionView: NSView {
         closeDatePicker()
     }
 
-    private func removeRowsAndEmptyButtonFromStack() {
-        for view in stackView.arrangedSubviews.dropFirst(2) {
-            stackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
+    private func configureCallbacks(for rowView: TodoEditorRowView) {
+        rowView.onDragBegan = { [weak self] itemId, location in
+            self?.onDragBegan?(itemId, location)
+        }
+        rowView.onDragChanged = { [weak self] itemId, location in
+            self?.onDragChanged?(itemId, location)
+        }
+        rowView.onDragEnded = { [weak self] itemId, location in
+            self?.onDragEnded?(itemId, location)
+        }
+        rowView.onSelectionDragBegan = { [weak self] itemId, location in
+            self?.onSelectionDragBegan?(itemId, location)
+        }
+        rowView.onSelectionDragChanged = { [weak self] itemId, location in
+            self?.onSelectionDragChanged?(itemId, location)
+        }
+        rowView.onSelectionDragEnded = { [weak self] in
+            self?.onSelectionDragEnded?()
+        }
+    }
+
+    private func moveArrangedSubview(_ subview: NSView, to index: Int) {
+        if let currentIndex = stackView.arrangedSubviews.firstIndex(of: subview) {
+            guard currentIndex != index else { return }
+            stackView.removeArrangedSubview(subview)
+        }
+        stackView.insertArrangedSubview(subview, at: min(index, stackView.arrangedSubviews.count))
+    }
+
+    private func removeRows(except keptIds: Set<UUID>) {
+        for (id, rowView) in rowViewsById where keptIds.contains(id) == false {
+            removeArrangedSubviewIfNeeded(rowView, removeFromSuperview: true)
+            rowWidthConstraintsById[id]?.isActive = false
+            rowWidthConstraintsById[id] = nil
+        }
+        rowViewsById = rowViewsById.filter { keptIds.contains($0.key) }
+    }
+
+    private func removeArrangedSubviewIfNeeded(_ subview: NSView, removeFromSuperview: Bool) {
+        if stackView.arrangedSubviews.contains(subview) {
+            stackView.removeArrangedSubview(subview)
+        }
+        if removeFromSuperview {
+            subview.removeFromSuperview()
         }
     }
 }

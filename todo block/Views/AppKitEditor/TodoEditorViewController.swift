@@ -17,6 +17,8 @@ final class TodoEditorViewController: NSViewController {
     private var renderedEmptyTitle: String = ""
     private var actions: TodoEditorActions = .readOnly
     private var sectionViewsById: [UUID: TodoEditorSectionView] = [:]
+    private var sectionWidthConstraintsById: [UUID: NSLayoutConstraint] = [:]
+    private var emptyLabelWidthConstraint: NSLayoutConstraint?
     private var draggingItemId: UUID?
     private var activeDrop: TodoEditorResolvedDrop?
     private var dragSelectionSectionId: UUID?
@@ -89,45 +91,36 @@ final class TodoEditorViewController: NSViewController {
     }
 
     private func rebuildContent(sections: [TodoEditorSectionSnapshot], emptyTitle: String) {
-        stackView.arrangedSubviews.forEach { subview in
-            stackView.removeArrangedSubview(subview)
-            subview.removeFromSuperview()
-        }
-
         if sections.isEmpty {
-            sectionViewsById = [:]
+            removeSections(except: [])
             emptyLabel.stringValue = emptyTitle
             emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-            stackView.addArrangedSubview(emptyLabel)
-            emptyLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+            moveArrangedSubview(emptyLabel, to: 0)
+            if emptyLabelWidthConstraint == nil {
+                emptyLabelWidthConstraint = emptyLabel.widthAnchor.constraint(equalTo: stackView.widthAnchor)
+                emptyLabelWidthConstraint?.isActive = true
+            }
             return
         }
 
+        emptyLabelWidthConstraint?.isActive = false
+        emptyLabelWidthConstraint = nil
+        removeArrangedSubviewIfNeeded(emptyLabel, removeFromSuperview: true)
+        let nextSectionIds = Set(sections.map(\.id))
+        removeSections(except: nextSectionIds)
+
         var nextSectionViewsById: [UUID: TodoEditorSectionView] = [:]
-        for section in sections {
+        for (offset, section) in sections.enumerated() {
             let existingSectionView = sectionViewsById[section.id]
             let sectionView = existingSectionView ?? TodoEditorSectionView(snapshot: section, actions: actions)
-            sectionView.onDragBegan = { [weak self] itemId, location in
-                self?.handleDragBegan(itemId: itemId, windowLocation: location)
-            }
-            sectionView.onDragChanged = { [weak self] itemId, location in
-                self?.handleDragChanged(itemId: itemId, windowLocation: location)
-            }
-            sectionView.onDragEnded = { [weak self] itemId, location in
-                self?.handleDragEnded(itemId: itemId, windowLocation: location)
-            }
-            sectionView.onSelectionDragBegan = { [weak self] itemId, location in
-                self?.handleSelectionDragBegan(itemId: itemId, windowLocation: location)
-            }
-            sectionView.onSelectionDragChanged = { [weak self] itemId, location in
-                self?.handleSelectionDragChanged(itemId: itemId, windowLocation: location)
-            }
-            sectionView.onSelectionDragEnded = { [weak self] in
-                self?.handleSelectionDragEnded()
-            }
+            configureCallbacks(for: sectionView)
             sectionView.apply(snapshot: section, actions: actions)
-            stackView.addArrangedSubview(sectionView)
-            sectionView.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+            moveArrangedSubview(sectionView, to: offset)
+            if sectionWidthConstraintsById[section.id] == nil {
+                let constraint = sectionView.widthAnchor.constraint(equalTo: stackView.widthAnchor)
+                constraint.isActive = true
+                sectionWidthConstraintsById[section.id] = constraint
+            }
             nextSectionViewsById[section.id] = sectionView
         }
         sectionViewsById = nextSectionViewsById
@@ -205,7 +198,12 @@ final class TodoEditorViewController: NSViewController {
         }
 
         let frames = sectionView.itemFrames(in: documentView)
-        let resolved = resolveDrop(in: section, point: point, itemFrames: frames)
+        let resolved = resolveDrop(
+            in: section,
+            point: point,
+            itemFrames: frames,
+            sectionView: sectionView
+        )
         activeDrop = resolved
 
         if let indicatorY = indicatorY(for: resolved, section: section, itemFrames: frames, sectionView: sectionView) {
@@ -238,7 +236,8 @@ final class TodoEditorViewController: NSViewController {
     private func resolveDrop(
         in section: TodoEditorSectionSnapshot,
         point: CGPoint,
-        itemFrames: [UUID: CGRect]
+        itemFrames: [UUID: CGRect],
+        sectionView: TodoEditorSectionView
     ) -> TodoEditorResolvedDrop {
         guard section.items.isEmpty == false else {
             return TodoEditorResolvedDrop(destination: section.destination, index: 0, indentLevel: 0)
@@ -254,8 +253,9 @@ final class TodoEditorViewController: NSViewController {
             }
         }
 
-        let relativeX = max(0, point.x - 20)
-        var indentLevel = Int(relativeX / TodoDesignTokens.indentWidth)
+        let handleCenterOffset: CGFloat = 10
+        let relativeX = max(0, point.x - sectionView.contentLeadingX(in: documentView) - handleCenterOffset)
+        var indentLevel = Int((relativeX / TodoDesignTokens.indentWidth).rounded())
         if index > 0 {
             indentLevel = min(indentLevel, section.items[index - 1].indentLevel + 1)
         } else {
@@ -295,6 +295,53 @@ final class TodoEditorViewController: NSViewController {
 
     private func screenLocation(from windowLocation: NSPoint) -> CGPoint {
         view.window?.convertPoint(toScreen: windowLocation) ?? windowLocation
+    }
+
+    private func configureCallbacks(for sectionView: TodoEditorSectionView) {
+        sectionView.onDragBegan = { [weak self] itemId, location in
+            self?.handleDragBegan(itemId: itemId, windowLocation: location)
+        }
+        sectionView.onDragChanged = { [weak self] itemId, location in
+            self?.handleDragChanged(itemId: itemId, windowLocation: location)
+        }
+        sectionView.onDragEnded = { [weak self] itemId, location in
+            self?.handleDragEnded(itemId: itemId, windowLocation: location)
+        }
+        sectionView.onSelectionDragBegan = { [weak self] itemId, location in
+            self?.handleSelectionDragBegan(itemId: itemId, windowLocation: location)
+        }
+        sectionView.onSelectionDragChanged = { [weak self] itemId, location in
+            self?.handleSelectionDragChanged(itemId: itemId, windowLocation: location)
+        }
+        sectionView.onSelectionDragEnded = { [weak self] in
+            self?.handleSelectionDragEnded()
+        }
+    }
+
+    private func moveArrangedSubview(_ subview: NSView, to index: Int) {
+        if let currentIndex = stackView.arrangedSubviews.firstIndex(of: subview) {
+            guard currentIndex != index else { return }
+            stackView.removeArrangedSubview(subview)
+        }
+        stackView.insertArrangedSubview(subview, at: min(index, stackView.arrangedSubviews.count))
+    }
+
+    private func removeSections(except keptIds: Set<UUID>) {
+        for (id, sectionView) in sectionViewsById where keptIds.contains(id) == false {
+            removeArrangedSubviewIfNeeded(sectionView, removeFromSuperview: true)
+            sectionWidthConstraintsById[id]?.isActive = false
+            sectionWidthConstraintsById[id] = nil
+        }
+        sectionViewsById = sectionViewsById.filter { keptIds.contains($0.key) }
+    }
+
+    private func removeArrangedSubviewIfNeeded(_ subview: NSView, removeFromSuperview: Bool) {
+        if stackView.arrangedSubviews.contains(subview) {
+            stackView.removeArrangedSubview(subview)
+        }
+        if removeFromSuperview {
+            subview.removeFromSuperview()
+        }
     }
 }
 
