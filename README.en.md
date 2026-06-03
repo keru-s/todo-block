@@ -10,13 +10,13 @@ Todo Block is a native macOS to-do app with nested tasks, keyboard-first workflo
 
 ## Features
 
-- Native macOS experience built with SwiftUI and SwiftData
+- Native macOS experience with a SwiftUI shell, AppKit editor, and SwiftData local storage
 - Nested tasks with up to 4 levels of subtasks
 - Keyboard-first workflow for creating, editing, and moving tasks
 - Automatic date grouping with editable section titles
 - Menu bar access for checking today's tasks at a glance
 - Drag and drop reordering across lists and sections
-- Multi-selection with `Shift + Click`
+- Multi-selection with `Shift + Click` and left-button long-press drag
 - Real-time sync between the main window and menu bar
 - Undo and redo for common actions
 - Long-term task buckets for backlog-style planning
@@ -84,6 +84,7 @@ xcodebuild -project "todo block.xcodeproj" \
 | `⌘↑` / `⌘↓` | Move a task up or down |
 | `Space` | Toggle completion |
 | `Shift+Click` | Range select |
+| Left-button long-press drag | Continuous multi-select |
 | `⌘Z` | Undo |
 | `⌘⇧Z` | Redo |
 | `⌘C` | Copy task(s) |
@@ -93,13 +94,13 @@ xcodebuild -project "todo block.xcodeproj" \
 
 ```text
 todo block/
-├── Models/         # Models, persistence, undo, clipboard, and core logic
+├── Models/         # Data models
+├── Services/       # Persistence, undo, clipboard, reorder, selection, and core logic
 ├── Views/
+│   ├── AppKitEditor/ # Task editor
 │   ├── Main/       # Main window UI
-│   ├── Editor/     # Task editing views
 │   ├── MenuBar/    # Menu bar UI
-│   └── Shared/     # Shared drag and reorder logic
-├── ContentView.swift
+│   └── Shared/     # Shared styling and preview support
 └── todo_blockApp.swift
 ```
 
@@ -111,7 +112,9 @@ todo block/
 xcodebuild test \
   -project "todo block.xcodeproj" \
   -scheme "todo block" \
-  -destination 'platform=macOS'
+  -destination 'platform=macOS' \
+  -parallel-testing-enabled NO \
+  -only-testing:"todo blockTests"
 ```
 
 ### Create a release build
@@ -131,6 +134,7 @@ If you only want to test the packaging flow, you can also run the workflow manua
 
 - Swift 6.2
 - SwiftUI
+- AppKit
 - SwiftData
 - `@Observable`
 

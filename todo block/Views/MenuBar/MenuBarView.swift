@@ -15,20 +15,27 @@ struct MenuBarView: View {
         self.onOpenMainWindow = onOpenMainWindow
     }
 
-    private let indentWidth: CGFloat = TodoDesignTokens.indentWidth
-    private let itemHeight: CGFloat = TodoDesignTokens.itemHeight
-    private let dropAreaInset = TodoInsertionIndicator.visualHeight + 8
-
     // 状态管理
     @State private var selectionManager = SelectionManager()
-    @State private var dropState: TodoListDropState = .none
-    @State private var frameTracker = DropFrameTracker()
-    @State private var draggingItemId: UUID?
 
     private var store: TodoStore { TodoStore.shared }
+    private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
         store.todayItems()
+    }
+
+    private var editorSections: [TodoEditorSectionSnapshot] {
+        [
+            TodoEditorSectionSnapshot(
+                id: todaySectionId,
+                title: "待办",
+                destination: .scheduled(date: Date()),
+                items: todayItems.map {
+                    TodoEditorItemSnapshot(item: $0, selectionManager: selectionManager)
+                }
+            )
+        ]
     }
 
     private var formattedToday: String {
@@ -54,21 +61,15 @@ struct MenuBarView: View {
 
             Divider()
 
-            if todayItems.isEmpty {
-                emptyStateView
-            } else {
-                ScrollView {
-                    todoListView
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                }
-                .frame(minHeight: 50, maxHeight: 350)
-                .contentShape(.rect)
-                .coordinateSpace(name: "menubar-drop-area")
-                .onPreferenceChange(TodoDropItemFramePreferenceKey.self) { [frameTracker] value in
-                    frameTracker.itemFrames = value
-                }
-            }
+            TodoEditorRepresentable(
+                sections: editorSections,
+                emptyTitle: "今天没有待办事项",
+                actions: TodoEditorActionFactory.make(
+                    store: store,
+                    selectionManager: selectionManager
+                )
+            )
+            .frame(minHeight: 80, maxHeight: 350)
 
             Divider()
 
@@ -121,129 +122,6 @@ struct MenuBarView: View {
             guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
             selectionManager.restoreFocus(to: itemId)
         }
-        .onChange(of: todayItems.dropResetSnapshot) { _, _ in
-            if TodoDragCoordinator.shared.isDragging == false, draggingItemId == nil {
-                dropState = .none
-            }
-        }
-        .onChange(of: store.dropIndicatorResetTrigger) { _, _ in
-            dropState = .none
-        }
-    }
-
-    // MARK: - 待办列表（带拖拽支持）
-
-    private var todoListView: some View {
-        let items = todayItems
-
-        return ZStack(alignment: .topLeading) {
-            // 用 VStack 而非 LazyVStack,见 TodoListView 中的注释。
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(items, id: \.id) { item in
-                    TodoItemView(
-                        item: item,
-                        allItems: items,
-                        focusedItemId: $selectionManager.focusedItemId,
-                        isSelected: selectionManager.selectedItemIds.contains(item.id),
-                        hasMultipleSelection: selectionManager.selectedItemIds.count > 1,
-                        cursorPosition: selectionManager.cursorPosition,
-                        preferredHorizontalOffset: selectionManager.preferredHorizontalOffset,
-                        verticalMoveDirection: selectionManager.verticalMoveDirection,
-                        useSystemDragAndDrop: false,
-                        handleDragCoordinateSpace: .named("menubar-drop-area"),
-                        onHandleDragBegan: {
-                            handleMenuBarDragBegan(itemId: item.id)
-                        },
-                        onHandleDragChanged: { location in
-                            handleMenuBarDragChanged(
-                                location: location,
-                                itemId: item.id,
-                                items: items
-                            )
-                        },
-                        onHandleDragEnded: { location in
-                            handleMenuBarDragEnded(
-                                location: location,
-                                itemId: item.id,
-                                items: items
-                            )
-                        },
-                        onSelect: { shiftPressed in
-                            selectionManager.handleSelect(
-                                item: item, allItems: items, shiftPressed: shiftPressed)
-                        },
-                        onFocus: { shiftPressed, cursorPosition in
-                            selectionManager.handleSelect(
-                                item: item, allItems: items, shiftPressed: shiftPressed,
-                                cursorPosition: cursorPosition)
-                        },
-                        onEnterPressed: { action in handleEnter(item, action: action) },
-                        onDeletePressed: {
-                            if selectionManager.selectedItemIds.contains(item.id) {
-                                selectionManager.deleteSelectedItems(store: store) { _ in
-                                    return items
-                                }
-                            }
-                        },
-                        onMoveUp: { position, horizontalOffset in
-                            selectionManager.moveFocusUp(
-                                from: item,
-                                allItems: items,
-                                cursorPosition: position,
-                                preferredHorizontalOffset: horizontalOffset
-                            )
-                        },
-                        onMoveDown: { position, horizontalOffset in
-                            selectionManager.moveFocusDown(
-                                from: item,
-                                allItems: items,
-                                cursorPosition: position,
-                                preferredHorizontalOffset: horizontalOffset
-                            )
-                        },
-                        onActivateInteraction: {}
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background {
-                        if draggingItemId != nil {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: TodoDropItemFramePreferenceKey.self,
-                                    value: [item.id: proxy.frame(in: .named("menubar-drop-area"))]
-                                )
-                            }
-                        }
-                    }
-                    .id(item.id)
-                }
-            }
-            .padding(.vertical, dropAreaInset)
-
-            TodoDropIndicatorOverlay(
-                dropState: dropState,
-                items: items,
-                itemFrames: frameTracker.itemFrames,
-                itemHeight: itemHeight,
-                indentWidth: indentWidth
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-    }
-
-    private var emptyStateView: some View {
-        VStack {
-            Text("今天没有待办事项")
-                .foregroundStyle(.secondary)
-                .font(.system(size: 13))
-
-            Button("添加待办") {
-                addTodayItem()
-            }
-            .buttonStyle(.link)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
     }
 }
 
@@ -256,32 +134,6 @@ private extension MenuBarView {
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 
-    func handleEnter(_ item: TodoItem, action: EnterAction) {
-        let newItem: TodoItem
-        switch action {
-        case .insertSiblingBelow:
-            newItem = store.createItem(
-                dayDate: Date(),
-                afterItem: item,
-                indentLevel: item.indentLevel
-            )
-        case .insertSiblingAbove:
-            newItem = store.createItemBefore(item)
-        case .splitIntoChild(let newCurrentTitle, let childTitle):
-            newItem = store.splitItem(
-                item,
-                newCurrentTitle: newCurrentTitle,
-                childTitle: childTitle
-            )
-        }
-        selectionManager.handleSelect(
-            item: newItem,
-            allItems: todayItems,
-            shiftPressed: false,
-            cursorPosition: 0
-        )
-    }
-
     func bindContexts() {
         ActiveListCommandContext.bind(
             scope: .today,
@@ -292,47 +144,6 @@ private extension MenuBarView {
 
     func handleBackgroundTap() {
         selectionManager.clearSelection()
-    }
-
-    func handleMenuBarDragBegan(itemId: UUID) {
-        draggingItemId = itemId
-    }
-
-    func handleMenuBarDragChanged(location: CGPoint, itemId: UUID, items: [TodoItem]) {
-        guard draggingItemId == itemId else { return }
-        dropState = MenuBarManualReorderEngine.dropState(
-            for: location,
-            items: items,
-            itemFrames: frameTracker.itemFrames,
-            itemHeight: itemHeight,
-            indentWidth: indentWidth
-        )
-    }
-
-    func handleMenuBarDragEnded(location: CGPoint, itemId: UUID, items: [TodoItem]) {
-        guard draggingItemId == itemId else { return }
-
-        let finalDropState = MenuBarManualReorderEngine.dropState(
-            for: location,
-            items: items,
-            itemFrames: frameTracker.itemFrames,
-            itemHeight: itemHeight,
-            indentWidth: indentWidth
-        )
-        dropState = finalDropState
-
-        defer {
-            draggingItemId = nil
-            dropState = .none
-        }
-
-        MenuBarManualReorderEngine.performMove(
-            draggedId: itemId,
-            dropState: finalDropState,
-            items: items,
-            destination: .scheduled(date: Date()),
-            store: store
-        )
     }
 }
 
