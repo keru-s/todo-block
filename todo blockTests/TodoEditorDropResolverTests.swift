@@ -53,4 +53,24 @@ final class TodoEditorDropResolverTests: XCTestCase {
 
         XCTAssertEqual(drop.indentLevel, 0)
     }
+
+    @MainActor
+    func testUnregisteredSidebarTargetNoLongerMatchesOldFrame() {
+        let session = TodoEditorDragSession.shared
+        let destination = SidebarDestination.month(year: 2026, month: 6)
+        let point = CGPoint(x: 40, y: 40)
+
+        session.clearSidebarTargets()
+        session.registerSidebarTarget(destination, frame: CGRect(x: 0, y: 0, width: 80, height: 80))
+        session.begin(itemId: UUID(), screenLocation: point)
+
+        XCTAssertEqual(session.hoveredSidebarDestination, destination)
+
+        session.unregisterSidebarTarget(destination)
+        session.update(screenLocation: point)
+
+        XCTAssertNil(session.hoveredSidebarDestination)
+        session.end()
+        session.clearSidebarTargets()
+    }
 }

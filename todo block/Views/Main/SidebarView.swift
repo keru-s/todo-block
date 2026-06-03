@@ -120,10 +120,22 @@ private struct SidebarDropFrameReader: NSViewRepresentable {
 private final class SidebarDropFrameView: NSView {
     var destination: SidebarDestination?
     var dragSession: TodoEditorDragSession?
+    private var registeredDestination: SidebarDestination?
+    private weak var registeredDragSession: TodoEditorDragSession?
+    private weak var observedWindow: NSWindow?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateWindowObservers()
         updateFrame()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            unregisterCurrentTarget()
+            removeWindowObservers()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -137,11 +149,66 @@ private final class SidebarDropFrameView: NSView {
     }
 
     func updateFrame() {
-        guard let destination, let dragSession, let window else { return }
+        guard let destination, let dragSession, let window else {
+            unregisterCurrentTarget()
+            return
+        }
+
+        if registeredDestination != destination || registeredDragSession !== dragSession {
+            unregisterCurrentTarget()
+        }
+
         let frameInWindow = convert(bounds, to: nil)
         let originInScreen = window.convertPoint(toScreen: frameInWindow.origin)
         let frameInScreen = CGRect(origin: originInScreen, size: frameInWindow.size)
         dragSession.registerSidebarTarget(destination, frame: frameInScreen)
+        registeredDestination = destination
+        registeredDragSession = dragSession
+    }
+
+    @objc private func windowGeometryChanged(_ notification: Notification) {
+        updateFrame()
+    }
+
+    private func updateWindowObservers() {
+        guard observedWindow !== window else { return }
+        removeWindowObservers()
+        guard let window else { return }
+        observedWindow = window
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowGeometryChanged(_:)),
+            name: NSWindow.didMoveNotification,
+            object: window
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowGeometryChanged(_:)),
+            name: NSWindow.didResizeNotification,
+            object: window
+        )
+    }
+
+    private func removeWindowObservers() {
+        guard let observedWindow else { return }
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didMoveNotification,
+            object: observedWindow
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didResizeNotification,
+            object: observedWindow
+        )
+        self.observedWindow = nil
+    }
+
+    private func unregisterCurrentTarget() {
+        guard let registeredDestination else { return }
+        registeredDragSession?.unregisterSidebarTarget(registeredDestination)
+        self.registeredDestination = nil
+        registeredDragSession = nil
     }
 }
 

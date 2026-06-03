@@ -42,4 +42,16 @@ final class TodoEditorDragSession {
         guard sidebarFrames[destination] != frame else { return }
         sidebarFrames[destination] = frame
     }
+
+    func unregisterSidebarTarget(_ destination: SidebarDestination) {
+        sidebarFrames[destination] = nil
+        if hoveredSidebarDestination == destination {
+            hoveredSidebarDestination = nil
+        }
+    }
+
+    func clearSidebarTargets() {
+        sidebarFrames.removeAll()
+        hoveredSidebarDestination = nil
+    }
 }

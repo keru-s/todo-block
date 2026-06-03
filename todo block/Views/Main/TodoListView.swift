@@ -61,7 +61,7 @@ struct TodoListView: View {
                 .font(.system(size: 14, weight: .medium))
                 .padding(.horizontal)
                 .padding(.vertical, 12)
-                
+
                 Spacer()
 
                 if selectionManager.selectedItemIds.count > 1 {

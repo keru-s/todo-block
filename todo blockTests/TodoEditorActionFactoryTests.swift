@@ -87,6 +87,40 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertTrue(store.items(for: day).isEmpty)
     }
 
+    func testMoveDraggedItemAcrossLongTermBucketsKeepsParentChildBlock() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let parent = store.createItem(
+            title: "parent",
+            dayDate: day,
+            indentLevel: 1,
+            containerKind: .longTermUrgent
+        )
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 2,
+            containerKind: .longTermUrgent
+        )
+        let target = store.createItem(
+            title: "target",
+            dayDate: day,
+            containerKind: .longTermImportant
+        )
+        let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+
+        actions.moveDraggedItem(parent.id, .longTerm(isUrgent: false), 1, 1)
+
+        XCTAssertEqual(store.longTermItems(isUrgent: true).map(\.id), [])
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [target.id, parent.id, child.id])
+        XCTAssertEqual(parent.containerKind, .longTermImportant)
+        XCTAssertEqual(child.containerKind, .longTermImportant)
+        XCTAssertEqual(parent.indentLevel, 1)
+        XCTAssertEqual(child.indentLevel, 2)
+        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+    }
+
     func testMoveDraggedItemToMonthSidebarUsesLatestDateAndKeepsParentChildBlock() {
         let store = TodoStore.shared
         let sourceDay = date(year: 2026, month: 4, day: 1)
