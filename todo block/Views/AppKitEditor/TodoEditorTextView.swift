@@ -11,7 +11,12 @@ final class TodoEditorTextView: NSTextView {
     var onMouseFocus: ((Bool, Int?) -> Void)?
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
+    var onSelectionPressBegan: ((Int?) -> Void)?
+    var onSelectionDragBegan: ((NSPoint) -> Void)?
+    var onSelectionDragChanged: ((NSPoint) -> Void)?
+    var onSelectionDragEnded: (() -> Void)?
     var deletesOnBackspace: Bool = false
+    private var selectionDragState = TodoEditorLongPressDragState()
 
     var isComposingText: Bool {
         hasMarkedText()
@@ -49,8 +54,33 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        selectionDragState.begin()
+        onSelectionPressBegan?(nil)
         super.mouseDown(with: event)
         onMouseFocus?(event.modifierFlags.contains(.shift), selectedRange().location)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if selectionDragState.isDragging {
+            onSelectionDragChanged?(event.locationInWindow)
+            return
+        }
+
+        if selectionDragState.beginDragIfReady() {
+            onSelectionDragBegan?(event.locationInWindow)
+            onSelectionDragChanged?(event.locationInWindow)
+            return
+        }
+
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if selectionDragState.end() {
+            onSelectionDragEnded?()
+        } else {
+            super.mouseUp(with: event)
+        }
     }
 
     override func setMarkedText(
@@ -293,6 +323,39 @@ final class TodoEditorTextView: NSTextView {
 
         let pointInWindow = convert(NSPoint(x: localX + textContainerInset.width, y: 0), to: nil)
         return pointInWindow.x
+    }
+}
+
+struct TodoEditorLongPressDragState {
+    private static let threshold: TimeInterval = 0.15
+
+    private var mouseDownTime: Date?
+    private var didReceiveEarlyDrag = false
+    private(set) var isDragging = false
+
+    mutating func begin(now: Date = Date()) {
+        mouseDownTime = now
+        didReceiveEarlyDrag = false
+        isDragging = false
+    }
+
+    mutating func beginDragIfReady(now: Date = Date()) -> Bool {
+        guard isDragging == false, let mouseDownTime else { return false }
+        guard didReceiveEarlyDrag == false else { return false }
+        guard now.timeIntervalSince(mouseDownTime) >= Self.threshold else {
+            didReceiveEarlyDrag = true
+            return false
+        }
+        isDragging = true
+        return true
+    }
+
+    mutating func end() -> Bool {
+        let wasDragging = isDragging
+        mouseDownTime = nil
+        didReceiveEarlyDrag = false
+        isDragging = false
+        return wasDragging
     }
 }
 

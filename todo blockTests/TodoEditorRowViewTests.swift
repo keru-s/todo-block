@@ -44,6 +44,31 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 0))
     }
 
+    func testLongPressDragStateRequiresDelayAndResetsOnEnd() {
+        var state = TodoEditorLongPressDragState()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        state.begin(now: start)
+
+        XCTAssertTrue(state.beginDragIfReady(now: start.addingTimeInterval(0.2)))
+        XCTAssertTrue(state.isDragging)
+        XCTAssertFalse(state.beginDragIfReady(now: start.addingTimeInterval(0.3)))
+        XCTAssertTrue(state.end())
+        XCTAssertFalse(state.isDragging)
+        XCTAssertFalse(state.end())
+    }
+
+    func testLongPressDragStateDoesNotConvertImmediateDragToSelection() {
+        var state = TodoEditorLongPressDragState()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        state.begin(now: start)
+
+        XCTAssertFalse(state.beginDragIfReady(now: start.addingTimeInterval(0.05)))
+        XCTAssertFalse(state.beginDragIfReady(now: start.addingTimeInterval(0.2)))
+        XCTAssertFalse(state.isDragging)
+    }
+
     private func firstSubview<T: NSView>(of type: T.Type, in view: NSView) -> T? {
         if let matchingView = view as? T {
             return matchingView

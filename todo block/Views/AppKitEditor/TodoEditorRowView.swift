@@ -20,8 +20,8 @@ final class TodoEditorRowView: NSView {
     private var isApplyingSnapshot = false
     private var isComposingText = false
     private var latestSnapshot: TodoEditorItemSnapshot?
-    private var selectionMouseDownTime: Date?
-    private var didStartDragSelection = false
+    private var selectionDragState = TodoEditorLongPressDragState()
+    private var selectionDragEventMonitor: Any?
     private var prefersRowFirstResponder = false
     private var lastStyledCompleted: Bool?
 
@@ -42,6 +42,12 @@ final class TodoEditorRowView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+
+    deinit {
+        if let selectionDragEventMonitor {
+            NSEvent.removeMonitor(selectionDragEventMonitor)
+        }
     }
 
     private func configureViewHierarchy() {
@@ -77,6 +83,18 @@ final class TodoEditorRowView: NSView {
             guard let self, let itemId else { return }
             prefersRowFirstResponder = false
             actions.selectItem(itemId, shiftPressed, cursorPosition)
+        }
+        titleTextView.onSelectionPressBegan = { [weak self] cursorPosition in
+            self?.beginSelectionPress(cursorPosition: cursorPosition, prefersRowFirstResponder: false)
+        }
+        titleTextView.onSelectionDragBegan = { [weak self] location in
+            self?.beginSelectionDragIfNeeded(location: location)
+        }
+        titleTextView.onSelectionDragChanged = { [weak self] location in
+            self?.updateSelectionDrag(location: location)
+        }
+        titleTextView.onSelectionDragEnded = { [weak self] in
+            self?.endSelectionDrag()
         }
         titleTextView.onCompositionChange = { [weak self] composing in
             self?.isComposingText = composing
@@ -218,39 +236,90 @@ final class TodoEditorRowView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        beginSelectionPress(cursorPosition: nil, prefersRowFirstResponder: true)
         if let itemId {
-            selectionMouseDownTime = Date()
-            didStartDragSelection = false
-            prefersRowFirstResponder = true
             actions.selectItem(itemId, event.modifierFlags.contains(.shift), nil)
-            window?.makeFirstResponder(self)
         }
         super.mouseDown(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let itemId else {
+        guard itemId != nil else {
             super.mouseDragged(with: event)
             return
         }
 
-        if didStartDragSelection == false {
-            let elapsed = abs(selectionMouseDownTime?.timeIntervalSinceNow ?? 0)
-            guard elapsed >= 0.15 else { return }
-            didStartDragSelection = true
-            onSelectionDragBegan?(itemId, event.locationInWindow)
-        }
-
-        onSelectionDragChanged?(itemId, event.locationInWindow)
+        beginSelectionDragIfNeeded(location: event.locationInWindow)
+        updateSelectionDrag(location: event.locationInWindow)
     }
 
     override func mouseUp(with event: NSEvent) {
-        if didStartDragSelection {
+        endSelectionDrag()
+        super.mouseUp(with: event)
+    }
+
+    private func beginSelectionPress(cursorPosition: Int?, prefersRowFirstResponder: Bool) {
+        guard let itemId else { return }
+        selectionDragState.begin()
+        installSelectionDragEventMonitor()
+        self.prefersRowFirstResponder = prefersRowFirstResponder
+        if prefersRowFirstResponder {
+            window?.makeFirstResponder(self)
+        }
+        if let cursorPosition {
+            actions.selectItem(itemId, false, cursorPosition)
+        }
+    }
+
+    private func beginSelectionDragIfNeeded(location: NSPoint) {
+        guard let itemId, selectionDragState.beginDragIfReady() else { return }
+        onSelectionDragBegan?(itemId, location)
+    }
+
+    private func updateSelectionDrag(location: NSPoint) {
+        guard let itemId, selectionDragState.isDragging else { return }
+        onSelectionDragChanged?(itemId, location)
+    }
+
+    private func endSelectionDrag() {
+        if selectionDragState.end() {
             onSelectionDragEnded?()
         }
-        selectionMouseDownTime = nil
-        didStartDragSelection = false
-        super.mouseUp(with: event)
+        removeSelectionDragEventMonitor()
+    }
+
+    private func installSelectionDragEventMonitor() {
+        removeSelectionDragEventMonitor()
+        selectionDragEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            let eventType = event.type
+            let location = event.locationInWindow
+            let shouldConsume = MainActor.assumeIsolated {
+                guard let self else { return false }
+
+                switch eventType {
+                case .leftMouseDragged:
+                    self.beginSelectionDragIfNeeded(location: location)
+                    self.updateSelectionDrag(location: location)
+                    return self.selectionDragState.isDragging
+                case .leftMouseUp:
+                    let wasDragging = self.selectionDragState.isDragging
+                    self.endSelectionDrag()
+                    return wasDragging
+                default:
+                    return false
+                }
+            }
+            return shouldConsume ? nil : event
+        }
+    }
+
+    private func removeSelectionDragEventMonitor() {
+        if let selectionDragEventMonitor {
+            NSEvent.removeMonitor(selectionDragEventMonitor)
+            self.selectionDragEventMonitor = nil
+        }
     }
 
     override func keyDown(with event: NSEvent) {
