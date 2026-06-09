@@ -15,9 +15,8 @@ extension TodoStore {
     }
 
     /// 将前一天未完成的 item 继承到今天。
-    /// - 未完成的一级 item：复制到今天（原件留在昨天）
-    /// - 未完成的子级 item：移动到今天新复制的一级 item 下
-    /// - 已完成的子级 item：留在昨天原位不动
+    /// - 子项全部未完成（或无子项）：整块直接移动到今天
+    /// - 子项中有已完成的：复制一级 item，移动未完成子项，已完成子项留原位
     @discardableResult
     func carryOverIncompleteItems() -> DaySection {
         guard let previousSection = findPreviousDaySection() else {
@@ -41,26 +40,46 @@ extension TodoStore {
         var moveNewSnapshots: [TodoItemSnapshot] = []
 
         for block in incompleteBlocks {
-            let copiedParent = createItem(
-                title: block.parent.title,
-                dayDate: todayDate,
-                indentLevel: 0,
-                containerKind: .scheduled
-            )
-            copiedParent.sortOrder = currentSortOrder
-            currentSortOrder += 1000
+            let hasCompletedChildren = block.children.contains { $0.isCompleted }
 
-            for child in block.children where !child.isCompleted {
-                let oldSnapshot = TodoItemSnapshot(from: child)
-                moveOldSnapshots.append(oldSnapshot)
+            if !hasCompletedChildren {
+                // 无已完成子项：整块直接移动
+                let allItems = [block.parent] + block.children
+                for item in allItems {
+                    let oldSnapshot = TodoItemSnapshot(from: item)
+                    moveOldSnapshots.append(oldSnapshot)
 
-                child.dayDate = todayDate
-                child.sortOrder = currentSortOrder
-                child.updatedAt = Date()
+                    item.dayDate = todayDate
+                    item.sortOrder = currentSortOrder
+                    item.updatedAt = Date()
+                    currentSortOrder += 1000
+
+                    let newSnapshot = TodoItemSnapshot(from: item)
+                    moveNewSnapshots.append(newSnapshot)
+                }
+            } else {
+                // 有已完成子项：复制一级 item，仅移动未完成子项
+                let copiedParent = createItem(
+                    title: block.parent.title,
+                    dayDate: todayDate,
+                    indentLevel: 0,
+                    containerKind: .scheduled
+                )
+                copiedParent.sortOrder = currentSortOrder
                 currentSortOrder += 1000
 
-                let newSnapshot = TodoItemSnapshot(from: child)
-                moveNewSnapshots.append(newSnapshot)
+                for child in block.children where !child.isCompleted {
+                    let oldSnapshot = TodoItemSnapshot(from: child)
+                    moveOldSnapshots.append(oldSnapshot)
+
+                    child.dayDate = todayDate
+                    child.sortOrder = currentSortOrder
+                    child.updatedAt = Date()
+                    currentSortOrder += 1000
+
+                    let newSnapshot = TodoItemSnapshot(from: child)
+                    moveNewSnapshots.append(newSnapshot)
+                }
             }
         }
 
