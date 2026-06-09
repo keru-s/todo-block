@@ -8,12 +8,23 @@
 import SwiftUI
 import SwiftData
 
+enum AddTodayMode: String {
+    case carryOver
+    case blank
+}
+
 struct TodoListView: View {
     let year: Int
     let month: Int
     var isActiveContext: Bool = true
 
     @State private var selectionManager = SelectionManager()
+    @State private var showModePopover = false
+    @AppStorage("addTodayMode") private var addTodayModeRaw: String = AddTodayMode.carryOver.rawValue
+
+    private var addTodayMode: AddTodayMode {
+        get { AddTodayMode(rawValue: addTodayModeRaw) ?? .carryOver }
+    }
 
     private var store: TodoStore { TodoStore.shared }
 
@@ -49,18 +60,47 @@ struct TodoListView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            HStack {
-                Button(action: addTodaySection) {
-                    HStack {
-                        Image(systemName: "plus")
-                        Text(hasTodaySection ? "添加一个今日待办" : "添加今日分区")
+            HStack(spacing: 10) {
+                HStack(spacing: 0) {
+                    Button(action: executeAddToday) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(addTodayButtonLabel)
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .padding(.leading, 12)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.plain)
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.4))
+                        .frame(width: 1, height: 18)
+
+                    Button {
+                        showModePopover.toggle()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showModePopover, arrowEdge: .bottom) {
+                        addTodayModePanel
                     }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .font(.system(size: 14, weight: .medium))
-                .padding(.horizontal)
-                .padding(.vertical, 12)
+                .foregroundStyle(.white)
+                .background(Color.accentColor)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                if !hasTodaySection && addTodayMode == .carryOver {
+                    Text("默认将导入前一日未完成的任务")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer()
 
@@ -71,6 +111,8 @@ struct TodoListView: View {
                         .padding(.trailing, 12)
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(TodoDesignTokens.windowBackground)
         }
         .onAppear {
@@ -92,9 +134,77 @@ struct TodoListView: View {
         }
     }
 
-    private func addTodaySection() {
-        let section = store.getOrCreateTodaySection()
+    private var addTodayModePanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                addTodayModeRaw = AddTodayMode.carryOver.rawValue
+                showModePopover = false
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(addTodayMode == .carryOver ? Color.accentColor : .clear)
+                        .frame(width: 14)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("添加今日待办（含昨日未完成）")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(addTodayMode == .carryOver ? Color.accentColor : .primary)
+                        Text("自动导入前一日未完成的任务，保留层级")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            Button {
+                addTodayModeRaw = AddTodayMode.blank.rawValue
+                showModePopover = false
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(addTodayMode == .blank ? Color.accentColor : .clear)
+                        .frame(width: 14)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("添加空白待办")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(addTodayMode == .blank ? Color.accentColor : .primary)
+                        Text("创建一个空的今日待办分组")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
+        .frame(width: 280)
+    }
+
+    private var addTodayButtonLabel: String {
         if hasTodaySection {
+            return "添加一个今日待办"
+        }
+        return addTodayMode == .carryOver ? "添加今日待办" : "添加空白待办"
+    }
+
+    private func executeAddToday() {
+        if hasTodaySection {
+            let section = store.getOrCreateTodaySection()
             let newItem = store.createItem(dayDate: section.date)
             selectionManager.handleSelect(
                 item: newItem,
@@ -102,6 +212,13 @@ struct TodoListView: View {
                 shiftPressed: false,
                 cursorPosition: 0
             )
+        } else {
+            switch addTodayMode {
+            case .carryOver:
+                store.carryOverIncompleteItems()
+            case .blank:
+                store.getOrCreateTodaySection()
+            }
         }
     }
 
