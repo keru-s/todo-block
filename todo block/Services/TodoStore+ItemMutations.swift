@@ -135,17 +135,13 @@ extension TodoStore {
 
     /// 删除待办事项
     func deleteItem(_ item: TodoItem) {
-        let snapshot = TodoItemSnapshot(from: item)
-        undoManager.registerDeleteItem(snapshot: snapshot, store: self)
+        let destinationItems = items(in: destination(for: item))
+        guard
+            let itemIndex = destinationItems.firstIndex(where: { $0.id == item.id }),
+            let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: destinationItems)
+        else { return }
 
-        let scheduledDate: Date? = item.containerKind == .scheduled ? item.dayDate : nil
-        todoItemsCache.removeValue(forKey: item.id)
-        modelContext?.delete(item)
-        if let scheduledDate {
-            cleanupSectionIfEmpty(scheduledDate: scheduledDate)
-        }
-        refreshTrigger += 1
-        scheduleSave()
+        deleteItemsAsBatch(block.range.map { destinationItems[$0] })
     }
 
     /// 删除待办事项（不注册撤销，用于撤销操作内部调用）
@@ -166,16 +162,35 @@ extension TodoStore {
     func deleteItemsAsBatch(_ items: [TodoItem]) {
         guard items.isEmpty == false else { return }
 
-        let snapshots = items.map { TodoItemSnapshot(from: $0) }
+        var expandedItems: [TodoItem] = []
+        var expandedIds = Set<UUID>()
+        let itemsByDestination = Dictionary(grouping: items) { destination(for: $0).normalized }
+        for (destination, roots) in itemsByDestination {
+            let destinationItems = self.items(in: destination)
+            let coveredIds = TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
+                rootedAt: Set(roots.map(\.id)),
+                in: destinationItems
+            )
+            for itemId in coveredIds {
+                guard
+                    expandedIds.insert(itemId).inserted,
+                    let item = todoItemsCache[itemId]
+                else { continue }
+                expandedItems.append(item)
+            }
+        }
+        guard expandedItems.isEmpty == false else { return }
+
+        let snapshots = expandedItems.map { TodoItemSnapshot(from: $0) }
 
         // 收集需要事后清理的 scheduled section 日期，去重
         var scheduledDatesToCheck: Set<Date> = []
-        for item in items where item.containerKind == .scheduled {
+        for item in expandedItems where item.containerKind == .scheduled {
             scheduledDatesToCheck.insert(Calendar.current.startOfDay(for: item.dayDate))
         }
 
         // 全量删除（不在循环内注册逐条 undo）
-        for item in items {
+        for item in expandedItems {
             todoItemsCache.removeValue(forKey: item.id)
             modelContext?.delete(item)
         }
@@ -230,24 +245,20 @@ extension TodoStore {
         let oldState = item.isCompleted
         let newState = oldState == false
 
+        guard
+            let itemIndex = allItems.firstIndex(where: { $0.id == item.id }),
+            let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: allItems)
+        else { return }
+
         var childStates: [(UUID, Bool)] = []
 
-        item.isCompleted = newState
-        item.updatedAt = Date()
-
-        if let itemIndex = allItems.firstIndex(where: { $0.id == item.id }) {
-            let itemIndent = item.indentLevel
-
-            for index in (itemIndex + 1)..<allItems.count {
-                let child = allItems[index]
-                if child.indentLevel > itemIndent {
-                    childStates.append((child.id, child.isCompleted))
-                    child.isCompleted = newState
-                    child.updatedAt = Date()
-                } else {
-                    break
-                }
+        for index in block.range {
+            let blockItem = allItems[index]
+            if index != block.range.lowerBound {
+                childStates.append((blockItem.id, blockItem.isCompleted))
             }
+            blockItem.isCompleted = newState
+            blockItem.updatedAt = .now
         }
 
         let childNewStates = childStates.map { ($0.0, newState) }
@@ -260,6 +271,44 @@ extension TodoStore {
             store: self
         )
 
+        scheduleSave()
+    }
+
+    func indentItem(_ item: TodoItem) {
+        changeIndent(of: item, requestedDelta: 1)
+    }
+
+    func outdentItem(_ item: TodoItem) {
+        changeIndent(of: item, requestedDelta: -1)
+    }
+
+    private func changeIndent(of item: TodoItem, requestedDelta: Int) {
+        let destinationItems = items(in: destination(for: item))
+        guard
+            let itemIndex = destinationItems.firstIndex(where: { $0.id == item.id }),
+            let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: destinationItems)
+        else { return }
+
+        let blockIndentLevels = block.range.map { destinationItems[$0].indentLevel }
+        let appliedDelta: Int
+        if requestedDelta > 0 {
+            appliedDelta = min(
+                requestedDelta,
+                TodoItem.maxIndentLevel - (blockIndentLevels.max() ?? 0)
+            )
+        } else {
+            appliedDelta = max(requestedDelta, -(blockIndentLevels.min() ?? 0))
+        }
+        guard appliedDelta != 0 else { return }
+
+        let blockItems = block.range.map { destinationItems[$0] }
+        let oldSnapshots = blockItems.map { TodoItemSnapshot(from: $0) }
+        for (offset, blockItem) in blockItems.enumerated() {
+            blockItem.indentLevel = blockIndentLevels[offset] + appliedDelta
+            blockItem.updatedAt = .now
+        }
+        let newSnapshots = blockItems.map { TodoItemSnapshot(from: $0) }
+        undoManager.registerMoveItems(from: oldSnapshots, to: newSnapshots, store: self)
         scheduleSave()
     }
 

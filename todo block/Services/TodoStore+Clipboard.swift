@@ -100,31 +100,6 @@ extension TodoStore {
         scheduleSave()
     }
 
-    func indentItem(_ item: TodoItem) {
-        let oldIndent = item.indentLevel
-        item.indent()
-        guard item.indentLevel != oldIndent else { return }
-        undoManager.registerIndentChange(
-            itemId: item.id,
-            oldIndent: oldIndent,
-            newIndent: item.indentLevel,
-            store: self
-        )
-        scheduleSave()
-    }
-
-    func outdentItem(_ item: TodoItem) {
-        let oldIndent = item.indentLevel
-        item.outdent()
-        guard item.indentLevel != oldIndent else { return }
-        undoManager.registerIndentChange(
-            itemId: item.id,
-            oldIndent: oldIndent,
-            newIndent: item.indentLevel,
-            store: self
-        )
-        scheduleSave()
-    }
 }
 
 private extension TodoStore {

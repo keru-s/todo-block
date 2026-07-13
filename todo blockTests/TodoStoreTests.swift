@@ -797,6 +797,84 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(Calendar.current.isDate(child.dayDate, inSameDayAs: to))
     }
 
+    func testDeleteParentDeletesDescendantsAndUndoRestoresWholeBlock() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let grandchild = store.createItem(
+            title: "grandchild",
+            dayDate: day,
+            afterItem: child,
+            indentLevel: 2
+        )
+        _ = store.createItem(title: "tail", dayDate: day, afterItem: grandchild, indentLevel: 0)
+        store.undoManager.clear()
+
+        store.deleteItem(parent)
+
+        XCTAssertEqual(store.items(for: day).map(\.title), ["tail"])
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.title),
+            ["parent", "child", "grandchild", "tail"]
+        )
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["tail"])
+    }
+
+    func testIndentAndOutdentParentMoveAllDescendantsBySameAmount() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
+        let grandchild = store.createItem(
+            title: "grandchild",
+            dayDate: day,
+            afterItem: child,
+            indentLevel: 2
+        )
+        store.undoManager.clear()
+
+        store.indentItem(parent)
+        XCTAssertEqual([parent.indentLevel, child.indentLevel, grandchild.indentLevel], [1, 2, 3])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual([parent.indentLevel, child.indentLevel, grandchild.indentLevel], [0, 1, 2])
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual([parent.indentLevel, child.indentLevel, grandchild.indentLevel], [1, 2, 3])
+
+        store.outdentItem(parent)
+        XCTAssertEqual([parent.indentLevel, child.indentLevel, grandchild.indentLevel], [0, 1, 2])
+    }
+
+    func testToggleCompleteUsesNormalizedBlockForMalformedIndentation() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 24)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 3)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
+        _ = store.createItem(title: "tail", dayDate: day, indentLevel: 0)
+        child.isCompleted = true
+        store.undoManager.clear()
+
+        store.toggleComplete(parent)
+
+        XCTAssertTrue(parent.isCompleted)
+        XCTAssertTrue(child.isCompleted)
+        XCTAssertEqual(parent.indentLevel, 3)
+        XCTAssertEqual(child.indentLevel, 2)
+        XCTAssertTrue(store.undo())
+        XCTAssertFalse(parent.isCompleted)
+        XCTAssertTrue(child.isCompleted)
+        XCTAssertEqual(parent.indentLevel, 3)
+        XCTAssertEqual(child.indentLevel, 2)
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

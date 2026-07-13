@@ -76,4 +76,21 @@ final class TodoHierarchyBlockEngineTests: XCTestCase {
             3
         )
     }
+
+    func testItemIdsCoveredBySelectedRootsDeduplicatesSelectedDescendants() {
+        let items = [
+            TodoItem(title: "parent", indentLevel: 0),
+            TodoItem(title: "child", indentLevel: 1),
+            TodoItem(title: "grandchild", indentLevel: 2),
+            TodoItem(title: "other", indentLevel: 0),
+        ]
+
+        XCTAssertEqual(
+            TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
+                rootedAt: [items[0].id, items[1].id],
+                in: items
+            ),
+            items[0...2].map(\.id)
+        )
+    }
 }

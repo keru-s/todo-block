@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum TodoDropDestination: Equatable {
+enum TodoDropDestination: Hashable {
     case scheduled(date: Date)
     case longTerm(isUrgent: Bool)
 

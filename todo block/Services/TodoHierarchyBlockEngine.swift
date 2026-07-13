@@ -70,4 +70,22 @@ enum TodoHierarchyBlockEngine {
 
         return self.block(startingAt: nextBlockStart, in: items)?.range.upperBound
     }
+
+    static func itemIdsCoveredByBlocks(
+        rootedAt rootIds: Set<UUID>,
+        in items: [TodoItem]
+    ) -> [UUID] {
+        var coveredIds: [UUID] = []
+        var coveredIdSet = Set<UUID>()
+
+        for (index, item) in items.enumerated()
+        where rootIds.contains(item.id) && coveredIdSet.contains(item.id) == false {
+            guard let block = block(startingAt: index, in: items) else { continue }
+            for itemId in block.itemIds where coveredIdSet.insert(itemId).inserted {
+                coveredIds.append(itemId)
+            }
+        }
+
+        return coveredIds
+    }
 }
