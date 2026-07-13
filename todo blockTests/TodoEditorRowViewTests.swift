@@ -44,6 +44,50 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 0))
     }
 
+    func testMiddleReturnImmediatelyClearsTailFromCurrentTextView() throws {
+        let item = TodoItem(title: "abcde")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id]
+        selectionManager.cursorPosition = 2
+
+        var capturedAction: EnterAction?
+        var actions = TodoEditorActions.readOnly
+        actions.enterPressed = { _, action in
+            capturedAction = action
+        }
+
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            actions: actions
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+        textView.string = "abcde"
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+
+        textView.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+
+        XCTAssertEqual(textView.string, "ab")
+        guard case .splitIntoChild(let newCurrentTitle, let childTitle) = capturedAction else {
+            return XCTFail("Expected split action")
+        }
+        XCTAssertEqual(newCurrentTitle, "ab")
+        XCTAssertEqual(childTitle, "cde")
+    }
+
     private func firstSubview<T: NSView>(of type: T.Type, in view: NSView) -> T? {
         if let matchingView = view as? T {
             return matchingView

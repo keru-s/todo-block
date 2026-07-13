@@ -12,6 +12,7 @@ final class TodoEditorTextView: NSTextView {
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
     var deletesOnBackspace: Bool = false
+    private var isApplyingHandledCommandText = false
 
     var isComposingText: Bool {
         hasMarkedText()
@@ -35,7 +36,7 @@ final class TodoEditorTextView: NSTextView {
         invalidateIntrinsicContentSize()
         let composing = isComposingText
         onCompositionChange?(composing)
-        if composing == false {
+        if composing == false && isApplyingHandledCommandText == false {
             onTextDidChange?(string)
         }
     }
@@ -193,8 +194,15 @@ final class TodoEditorTextView: NSTextView {
                 )
             }
 
+            if case .splitIntoChild(let newCurrentTitle, _) = action {
+                replaceTextForHandledCommand(newCurrentTitle)
+            }
             window?.makeFirstResponder(nil)
-            return onCommand?(.return(action)) == true
+            let handled = onCommand?(.return(action)) == true
+            if handled == false, case .splitIntoChild = action {
+                replaceTextForHandledCommand(fullText)
+            }
+            return handled
         }
 
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
@@ -227,6 +235,15 @@ final class TodoEditorTextView: NSTextView {
         }
 
         return false
+    }
+
+    private func replaceTextForHandledCommand(_ newText: String) {
+        isApplyingHandledCommandText = true
+        string = newText
+        let length = (newText as NSString).length
+        setSelectedRange(NSRange(location: length, length: 0))
+        invalidateIntrinsicContentSize()
+        isApplyingHandledCommandText = false
     }
 
     private var isOnFirstVisualLine: Bool {

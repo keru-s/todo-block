@@ -68,6 +68,24 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(selectionManager.focusedItemId, third.id)
     }
 
+    func testEnterSplitIntoChildUpdatesCurrentItemAndFocusesChild() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let item = store.createItem(title: "abcde", dayDate: day, indentLevel: 1)
+        let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+
+        actions.enterPressed(
+            item.id,
+            .splitIntoChild(newCurrentTitle: "ab", childTitle: "cde")
+        )
+
+        let items = store.items(for: day)
+        XCTAssertEqual(items.map(\.title), ["ab", "cde"])
+        XCTAssertEqual(items.map(\.indentLevel), [1, 2])
+        XCTAssertEqual(selectionManager.focusedItemId, items.last?.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 0)
+    }
+
     func testMoveDraggedItemToLongTermSidebarKeepsParentChildBlock() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
