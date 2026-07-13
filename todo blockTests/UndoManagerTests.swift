@@ -57,6 +57,36 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertEqual(store.focusRequestId, first.id)
     }
 
+    func testUnifiedCreateRestoresSameIdentityAndSelectionOnUndoRedo() {
+        let store = TodoStore.shared
+        let date = Date()
+        let selectionManager = SelectionManager()
+        let first = store.createItem(title: "First", dayDate: date)
+        store.undoManager.clear()
+        selectionManager.restoreFocus(to: first.id)
+
+        let created = store.createItem(
+            title: "Second",
+            dayDate: date,
+            afterItem: first,
+            selectionManager: selectionManager
+        )
+        let createdId = created.id
+
+        XCTAssertEqual(selectionManager.focusedItemId, createdId)
+        XCTAssertEqual(selectionManager.selectedItemIds, [createdId])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertNil(store.todoItemsCache[createdId])
+        XCTAssertEqual(selectionManager.focusedItemId, first.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.todoItemsCache[createdId]?.id, createdId)
+        XCTAssertEqual(selectionManager.focusedItemId, createdId)
+        XCTAssertEqual(selectionManager.selectedItemIds, [createdId])
+    }
+
     // MARK: - 测试撤销删除
 
     func testUndoDeleteItem() {

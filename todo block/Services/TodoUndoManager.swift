@@ -27,12 +27,90 @@ struct TodoCompletionChange {
     }
 }
 
+struct TodoItemExistenceChange {
+    let snapshot: TodoItemSnapshot
+    let beforeExists: Bool
+    let afterExists: Bool
+
+    func exists(for target: TodoOperationValueTarget) -> Bool {
+        switch target {
+        case .before:
+            beforeExists
+        case .after:
+            afterExists
+        }
+    }
+}
+
+struct TodoSelectionState: Equatable {
+    let focusedItemId: UUID?
+    let selectedItemIds: Set<UUID>
+    let lastSelectedId: UUID?
+    let cursorPosition: Int
+
+    init(selectionManager: SelectionManager) {
+        focusedItemId = selectionManager.focusedItemId
+        selectedItemIds = selectionManager.selectedItemIds
+        lastSelectedId = selectionManager.lastSelectedId
+        cursorPosition = selectionManager.cursorPosition
+    }
+
+    init(focusing itemId: UUID?, cursorPosition: Int = 0) {
+        focusedItemId = itemId
+        selectedItemIds = itemId.map { [$0] } ?? []
+        lastSelectedId = itemId
+        self.cursorPosition = cursorPosition
+    }
+
+    func apply(to selectionManager: SelectionManager) {
+        selectionManager.focusedItemId = focusedItemId
+        selectionManager.selectedItemIds = selectedItemIds
+        selectionManager.lastSelectedId = lastSelectedId
+        selectionManager.cursorPosition = cursorPosition
+        selectionManager.preferredHorizontalOffset = nil
+        selectionManager.verticalMoveDirection = nil
+    }
+}
+
+struct TodoSelectionChange {
+    let selectionManager: SelectionManager
+    let before: TodoSelectionState
+    let after: TodoSelectionState
+
+    func state(for target: TodoOperationValueTarget) -> TodoSelectionState {
+        switch target {
+        case .before:
+            before
+        case .after:
+            after
+        }
+    }
+}
+
+struct TodoFocusChange {
+    let before: UUID?
+    let after: UUID?
+
+    func itemId(for target: TodoOperationValueTarget) -> UUID? {
+        switch target {
+        case .before:
+            before
+        case .after:
+            after
+        }
+    }
+}
+
 struct TodoOperation {
     let actionName: String
-    let completionChanges: [TodoCompletionChange]
+    var completionChanges: [TodoCompletionChange] = []
+    var itemExistenceChanges: [TodoItemExistenceChange] = []
+    var selectionChanges: [TodoSelectionChange] = []
+    var focusChange: TodoFocusChange?
 
     var isEmpty: Bool {
         completionChanges.isEmpty
+            && itemExistenceChanges.isEmpty
     }
 }
 
@@ -59,6 +137,39 @@ struct TodoItemSnapshot {
         self.dayDate = item.dayDate
         self.createdAt = item.createdAt
         self.updatedAt = item.updatedAt
+    }
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        isCompleted: Bool = false,
+        indentLevel: Int,
+        sortOrder: Double,
+        containerKindRaw: String,
+        dayDate: Date,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+        self.indentLevel = indentLevel
+        self.sortOrder = sortOrder
+        self.containerKindRaw = containerKindRaw
+        self.dayDate = Calendar.current.startOfDay(for: dayDate)
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    func matchesUserState(of item: TodoItem) -> Bool {
+        item.id == id
+            && item.title == title
+            && item.isCompleted == isCompleted
+            && item.indentLevel == indentLevel
+            && item.sortOrder == sortOrder
+            && item.containerKindRaw == containerKindRaw
+            && item.dayDate == dayDate
+            && item.createdAt == createdAt
     }
 }
 
@@ -136,9 +247,19 @@ final class TodoUndoManager {
         store: TodoStore
     ) -> Bool {
         let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
-        return operation.completionChanges.allSatisfy { change in
+        let completionChangesAreValid = operation.completionChanges.allSatisfy { change in
             guard let item = store.todoItemsCache[change.itemId] else { return false }
             return item.isCompleted == change.value(for: sourceTarget)
+        }
+        guard completionChangesAreValid else { return false }
+
+        return operation.itemExistenceChanges.allSatisfy { change in
+            let sourceExists = change.exists(for: sourceTarget)
+            guard sourceExists else {
+                return store.todoItemsCache[change.snapshot.id] == nil
+            }
+            guard let item = store.todoItemsCache[change.snapshot.id] else { return false }
+            return change.snapshot.matchesUserState(of: item)
         }
     }
 
@@ -147,10 +268,28 @@ final class TodoUndoManager {
         target: TodoOperationValueTarget,
         store: TodoStore
     ) {
+        for change in operation.itemExistenceChanges
+        where change.exists(for: target) && store.todoItemsCache[change.snapshot.id] == nil {
+            store.restoreItem(from: change.snapshot)
+        }
+
         for change in operation.completionChanges {
             guard let item = store.todoItemsCache[change.itemId] else { continue }
             item.isCompleted = change.value(for: target)
             item.updatedAt = .now
+        }
+
+        for change in operation.itemExistenceChanges
+        where change.exists(for: target) == false {
+            guard let item = store.todoItemsCache[change.snapshot.id] else { continue }
+            store.deleteItemWithoutUndo(item)
+        }
+
+        for change in operation.selectionChanges {
+            change.state(for: target).apply(to: change.selectionManager)
+        }
+        if let focusChange = operation.focusChange {
+            store.requestFocus(focusChange.itemId(for: target))
         }
     }
 

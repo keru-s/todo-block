@@ -205,7 +205,10 @@ struct TodoListView: View {
     private func executeAddToday() {
         if hasTodaySection {
             let section = store.getOrCreateTodaySection()
-            let newItem = store.createItem(dayDate: section.date)
+            let newItem = store.createItem(
+                dayDate: section.date,
+                selectionManager: selectionManager
+            )
             selectionManager.handleSelect(
                 item: newItem,
                 allItems: store.items(for: section.date),

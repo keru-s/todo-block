@@ -287,6 +287,56 @@ final class SelectionManagerDeleteTests: XCTestCase {
         XCTAssertEqual(selectionManager.selectedItemIds, [tail.id])
     }
 
+    func testUndoRedoParentDeleteRestoresWholeBlockAndSelection() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 10, day: 7)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: child)
+        store.undoManager.clear()
+
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
+
+        XCTAssertEqual(store.items(for: day).map(\.id), [tail.id])
+        XCTAssertEqual(selectionManager.selectedItemIds, [tail.id])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [parent.id, child.id, tail.id])
+        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [tail.id])
+        XCTAssertEqual(selectionManager.focusedItemId, tail.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [tail.id])
+    }
+
+    func testDeleteDoesNothingWhenAnySelectedItemIsMissing() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 10, day: 8)
+        let first = store.createItem(title: "first", dayDate: day)
+        let second = store.createItem(title: "second", dayDate: day, afterItem: first)
+        store.undoManager.clear()
+
+        let missingId = UUID()
+        selectionManager.selectedItemIds = [first.id, missingId]
+        selectionManager.focusedItemId = first.id
+        selectionManager.lastSelectedId = first.id
+        selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
+
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, second.id])
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, missingId])
+        XCTAssertFalse(store.canUndo)
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

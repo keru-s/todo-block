@@ -130,7 +130,10 @@ struct MenuBarView: View {
 private extension MenuBarView {
     func addTodayItem() {
         _ = store.getOrCreateTodaySection()
-        let newItem = store.createItem(dayDate: Date())
+        let newItem = store.createItem(
+            dayDate: Date(),
+            selectionManager: selectionManager
+        )
         selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
     }
 

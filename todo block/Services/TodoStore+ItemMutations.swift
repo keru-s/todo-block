@@ -17,7 +17,8 @@ extension TodoStore {
         afterItem: TodoItem? = nil,
         indentLevel: Int = 0,
         containerKind: TodoContainerKind = .scheduled,
-        insertAtBeginning: Bool = false
+        insertAtBeginning: Bool = false,
+        selectionManager: SelectionManager? = nil
     ) -> TodoItem {
         let normalizedDate = Calendar.current.startOfDay(for: dayDate)
         let destination: TodoDropDestination = {
@@ -51,27 +52,46 @@ extension TodoStore {
             newSortOrder = 1000
         }
 
-        if containerKind == .scheduled {
-            _ = ensureSectionMaterialized(for: normalizedDate)
-        }
-
-        let newItem = TodoItem(
+        let snapshot = TodoItemSnapshot(
             title: title,
             indentLevel: indentLevel,
             sortOrder: newSortOrder,
             containerKindRaw: containerKind.rawValue,
             dayDate: normalizedDate
         )
-
-        todoItemsCache[newItem.id] = newItem
-
-        modelContext?.insert(newItem)
-        refreshTrigger += 1
-        scheduleSave()
-
-        undoManager.registerCreateItem(
-            itemId: newItem.id, previousItemId: afterItem?.id, store: self)
-
+        let selectionChanges: [TodoSelectionChange]
+        if let selectionManager {
+            selectionChanges = [
+                TodoSelectionChange(
+                    selectionManager: selectionManager,
+                    before: TodoSelectionState(selectionManager: selectionManager),
+                    after: TodoSelectionState(focusing: snapshot.id)
+                )
+            ]
+        } else {
+            selectionChanges = []
+        }
+        let operation = TodoOperation(
+            actionName: "新建",
+            itemExistenceChanges: [
+                TodoItemExistenceChange(
+                    snapshot: snapshot,
+                    beforeExists: false,
+                    afterExists: true
+                )
+            ],
+            selectionChanges: selectionChanges,
+            focusChange: TodoFocusChange(
+                before: selectionManager?.focusedItemId ?? afterItem?.id,
+                after: snapshot.id
+            )
+        )
+        guard
+            undoManager.perform(operation, store: self),
+            let newItem = todoItemsCache[snapshot.id]
+        else {
+            preconditionFailure("创建待办的统一操作未能应用")
+        }
         return newItem
     }
 
@@ -80,7 +100,10 @@ extension TodoStore {
     /// 然后复用 `createItem(afterItem:)` 的 sortOrder 平均逻辑落点。
     /// 若 item 已经是首项，走 `insertAtBeginning` 分支。
     @discardableResult
-    func createItemBefore(_ item: TodoItem) -> TodoItem {
+    func createItemBefore(
+        _ item: TodoItem,
+        selectionManager: SelectionManager? = nil
+    ) -> TodoItem {
         let predecessor = todoItemsCache.values
             .filter {
                 $0.containerKindRaw == item.containerKindRaw
@@ -94,7 +117,8 @@ extension TodoStore {
             afterItem: predecessor,
             indentLevel: item.indentLevel,
             containerKind: item.containerKind,
-            insertAtBeginning: predecessor == nil
+            insertAtBeginning: predecessor == nil,
+            selectionManager: selectionManager
         )
     }
 
@@ -159,8 +183,13 @@ extension TodoStore {
     /// 批量删除若干 item，注册单步撤销（"批量删除"）。
     /// 与逐条 `deleteItem` 相比，撤销原子性更高：一次 Cmd+Z 即可恢复全部。
     /// SelectionManager.deleteSelectedItems 是主要调用方。
-    func deleteItemsAsBatch(_ items: [TodoItem]) {
-        guard items.isEmpty == false else { return }
+    @discardableResult
+    func deleteItemsAsBatch(
+        _ items: [TodoItem],
+        selectionChange: TodoSelectionChange? = nil
+    ) -> Bool {
+        guard items.isEmpty == false else { return false }
+        guard items.allSatisfy({ todoItemsCache[$0.id] != nil }) else { return false }
 
         var expandedItems: [TodoItem] = []
         var expandedIds = Set<UUID>()
@@ -179,32 +208,27 @@ extension TodoStore {
                 expandedItems.append(item)
             }
         }
-        guard expandedItems.isEmpty == false else { return }
+        guard expandedItems.isEmpty == false else { return false }
 
         let snapshots = expandedItems.map { TodoItemSnapshot(from: $0) }
-
-        // 收集需要事后清理的 scheduled section 日期，去重
-        var scheduledDatesToCheck: Set<Date> = []
-        for item in expandedItems where item.containerKind == .scheduled {
-            scheduledDatesToCheck.insert(Calendar.current.startOfDay(for: item.dayDate))
-        }
-
-        // 全量删除（不在循环内注册逐条 undo）
-        for item in expandedItems {
-            todoItemsCache.removeValue(forKey: item.id)
-            modelContext?.delete(item)
-        }
-
-        // 删完后再回收空 section（顺序敏感：所有 item 已离开 cache，cleanup 才能识别空）
-        for date in scheduledDatesToCheck {
-            cleanupSectionIfEmpty(scheduledDate: date)
-        }
-
-        // 单步注册批量撤销
-        undoManager.registerDeleteItems(snapshots: snapshots, store: self)
-
-        refreshTrigger += 1
-        scheduleSave()
+        let operation = TodoOperation(
+            actionName: snapshots.count == 1 ? "删除" : "批量删除",
+            itemExistenceChanges: snapshots.map {
+                TodoItemExistenceChange(
+                    snapshot: $0,
+                    beforeExists: true,
+                    afterExists: false
+                )
+            },
+            selectionChanges: selectionChange.map { [$0] } ?? [],
+            focusChange: selectionChange.map {
+                TodoFocusChange(
+                    before: $0.before.focusedItemId,
+                    after: $0.after.focusedItemId
+                )
+            }
+        )
+        return undoManager.perform(operation, store: self)
     }
 
     /// 恢复已删除的待办事项

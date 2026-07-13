@@ -56,11 +56,15 @@ enum TodoEditorActionFactory {
                 let newItem: TodoItem
                 switch normalizedDestination {
                 case .scheduled(let date):
-                    newItem = store.createItem(dayDate: date)
+                    newItem = store.createItem(
+                        dayDate: date,
+                        selectionManager: selectionManager
+                    )
                 case .longTerm(let isUrgent):
                     newItem = store.createItem(
                         dayDate: Date(),
-                        containerKind: isUrgent ? .longTermUrgent : .longTermImportant
+                        containerKind: isUrgent ? .longTermUrgent : .longTermImportant,
+                        selectionManager: selectionManager
                     )
                 }
                 selectionManager.handleSelect(
@@ -79,10 +83,14 @@ enum TodoEditorActionFactory {
                         dayDate: item.dayDate,
                         afterItem: item,
                         indentLevel: item.indentLevel,
-                        containerKind: item.containerKind
+                        containerKind: item.containerKind,
+                        selectionManager: selectionManager
                     )
                 case .insertSiblingAbove:
-                    newItem = store.createItemBefore(item)
+                    newItem = store.createItemBefore(
+                        item,
+                        selectionManager: selectionManager
+                    )
                 case .splitIntoChild(let newCurrentTitle, let childTitle):
                     newItem = store.splitItem(
                         item,

@@ -205,6 +205,8 @@ final class SelectionManager {
         guard !selectedItemIds.isEmpty else { return }
 
         let itemsToDelete = selectedItemIds.compactMap { id in store.todoItemsCache[id] }
+        guard itemsToDelete.count == selectedItemIds.count else { return }
+        let selectionBefore = TodoSelectionState(selectionManager: self)
         var deletedItemIds = Set<UUID>()
         let selectedByDate = Dictionary(grouping: itemsToDelete) {
             Calendar.current.startOfDay(for: $0.dayDate)
@@ -262,17 +264,11 @@ final class SelectionManager {
             }
         }
 
-        // 单步批量删除：一次 Cmd+Z 整体恢复，避免逐条注册撤销
-        store.deleteItemsAsBatch(itemsToDelete)
-
-        // 重置状态
-        selectedItemIds.removeAll()
-
-        // 恢复焦点
-        focusedItemId = nextFocusId
-        if let nextId = nextFocusId {
-            selectedItemIds = [nextId]
-            lastSelectedId = nextId
-        }
+        let selectionChange = TodoSelectionChange(
+            selectionManager: self,
+            before: selectionBefore,
+            after: TodoSelectionState(focusing: nextFocusId)
+        )
+        _ = store.deleteItemsAsBatch(itemsToDelete, selectionChange: selectionChange)
     }
 }
