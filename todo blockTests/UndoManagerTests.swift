@@ -364,27 +364,41 @@ final class UndoManagerTests: XCTestCase {
     }
 
     /// #3: 失效 undo（目标 item 已被外部路径删除）应自动跳过到下一个仍有效的 undo 步骤。
-    func testStaleUndoSkipsToNextStep() async throws {
+    func testStaleUndoSynchronouslySkipsToNextValidStep() {
         let store = TodoStore.shared
         let date = Date()
 
         store.undoManager.clear()
         let a = store.createItem(title: "A", dayDate: date)
-        _ = store.createItem(title: "B", dayDate: date)
+        let b = store.createItem(title: "B", dayDate: date)
 
-        // 绕过 deleteItem 注册的 undo，模拟"其他路径删除了 a"
-        store.deleteItemWithoutUndo(a)
+        // 绕过 deleteItem 注册的 undo，让栈顶的“创建 B”记录失效。
+        store.deleteItemWithoutUndo(b)
         XCTAssertEqual(store.items(for: date).count, 1)
 
-        // 栈顶 undo（创建 B）仍有效
-        store.undo()
+        XCTAssertTrue(store.undo(), "一次撤销应跳过失效记录并执行更早的有效记录")
+        XCTAssertNil(store.todoItemsCache[a.id])
         XCTAssertEqual(store.items(for: date).count, 0)
-
-        // 再撤销：命中"创建 A"的 undo，但 A 已不在 cache → skipStaleUndo 触发
-        // skipStaleUndo 用 Task 异步再 undo 一次，等一个 main tick
-        store.undo()
-        try await Task.sleep(for: .milliseconds(80))
         XCTAssertFalse(store.canUndo, "失效 undo 步骤应被跳过，整个栈应清空")
+    }
+
+    func testStaleLegacyRedoIsDiscardedWithoutRunningUndoDirection() {
+        let store = TodoStore.shared
+        let date = Date()
+
+        let item = store.createItem(title: "A", dayDate: date)
+        store.undoManager.clear()
+        store.deleteItem(item)
+        XCTAssertTrue(store.undo())
+
+        guard let restored = store.todoItemsCache[item.id] else {
+            return XCTFail("撤销删除后应恢复项目")
+        }
+        store.deleteItemWithoutUndo(restored)
+
+        XCTAssertFalse(store.redo(), "失效的恢复记录应被丢弃，不能报告为已执行")
+        XCTAssertFalse(store.canRedo)
+        XCTAssertNil(store.todoItemsCache[item.id], "跳过失效恢复时不能反向执行撤销")
     }
 
     /// #7: 批量删除的撤销必须能 redo，与单条 registerDeleteItem 行为对称。

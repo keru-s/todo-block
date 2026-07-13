@@ -76,12 +76,12 @@ final class TodoUndoManager {
     private let maxUndoSteps = 50
 
     private enum InvocationResult {
-        case untracked
+        case legacyApplied
         case applied
         case invalid
     }
 
-    private var invocationResult = InvocationResult.untracked
+    private var invocationResult = InvocationResult.legacyApplied
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -154,19 +154,16 @@ final class TodoUndoManager {
         }
     }
 
-    // MARK: - 失效 undo 跳过
+    // MARK: - 失效记录跳过
 
-    /// 当 undo 闭包的目标 item 已不在缓存（被外部路径删除）时调用。
-    /// 通过下一 main tick 再触发一次 undo，让 NSUndoManager 跳过失效步骤，
-    /// 避免用户体验"按 Cmd+Z 没反应、再按一下做的是更早的事"。
-    /// 不在同步内调 nsUndoManager.undo()，避免 isUndoing 期间重入。
-    private func skipStaleUndo() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            if self.nsUndoManager.canUndo {
-                self.nsUndoManager.undo()
-            }
-        }
+    /// 旧式闭包无法执行时只上报失效，由外层 undo / redo 循环继续寻找有效记录。
+    /// 不在闭包内重入 UndoManager，确保撤销与恢复使用各自正确的方向。
+    private func markCurrentInvocationInvalid() {
+        invocationResult = .invalid
+    }
+
+    private func markCurrentInvocationApplied() {
+        invocationResult = .applied
     }
 
     // MARK: - 注册撤销操作
@@ -179,15 +176,17 @@ final class TodoUndoManager {
     func registerCreateItem(itemId: UUID, previousItemId: UUID?, store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             guard let item = store.todoItemsCache[itemId] else {
-                self?.skipStaleUndo()
+                self?.markCurrentInvocationInvalid()
                 return
             }
+            self?.markCurrentInvocationApplied()
             // 保存快照用于 redo
             let snapshot = TodoItemSnapshot(from: item)
             store.deleteItemWithoutUndo(item)
             store.requestFocus(previousItemId)
             // 注册 redo 操作（恢复 item）
             self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+                self?.markCurrentInvocationApplied()
                 store.restoreItem(from: snapshot)
                 store.requestFocus(itemId)
                 // 再次注册 undo 操作
@@ -202,14 +201,16 @@ final class TodoUndoManager {
     /// 注册删除 Item 的撤销（撤销时恢复该 Item，redo 时删除）
     func registerDeleteItem(snapshot: TodoItemSnapshot, store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            self?.markCurrentInvocationApplied()
             store.restoreItem(from: snapshot)
             store.requestFocus(snapshot.id)
             // 注册 redo 操作（再次删除 item）
             self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 guard let item = store.todoItemsCache[snapshot.id] else {
-                    self?.skipStaleUndo()
+                    self?.markCurrentInvocationInvalid()
                     return
                 }
+                self?.markCurrentInvocationApplied()
                 store.deleteItemWithoutUndo(item)
                 // 再次注册 undo 操作
                 self?.registerDeleteItem(snapshot: snapshot, store: store)
@@ -222,16 +223,21 @@ final class TodoUndoManager {
     /// 注册批量删除的撤销（支持对称 redo）
     func registerDeleteItems(snapshots: [TodoItemSnapshot], store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            self?.markCurrentInvocationApplied()
             // undo: 恢复所有 snapshot
             for snapshot in snapshots.reversed() {
                 store.restoreItem(from: snapshot)
             }
             // 注册 redo: 再次批量删除
             self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-                for snapshot in snapshots {
-                    if let item = store.todoItemsCache[snapshot.id] {
-                        store.deleteItemWithoutUndo(item)
-                    }
+                let items = snapshots.compactMap { store.todoItemsCache[$0.id] }
+                guard items.count == snapshots.count else {
+                    self?.markCurrentInvocationInvalid()
+                    return
+                }
+                self?.markCurrentInvocationApplied()
+                for item in items {
+                    store.deleteItemWithoutUndo(item)
                 }
                 // 再注册 undo
                 self?.registerDeleteItems(snapshots: snapshots, store: store)
@@ -252,16 +258,20 @@ final class TodoUndoManager {
     ) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             guard let item = store.todoItemsCache[itemId] else {
-                self?.skipStaleUndo()
+                self?.markCurrentInvocationInvalid()
                 return
             }
+            let childItems = childOldStates.compactMap { store.todoItemsCache[$0.0] }
+            guard childItems.count == childOldStates.count else {
+                self?.markCurrentInvocationInvalid()
+                return
+            }
+            self?.markCurrentInvocationApplied()
             item.isCompleted = oldState
             item.updatedAt = Date()
-            for (childId, childState) in childOldStates {
-                if let child = store.todoItemsCache[childId] {
-                    child.isCompleted = childState
-                    child.updatedAt = Date()
-                }
+            for (child, (_, childState)) in zip(childItems, childOldStates) {
+                child.isCompleted = childState
+                child.updatedAt = Date()
             }
             self?.registerToggleComplete(
                 itemId: itemId,
@@ -305,9 +315,10 @@ final class TodoUndoManager {
     ) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
             guard let item = store.todoItemsCache[itemId] else {
-                self?.skipStaleUndo()
+                self?.markCurrentInvocationInvalid()
                 return
             }
+            self?.markCurrentInvocationApplied()
             apply(item, oldValue)
             item.updatedAt = Date()
             self?.registerItemFieldChange(
@@ -322,27 +333,25 @@ final class TodoUndoManager {
     /// 注册移动 Items 的撤销
     func registerMoveItems(from oldSnapshots: [TodoItemSnapshot], to newSnapshots: [TodoItemSnapshot], store: TodoStore) {
         nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            let items = oldSnapshots.compactMap { store.todoItemsCache[$0.id] }
+            guard items.count == oldSnapshots.count else {
+                self?.markCurrentInvocationInvalid()
+                return
+            }
             // 先把可能被孤儿清理删掉的源 DaySection 重建回来，否则下面写 dayDate
             // 时该日没有 section，UI 端就会出现"item 有日期但月份列表里看不到"的悬空状态。
             for snapshot in oldSnapshots
             where snapshot.containerKindRaw == TodoContainerKind.scheduled.rawValue {
                 _ = store.getOrCreateSection(for: snapshot.dayDate)
             }
-            var anyApplied = false
-            for snapshot in oldSnapshots {
-                if let item = store.todoItemsCache[snapshot.id] {
-                    item.containerKindRaw = snapshot.containerKindRaw
-                    item.dayDate = snapshot.dayDate
-                    item.sortOrder = snapshot.sortOrder
-                    item.indentLevel = snapshot.indentLevel
-                    item.updatedAt = Date()
-                    anyApplied = true
-                }
+            for (item, snapshot) in zip(items, oldSnapshots) {
+                item.containerKindRaw = snapshot.containerKindRaw
+                item.dayDate = snapshot.dayDate
+                item.sortOrder = snapshot.sortOrder
+                item.indentLevel = snapshot.indentLevel
+                item.updatedAt = Date()
             }
-            guard anyApplied else {
-                self?.skipStaleUndo()
-                return
-            }
+            self?.markCurrentInvocationApplied()
             self?.registerMoveItems(from: newSnapshots, to: oldSnapshots, store: store)
             store.scheduleSave()
         }
@@ -353,12 +362,12 @@ final class TodoUndoManager {
     @discardableResult
     func undo() -> Bool {
         while nsUndoManager.canUndo {
-            invocationResult = .untracked
+            invocationResult = .legacyApplied
             nsUndoManager.undo()
             switch invocationResult {
             case .invalid:
                 continue
-            case .applied, .untracked:
+            case .applied, .legacyApplied:
                 return true
             }
         }
@@ -369,12 +378,12 @@ final class TodoUndoManager {
     @discardableResult
     func redo() -> Bool {
         while nsUndoManager.canRedo {
-            invocationResult = .untracked
+            invocationResult = .legacyApplied
             nsUndoManager.redo()
             switch invocationResult {
             case .invalid:
                 continue
-            case .applied, .untracked:
+            case .applied, .legacyApplied:
                 return true
             }
         }
