@@ -191,6 +191,17 @@ struct TodoItemSnapshot {
             && item.createdAt == createdAt
     }
 
+    func matchesUserState(of snapshot: TodoItemSnapshot) -> Bool {
+        snapshot.id == id
+            && snapshot.title == title
+            && snapshot.isCompleted == isCompleted
+            && snapshot.indentLevel == indentLevel
+            && snapshot.sortOrder == sortOrder
+            && snapshot.containerKindRaw == containerKindRaw
+            && snapshot.dayDate == dayDate
+            && snapshot.createdAt == createdAt
+    }
+
     func replacing(
         indentLevel: Int? = nil,
         sortOrder: Double? = nil,
@@ -232,7 +243,6 @@ final class TodoUndoManager {
     }
 
     private var invocationResult = InvocationResult.legacyApplied
-    private var suppressesRegistration = false
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -254,25 +264,8 @@ final class TodoUndoManager {
         guard canApply(operation, target: .after, store: store) else { return false }
 
         guard apply(operation, target: .after, store: store) else { return false }
-        if suppressesRegistration == false {
-            register(operation, target: .before, store: store)
-        }
-        store.scheduleSave()
-        return true
-    }
-
-    func performWithoutRecording(_ body: () -> Bool) -> Bool {
-        let wasSuppressingRegistration = suppressesRegistration
-        suppressesRegistration = true
-        defer { suppressesRegistration = wasSuppressingRegistration }
-        return body()
-    }
-
-    @discardableResult
-    func recordApplied(_ operation: TodoOperation, store: TodoStore) -> Bool {
-        guard operation.isEmpty == false else { return false }
-        guard canApply(operation, target: .before, store: store) else { return false }
         register(operation, target: .before, store: store)
+        store.scheduleSave()
         return true
     }
 

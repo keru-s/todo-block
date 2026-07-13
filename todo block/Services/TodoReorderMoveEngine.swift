@@ -8,9 +8,10 @@ enum TodoReorderMoveEngine {
         items: [TodoItem],
         destination: TodoDropDestination,
         store: TodoStore,
-        selectionManager: SelectionManager? = nil
-    ) {
-        guard let draggedItem = store.todoItemsCache[draggedId] else { return }
+        selectionManager: SelectionManager? = nil,
+        selectionAfter: TodoSelectionState? = nil
+    ) -> Bool {
+        guard let draggedItem = store.todoItemsCache[draggedId] else { return false }
 
         let normalizedToIndex = min(max(toIndex, 0), items.count)
         var remainingItems = items
@@ -26,7 +27,7 @@ enum TodoReorderMoveEngine {
         {
             if normalizedToIndex >= movingBlock.range.lowerBound,
                normalizedToIndex <= movingBlock.range.upperBound {
-                return
+                return false
             }
             movingItemIds = Set(movingBlock.itemIds)
             remainingItems.removeAll { movingItemIds.contains($0.id) }
@@ -51,12 +52,13 @@ enum TodoReorderMoveEngine {
             clampedIndentLevel = 0
         }
 
-        store.moveItemWithChildren(
+        return store.moveItemWithChildren(
             draggedItem,
             to: normalizedDestination,
             afterItem: afterItem,
             newIndentLevel: clampedIndentLevel,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            selectionAfter: selectionAfter
         )
     }
 }

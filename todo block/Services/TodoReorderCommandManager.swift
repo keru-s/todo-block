@@ -66,13 +66,11 @@ final class TodoReorderCommandManager {
             return false
         }
 
-        let originalFocusedItemId = selectionManager.focusedItemId
         let selectionBefore = TodoSelectionState(selectionManager: selectionManager)
         let selectedByDestination = Dictionary(grouping: selectedItems) {
             store.destination(for: $0).normalized
         }
-        var rootsByDestination: [(TodoDropDestination, [UUID])] = []
-        var beforeSnapshotsById: [UUID: TodoItemSnapshot] = [:]
+        var stateChanges: [TodoItemStateChange] = []
 
         for (destination, destinationSelection) in selectedByDestination {
             let currentItems = store.items(in: destination)
@@ -81,74 +79,150 @@ final class TodoReorderCommandManager {
                 in: currentItems
             )
             guard rootIds.isEmpty == false else { return false }
-            guard rootIds.allSatisfy({ rootId in
-                TodoKeyboardReorderEngine.movementPlan(
-                    itemId: rootId,
-                    direction: direction,
-                    items: currentItems
-                ) != nil
-            }) else {
-                return false
-            }
-            rootsByDestination.append((destination, rootIds))
-            for item in currentItems {
-                beforeSnapshotsById[item.id] = TodoItemSnapshot(from: item)
-            }
+            guard let destinationChanges = plannedStateChanges(
+                direction: direction,
+                rootIds: rootIds,
+                items: currentItems
+            ) else { return false }
+            stateChanges.append(contentsOf: destinationChanges)
         }
 
-        let didMoveAllBlocks = store.undoManager.performWithoutRecording {
-            for (destination, rootIds) in rootsByDestination {
-                let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
-                for rootId in moveOrder {
-                    guard TodoKeyboardReorderEngine.move(
-                        itemId: rootId,
-                        direction: direction,
-                        items: store.items(in: destination),
-                        destination: destination,
-                        store: store,
-                        selectionManager: selectionManager
-                    ) else {
-                        return false
-                    }
-                }
-            }
-            return true
-        }
-        guard didMoveAllBlocks else {
-            _ = store.applyExistingItemSnapshots(Array(beforeSnapshotsById.values))
-            selectionBefore.apply(to: selectionManager)
-            return false
-        }
-
-        selectionManager.selectedItemIds = selectedIds
-        selectionManager.focusedItemId = originalFocusedItemId
-        selectionManager.lastSelectedId = originalFocusedItemId
-
-        let stateChanges = beforeSnapshotsById.values.compactMap { before -> TodoItemStateChange? in
-            guard
-                let item = store.todoItemsCache[before.id],
-                before.matchesUserState(of: item) == false
-            else { return nil }
-            return TodoItemStateChange(before: before, after: TodoItemSnapshot(from: item))
-        }
-        let selectionAfter = TodoSelectionState(selectionManager: selectionManager)
-        let operation = TodoOperation(
-            actionName: "移动",
-            itemStateChanges: stateChanges,
-            selectionChanges: [
-                TodoSelectionChange(
-                    selectionManager: selectionManager,
-                    before: selectionBefore,
-                    after: selectionAfter
-                )
-            ]
+        return store.undoManager.perform(
+            TodoOperation(
+                actionName: "移动",
+                itemStateChanges: stateChanges,
+                selectionChanges: [
+                    TodoSelectionChange(
+                        selectionManager: selectionManager,
+                        before: selectionBefore,
+                        after: selectionBefore
+                    )
+                ]
+            ),
+            store: store
         )
-        guard store.undoManager.recordApplied(operation, store: store) else {
-            _ = store.applyExistingItemSnapshots(Array(beforeSnapshotsById.values))
-            selectionBefore.apply(to: selectionManager)
-            return false
+    }
+
+    private static func plannedStateChanges(
+        direction: TodoKeyboardReorderDirection,
+        rootIds: [UUID],
+        items: [TodoItem]
+    ) -> [TodoItemStateChange]? {
+        let beforeSnapshots = items.map { TodoItemSnapshot(from: $0) }
+        var workingSnapshots = beforeSnapshots
+        let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
+
+        for rootId in moveOrder {
+            guard let moved = plannedMove(
+                itemId: rootId,
+                direction: direction,
+                snapshots: workingSnapshots
+            ) else { return nil }
+            workingSnapshots = moved
         }
 
-        return true
+        let afterById = Dictionary(uniqueKeysWithValues: workingSnapshots.map { ($0.id, $0) })
+        return beforeSnapshots.compactMap { before in
+            guard
+                let after = afterById[before.id],
+                before.matchesUserState(of: after) == false
+            else { return nil }
+            return TodoItemStateChange(before: before, after: after)
+        }
+    }
+
+    private static func plannedMove(
+        itemId: UUID,
+        direction: TodoKeyboardReorderDirection,
+        snapshots: [TodoItemSnapshot]
+    ) -> [TodoItemSnapshot]? {
+        guard let currentIndex = snapshots.firstIndex(where: { $0.id == itemId }) else {
+            return nil
+        }
+        let indentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
+            snapshots.map(\.indentLevel),
+            baseIndentLevel: 0
+        )
+        let movingRange = blockRange(
+            startingAt: currentIndex,
+            indentLevels: indentLevels
+        )
+        let rootIndentLevel = indentLevels[currentIndex]
+        let targetInsertIndex: Int
+
+        switch direction {
+        case .up:
+            guard movingRange.lowerBound > 0 else { return nil }
+            var precedingStart = movingRange.lowerBound - 1
+            while precedingStart > 0, indentLevels[precedingStart] > rootIndentLevel {
+                precedingStart -= 1
+            }
+            targetInsertIndex = precedingStart
+        case .down:
+            let nextBlockStart = movingRange.upperBound
+            guard snapshots.indices.contains(nextBlockStart) else { return nil }
+            if rootIndentLevel > indentLevels[nextBlockStart] {
+                targetInsertIndex = nextBlockStart + 1
+            } else {
+                targetInsertIndex = blockRange(
+                    startingAt: nextBlockStart,
+                    indentLevels: indentLevels
+                ).upperBound
+            }
+        }
+
+        let movingSnapshots = movingRange.map { snapshots[$0] }
+        let movingIds = Set(movingSnapshots.map(\.id))
+        let remainingSnapshots = snapshots.filter { movingIds.contains($0.id) == false }
+        let removedBeforeInsert = snapshots.prefix(targetInsertIndex).reduce(into: 0) {
+            count, snapshot in
+            if movingIds.contains(snapshot.id) { count += 1 }
+        }
+        let adjustedInsertIndex = min(
+            max(0, targetInsertIndex - removedBeforeInsert),
+            remainingSnapshots.count
+        )
+        let afterSnapshot = adjustedInsertIndex > 0
+            ? remainingSnapshots[adjustedInsertIndex - 1]
+            : nil
+        let baseSortOrder: Double
+        let stepSize: Double
+        if let afterSnapshot,
+           let afterIndex = remainingSnapshots.firstIndex(where: { $0.id == afterSnapshot.id }) {
+            if afterIndex + 1 < remainingSnapshots.count {
+                let gap = remainingSnapshots[afterIndex + 1].sortOrder - afterSnapshot.sortOrder
+                stepSize = gap / Double(movingSnapshots.count + 1)
+                baseSortOrder = afterSnapshot.sortOrder + stepSize
+            } else {
+                baseSortOrder = afterSnapshot.sortOrder + 1000
+                stepSize = 0.001
+            }
+        } else if let firstSnapshot = remainingSnapshots.first {
+            baseSortOrder = firstSnapshot.sortOrder - 1000
+            stepSize = 0.001
+        } else {
+            baseSortOrder = 1000
+            stepSize = 0.001
+        }
+
+        let movedSnapshots = movingSnapshots.enumerated().map { offset, snapshot in
+            snapshot.replacing(
+                indentLevel: indentLevels[movingRange.lowerBound + offset],
+                sortOrder: baseSortOrder + Double(offset) * stepSize
+            )
+        }
+        return (remainingSnapshots + movedSnapshots).sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    private static func blockRange(
+        startingAt startIndex: Int,
+        indentLevels: [Int]
+    ) -> Range<Int> {
+        let rootIndentLevel = indentLevels[startIndex]
+        var endIndex = startIndex + 1
+        while endIndex < indentLevels.count, indentLevels[endIndex] > rootIndentLevel {
+            endIndex += 1
+        }
+        return startIndex..<endIndex
     }
 }

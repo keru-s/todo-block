@@ -156,21 +156,21 @@ enum TodoEditorActionFactory {
                     items: store.items(in: destination),
                     destination: destination,
                     store: store,
-                    selectionManager: selectionManager
+                    selectionManager: selectionManager,
+                    selectionAfter: TodoSelectionState(focusing: itemId)
                 )
-                selectionManager.restoreFocus(to: itemId)
             },
             moveDraggedItem: { itemId, destination, toIndex, indentLevel in
-                TodoReorderMoveEngine.performMove(
+                _ = TodoReorderMoveEngine.performMove(
                     draggedId: itemId,
                     toIndex: toIndex,
                     indentLevel: indentLevel,
                     items: store.items(in: destination),
                     destination: destination,
                     store: store,
-                    selectionManager: selectionManager
+                    selectionManager: selectionManager,
+                    selectionAfter: TodoSelectionState(focusing: itemId)
                 )
-                selectionManager.restoreFocus(to: itemId)
             },
             moveDraggedItemToSidebar: { itemId, destination in
                 guard let item = store.todoItemsCache[itemId] else { return }
@@ -182,7 +182,8 @@ enum TodoEditorActionFactory {
                         to: .longTerm(isUrgent: false),
                         afterItem: nil,
                         newIndentLevel: 0,
-                        selectionManager: selectionManager
+                        selectionManager: selectionManager,
+                        selectionAfter: TodoSelectionState(focusing: itemId)
                     )
                 case .month(let year, let month):
                     let target = store.tailItemForScheduledMonth(year: year, month: month)
@@ -191,10 +192,10 @@ enum TodoEditorActionFactory {
                         to: .scheduled(date: target.date),
                         afterItem: nil,
                         newIndentLevel: 0,
-                        selectionManager: selectionManager
+                        selectionManager: selectionManager,
+                        selectionAfter: TodoSelectionState(focusing: itemId)
                     )
                 }
-                selectionManager.restoreFocus(to: itemId)
             },
             sectionDateChanged: { sectionId, newDate in
                 guard let section = sectionById(sectionId) else { return }

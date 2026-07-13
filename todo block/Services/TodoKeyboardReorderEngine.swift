@@ -33,7 +33,8 @@ enum TodoKeyboardReorderEngine {
         items: [TodoItem],
         destination: TodoDropDestination,
         store: TodoStore,
-        selectionManager: SelectionManager? = nil
+        selectionManager: SelectionManager? = nil,
+        selectionAfter: TodoSelectionState? = nil
     ) -> Bool {
         guard
             let item = store.todoItemsCache[itemId],
@@ -48,7 +49,8 @@ enum TodoKeyboardReorderEngine {
             to: destination,
             afterItem: afterItem,
             newIndentLevel: plan.indentLevel,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            selectionAfter: selectionAfter
         )
     }
 

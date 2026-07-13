@@ -385,7 +385,8 @@ extension TodoStore {
         to destination: TodoDropDestination,
         afterItem: TodoItem?,
         newIndentLevel: Int,
-        selectionManager: SelectionManager? = nil
+        selectionManager: SelectionManager? = nil,
+        selectionAfter: TodoSelectionState? = nil
     ) -> Bool {
         let normalizedDestination = destination.normalized
         let sourceDestination = self.destination(for: item)
@@ -485,8 +486,14 @@ extension TodoStore {
         }
 
         let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
-            let state = TodoSelectionState(selectionManager: manager)
-            return [TodoSelectionChange(selectionManager: manager, before: state, after: state)]
+            let before = TodoSelectionState(selectionManager: manager)
+            return [
+                TodoSelectionChange(
+                    selectionManager: manager,
+                    before: before,
+                    after: selectionAfter ?? before
+                )
+            ]
         } ?? []
         return undoManager.perform(
             TodoOperation(

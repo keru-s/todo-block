@@ -45,11 +45,43 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         let child = store.createItem(title: "child", dayDate: day, afterItem: moving, indentLevel: 1)
         let next = store.createItem(title: "next", dayDate: day, afterItem: child, indentLevel: 0)
         let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+        selectionManager.selectedItemIds = [moving.id, next.id]
+        selectionManager.focusedItemId = next.id
+        selectionManager.lastSelectedId = next.id
+        store.undoManager.clear()
 
         actions.moveItemByKeyboard(moving.id, .down)
 
         XCTAssertEqual(store.items(for: day).map(\.id), [next.id, moving.id, child.id])
         XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(selectionManager.focusedItemId, next.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id, next.id])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+    }
+
+    func testInvalidKeyboardMoveDoesNotChangeSelectionOrHistory() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let first = store.createItem(title: "first", dayDate: day)
+        let second = store.createItem(title: "second", dayDate: day, afterItem: first)
+        let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+        selectionManager.selectedItemIds = [first.id, second.id]
+        selectionManager.focusedItemId = second.id
+        selectionManager.lastSelectedId = second.id
+        store.undoManager.clear()
+
+        actions.moveItemByKeyboard(first.id, .up)
+
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, second.id])
+        XCTAssertEqual(selectionManager.focusedItemId, second.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, second.id])
+        XCTAssertFalse(store.canUndo)
     }
 
     func testDragSelectionActionsSelectContinuousRange() {
@@ -92,6 +124,10 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 1)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
         let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+        selectionManager.selectedItemIds = [parent.id, child.id]
+        selectionManager.focusedItemId = child.id
+        selectionManager.lastSelectedId = child.id
+        store.undoManager.clear()
 
         actions.moveDraggedItemToSidebar(parent.id, .longTerm)
 
@@ -102,7 +138,16 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(parent.indentLevel, 0)
         XCTAssertEqual(child.indentLevel, 1)
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
         XCTAssertTrue(store.items(for: day).isEmpty)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(selectionManager.focusedItemId, child.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, child.id])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
     }
 
     func testMoveDraggedItemAcrossLongTermBucketsKeepsParentChildBlock() {
@@ -127,6 +172,10 @@ final class TodoEditorActionFactoryTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+        selectionManager.selectedItemIds = [parent.id, target.id]
+        selectionManager.focusedItemId = target.id
+        selectionManager.lastSelectedId = target.id
+        store.undoManager.clear()
 
         actions.moveDraggedItem(parent.id, .longTerm(isUrgent: false), 1, 1)
 
@@ -137,6 +186,15 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(parent.indentLevel, 1)
         XCTAssertEqual(child.indentLevel, 2)
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(selectionManager.focusedItemId, target.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, target.id])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
     }
 
     func testMoveDraggedItemToMonthSidebarUsesLatestDateAndKeepsParentChildBlock() {
