@@ -7,10 +7,41 @@ struct TodoHierarchyBlock: Equatable {
 }
 
 enum TodoHierarchyBlockEngine {
+    static func topLevelBlocks(in items: [TodoItem]) -> [TodoHierarchyBlock] {
+        let indentLevels = normalizedIndentLevels(in: items)
+        var blocks: [TodoHierarchyBlock] = []
+        var startIndex = 0
+
+        while startIndex < items.count {
+            guard let block = block(
+                startingAt: startIndex,
+                in: items,
+                normalizedIndentLevels: indentLevels
+            ) else { break }
+            blocks.append(block)
+            startIndex = block.range.upperBound
+        }
+
+        return blocks
+    }
+
     static func block(startingAt startIndex: Int, in items: [TodoItem]) -> TodoHierarchyBlock? {
         guard items.indices.contains(startIndex) else { return nil }
 
-        let indentLevels = normalizedIndentLevels(in: items)
+        return block(
+            startingAt: startIndex,
+            in: items,
+            normalizedIndentLevels: normalizedIndentLevels(in: items)
+        )
+    }
+
+    private static func block(
+        startingAt startIndex: Int,
+        in items: [TodoItem],
+        normalizedIndentLevels indentLevels: [Int]
+    ) -> TodoHierarchyBlock? {
+        guard items.indices.contains(startIndex) else { return nil }
+
         let rootIndentLevel = indentLevels[startIndex]
         var endIndex = startIndex + 1
 

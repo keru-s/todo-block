@@ -140,6 +140,78 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertFalse(child2.isCompleted)
     }
 
+    func testCarryOverMovesIncompleteTopLevelBlockWithNestedStructure() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now))
+        let parent = store.createItem(title: "parent", dayDate: previousDate, indentLevel: 2)
+        let child = store.createItem(
+            title: "child", dayDate: previousDate, afterItem: parent, indentLevel: 4)
+        let grandchild = store.createItem(
+            title: "grandchild", dayDate: previousDate, afterItem: child, indentLevel: 2)
+        store.undoManager.clear()
+
+        let todaySection = store.carryOverIncompleteItems()
+        let carriedItems = store.items(for: todaySection.date)
+
+        XCTAssertEqual(carriedItems.map(\.title), ["parent", "child", "grandchild"])
+        XCTAssertEqual(carriedItems.map(\.indentLevel), [0, 1, 2])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: previousDate).map(\.indentLevel),
+            [2, 4, 2]
+        )
+        XCTAssertEqual(grandchild.dayDate, Calendar.current.startOfDay(for: previousDate))
+    }
+
+    func testCarryOverSkipsReopenedChildOfCompletedTopLevelParent() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now))
+        let parent = store.createItem(title: "parent", dayDate: previousDate, indentLevel: 0)
+        let child = store.createItem(
+            title: "child", dayDate: previousDate, afterItem: parent, indentLevel: 1)
+        parent.isCompleted = true
+        child.isCompleted = false
+
+        let todaySection = store.carryOverIncompleteItems()
+
+        XCTAssertTrue(store.items(for: todaySection.date).isEmpty)
+        XCTAssertEqual(store.items(for: previousDate).map(\.title), ["parent", "child"])
+    }
+
+    func testCarryOverCopiesParentAndKeepsIncompleteDescendantStructure() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now))
+        let parent = store.createItem(title: "parent", dayDate: previousDate, indentLevel: 0)
+        let completedChild = store.createItem(
+            title: "completed", dayDate: previousDate, afterItem: parent, indentLevel: 1)
+        let incompleteGrandchild = store.createItem(
+            title: "incomplete", dayDate: previousDate, afterItem: completedChild, indentLevel: 2)
+        completedChild.isCompleted = true
+        store.undoManager.clear()
+
+        let todaySection = store.carryOverIncompleteItems()
+        let carriedItems = store.items(for: todaySection.date)
+
+        XCTAssertEqual(carriedItems.map(\.title), ["parent", "incomplete"])
+        XCTAssertEqual(carriedItems.map(\.indentLevel), [0, 1])
+        XCTAssertEqual(store.items(for: previousDate).map(\.title), ["parent", "completed"])
+        XCTAssertEqual(incompleteGrandchild.indentLevel, 1)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.items(for: todaySection.date).isEmpty)
+        XCTAssertEqual(
+            store.items(for: previousDate).map(\.title),
+            ["parent", "completed", "incomplete"]
+        )
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: todaySection.date).map(\.title), ["parent", "incomplete"])
+    }
+
     func testMoveItemToAnotherMonthUsesLatestDateTail() {
         let store = TodoStore.shared
         let januaryDate = date(year: 2026, month: 1, day: 10)

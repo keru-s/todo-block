@@ -43,6 +43,23 @@ final class TodoHierarchyBlockEngineTests: XCTestCase {
         XCTAssertNil(TodoHierarchyBlockEngine.block(startingAt: items.count, in: items))
     }
 
+    func testTopLevelBlocksUseNormalizedHierarchyBoundaries() {
+        let items = [
+            TodoItem(title: "first", indentLevel: 2),
+            TodoItem(title: "jump", indentLevel: 4),
+            TodoItem(title: "second", indentLevel: 0),
+            TodoItem(title: "child", indentLevel: 3),
+        ]
+
+        let blocks = TodoHierarchyBlockEngine.topLevelBlocks(in: items)
+
+        XCTAssertEqual(blocks.map(\.range), [0..<2, 2..<4])
+        XCTAssertEqual(blocks.map(\.itemIds), [
+            Array(items[0..<2]).map(\.id),
+            Array(items[2..<4]).map(\.id),
+        ])
+    }
+
     func testPrecedingBlockStartSkipsPreviousBlocksDescendants() throws {
         let items = [
             TodoItem(title: "previous", indentLevel: 0),

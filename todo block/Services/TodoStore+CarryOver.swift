@@ -8,7 +8,7 @@ import Foundation
 extension TodoStore {
     /// 查找最近一个日期在今天之前的 DaySection（不一定是严格的"昨天"）。
     func findPreviousDaySection() -> DaySection? {
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = Calendar.current.startOfDay(for: .now)
         return validDaySections
             .filter { $0.date < today }
             .max(by: { $0.date < $1.date })
@@ -29,8 +29,10 @@ extension TodoStore {
         let previousItems = items(for: previousSection.date)
         guard !previousItems.isEmpty else { return todaySection }
 
-        let blocks = parseItemBlocks(previousItems)
-        let incompleteBlocks = blocks.filter { !$0.parent.isCompleted }
+        let blocks = TodoHierarchyBlockEngine.topLevelBlocks(in: previousItems)
+        let incompleteBlocks = blocks.filter { block in
+            previousItems[block.range.lowerBound].isCompleted == false
+        }
         guard !incompleteBlocks.isEmpty else { return todaySection }
 
         let existingTodayItems = items(for: todayDate)
@@ -40,27 +42,20 @@ extension TodoStore {
         var moveNewSnapshots: [TodoItemSnapshot] = []
 
         for block in incompleteBlocks {
-            let hasCompletedChildren = block.children.contains { $0.isCompleted }
+            let blockItems = Array(previousItems[block.range])
+            guard let parent = blockItems.first else { continue }
+            let descendants = Array(blockItems.dropFirst())
+            let hasCompletedDescendants = descendants.contains { $0.isCompleted }
+            let itemsToMove: [TodoItem]
+            let normalizedIndentLevels: [Int]
 
-            if !hasCompletedChildren {
-                // 无已完成子项：整块直接移动
-                let allItems = [block.parent] + block.children
-                for item in allItems {
-                    let oldSnapshot = TodoItemSnapshot(from: item)
-                    moveOldSnapshots.append(oldSnapshot)
-
-                    item.dayDate = todayDate
-                    item.sortOrder = currentSortOrder
-                    item.updatedAt = Date()
-                    currentSortOrder += 1000
-
-                    let newSnapshot = TodoItemSnapshot(from: item)
-                    moveNewSnapshots.append(newSnapshot)
-                }
+            if !hasCompletedDescendants {
+                itemsToMove = blockItems
+                normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
+                    in: itemsToMove)
             } else {
-                // 有已完成子项：复制一级 item，仅移动未完成子项
                 let copiedParent = createItem(
-                    title: block.parent.title,
+                    title: parent.title,
                     dayDate: todayDate,
                     indentLevel: 0,
                     containerKind: .scheduled
@@ -68,18 +63,25 @@ extension TodoStore {
                 copiedParent.sortOrder = currentSortOrder
                 currentSortOrder += 1000
 
-                for child in block.children where !child.isCompleted {
-                    let oldSnapshot = TodoItemSnapshot(from: child)
-                    moveOldSnapshots.append(oldSnapshot)
+                itemsToMove = descendants.filter { !$0.isCompleted }
+                normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
+                    itemsToMove.map(\.indentLevel),
+                    baseIndentLevel: 1
+                )
+            }
 
-                    child.dayDate = todayDate
-                    child.sortOrder = currentSortOrder
-                    child.updatedAt = Date()
-                    currentSortOrder += 1000
+            for (item, indentLevel) in zip(itemsToMove, normalizedIndentLevels) {
+                let oldSnapshot = TodoItemSnapshot(from: item)
+                moveOldSnapshots.append(oldSnapshot)
 
-                    let newSnapshot = TodoItemSnapshot(from: child)
-                    moveNewSnapshots.append(newSnapshot)
-                }
+                item.dayDate = todayDate
+                item.indentLevel = indentLevel
+                item.sortOrder = currentSortOrder
+                item.updatedAt = .now
+                currentSortOrder += 1000
+
+                let newSnapshot = TodoItemSnapshot(from: item)
+                moveNewSnapshots.append(newSnapshot)
             }
         }
 
@@ -95,29 +97,5 @@ extension TodoStore {
         undoManager.nsUndoManager.setActionName("继承昨日待办")
 
         return todaySection
-    }
-
-    /// 将 items 解析为 block 结构：每个 block = 一个 indent-0 item + 紧随其后的所有 indent > 0 item。
-    private func parseItemBlocks(_ items: [TodoItem]) -> [(parent: TodoItem, children: [TodoItem])] {
-        var blocks: [(parent: TodoItem, children: [TodoItem])] = []
-        var currentParent: TodoItem?
-        var currentChildren: [TodoItem] = []
-
-        for item in items {
-            if item.indentLevel == 0 {
-                if let parent = currentParent {
-                    blocks.append((parent, currentChildren))
-                }
-                currentParent = item
-                currentChildren = []
-            } else {
-                currentChildren.append(item)
-            }
-        }
-        if let parent = currentParent {
-            blocks.append((parent, currentChildren))
-        }
-
-        return blocks
     }
 }
