@@ -72,6 +72,24 @@ final class TodoTextEditSessionTests: XCTestCase {
         XCTAssertEqual(item.title, "a")
     }
 
+    func testKeyboardFocusChangeEndsCurrentSegment() {
+        let item = makeFocusedItem(title: "a", cursor: 1)
+        let second = store.createItem(title: "second", dayDate: item.dayDate, afterItem: item)
+        store.undoManager.clear()
+
+        actions.titleChanged(item.id, event("a", "ab", 1, 2, .insertion))
+        actions.moveFocus(item.id, .down, 2, nil)
+        XCTAssertEqual(selectionManager.focusedItemId, second.id)
+        actions.moveFocus(second.id, .up, 0, nil)
+        XCTAssertEqual(selectionManager.focusedItemId, item.id)
+        actions.titleChanged(item.id, event("ab", "abc", 2, 3, .insertion))
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "ab")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "a")
+    }
+
     func testStructuralActionFollowsPendingTextEditInGlobalOrder() {
         let item = makeFocusedItem(title: "a", cursor: 1)
 

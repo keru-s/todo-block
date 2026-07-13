@@ -143,6 +143,7 @@ enum TodoEditorActionFactory {
             moveFocus: { itemId, direction, cursorPosition, horizontalOffset in
                 guard let item = store.todoItemsCache[itemId] else { return }
                 let items = store.items(in: store.destination(for: item))
+                let focusedItemIdBeforeMove = selectionManager.focusedItemId
                 switch direction {
                 case .up:
                     selectionManager.moveFocusUp(
@@ -158,6 +159,9 @@ enum TodoEditorActionFactory {
                         cursorPosition: cursorPosition,
                         preferredHorizontalOffset: horizontalOffset
                     )
+                }
+                if selectionManager.focusedItemId != focusedItemIdBeforeMove {
+                    store.flushPendingTextEdit()
                 }
             },
             moveItemByKeyboard: { itemId, direction in
