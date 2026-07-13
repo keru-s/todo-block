@@ -53,7 +53,6 @@ final class SelectionManager {
 
     init(historyContext: TodoSelectionHistoryContext = .ephemeral(UUID())) {
         self.historyContext = historyContext
-        activateHistoryContext()
     }
 
     func activateHistoryContext() {

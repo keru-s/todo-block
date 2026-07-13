@@ -82,6 +82,7 @@ struct TodoSelectionChange {
         before: TodoSelectionState,
         after: TodoSelectionState
     ) {
+        selectionManager.activateHistoryContext()
         historyContext = selectionManager.historyContext
         self.before = before
         self.after = after
@@ -161,6 +162,17 @@ struct TodoItemSnapshot {
         self.dayDate = Calendar.current.startOfDay(for: dayDate)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    func matchesUserState(of item: TodoItem) -> Bool {
+        item.id == id
+            && item.title == title
+            && item.isCompleted == isCompleted
+            && item.indentLevel == indentLevel
+            && item.sortOrder == sortOrder
+            && item.containerKindRaw == containerKindRaw
+            && item.dayDate == dayDate
+            && item.createdAt == createdAt
     }
 
 }
@@ -253,7 +265,8 @@ final class TodoUndoManager {
             guard sourceExists else {
                 return store.todoItemsCache[change.snapshot.id] == nil
             }
-            return store.todoItemsCache[change.snapshot.id] != nil
+            guard let item = store.todoItemsCache[change.snapshot.id] else { return false }
+            return change.snapshot.matchesUserState(of: item)
         }
     }
 

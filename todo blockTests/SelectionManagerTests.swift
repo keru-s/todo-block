@@ -351,6 +351,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
 
         let replacement = SelectionManager(historyContext: .mainWindow)
+        replacement.activateHistoryContext()
         selectionManager = replacement
 
         XCTAssertTrue(store.undo())
