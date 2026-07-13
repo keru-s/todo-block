@@ -66,10 +66,16 @@ final class TodoReorderEngineTests: XCTestCase {
             afterItem: first,
             indentLevel: 0
         )
+        let tail = store.createItem(
+            title: "tail",
+            dayDate: dayDate,
+            afterItem: dragged,
+            indentLevel: 0
+        )
 
         TodoReorderMoveEngine.performMove(
             draggedId: dragged.id,
-            toIndex: 1,
+            toIndex: 3,
             indentLevel: TodoItem.maxIndentLevel,
             items: store.items(for: dayDate),
             destination: .scheduled(date: dayDate),
@@ -77,6 +83,111 @@ final class TodoReorderEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(dragged.indentLevel, 1)
+        XCTAssertEqual(store.items(for: dayDate).map(\.id), [first.id, tail.id, dragged.id])
+    }
+
+    func testPerformMoveKeepsNormalizedDescendantWhoseRawIndentIsShallower() {
+        let store = TodoStore.shared
+        let dayDate = date(year: 2026, month: 2, day: 22)
+
+        let moving = store.createItem(title: "moving", dayDate: dayDate, indentLevel: 3)
+        let descendant = store.createItem(
+            title: "descendant",
+            dayDate: dayDate,
+            afterItem: moving,
+            indentLevel: 2
+        )
+        _ = store.createItem(
+            title: "sibling",
+            dayDate: dayDate,
+            afterItem: descendant,
+            indentLevel: 0
+        )
+
+        TodoReorderMoveEngine.performMove(
+            draggedId: moving.id,
+            toIndex: 3,
+            indentLevel: 0,
+            items: store.items(for: dayDate),
+            destination: .scheduled(date: dayDate),
+            store: store
+        )
+
+        XCTAssertEqual(
+            store.items(for: dayDate).map(\.title),
+            ["sibling", "moving", "descendant"]
+        )
+        XCTAssertEqual(moving.indentLevel, 0)
+        XCTAssertEqual(descendant.indentLevel, 1)
+    }
+
+    func testPerformMoveIntoOwnDescendantsDoesNothing() {
+        let store = TodoStore.shared
+        let dayDate = date(year: 2026, month: 2, day: 22)
+
+        let parent = store.createItem(title: "parent", dayDate: dayDate, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: dayDate,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let grandchild = store.createItem(
+            title: "grandchild",
+            dayDate: dayDate,
+            afterItem: child,
+            indentLevel: 2
+        )
+        _ = store.createItem(
+            title: "tail",
+            dayDate: dayDate,
+            afterItem: grandchild,
+            indentLevel: 0
+        )
+
+        TodoReorderMoveEngine.performMove(
+            draggedId: parent.id,
+            toIndex: 2,
+            indentLevel: 1,
+            items: store.items(for: dayDate),
+            destination: .scheduled(date: dayDate),
+            store: store
+        )
+
+        XCTAssertEqual(
+            store.items(for: dayDate).map(\.title),
+            ["parent", "child", "grandchild", "tail"]
+        )
+        XCTAssertEqual(parent.indentLevel, 0)
+    }
+
+    func testPerformMoveOntoOwnPositionDoesNothing() {
+        let store = TodoStore.shared
+        let dayDate = date(year: 2026, month: 2, day: 22)
+
+        let first = store.createItem(title: "first", dayDate: dayDate, indentLevel: 0)
+        let moving = store.createItem(
+            title: "moving",
+            dayDate: dayDate,
+            afterItem: first,
+            indentLevel: 0
+        )
+        let originalSortOrder = moving.sortOrder
+        let originalUpdatedAt = moving.updatedAt
+
+        TodoReorderMoveEngine.performMove(
+            draggedId: moving.id,
+            toIndex: 1,
+            indentLevel: 1,
+            items: store.items(for: dayDate),
+            destination: .scheduled(date: dayDate),
+            store: store
+        )
+
+        XCTAssertEqual(store.items(for: dayDate).map(\.id), [first.id, moving.id])
+        XCTAssertEqual(moving.indentLevel, 0)
+        XCTAssertEqual(moving.sortOrder, originalSortOrder)
+        XCTAssertEqual(moving.updatedAt, originalUpdatedAt)
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

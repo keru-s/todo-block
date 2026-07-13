@@ -274,24 +274,37 @@ extension TodoStore {
         let sourceDestination = self.destination(for: item)
         let sourceItems = items(in: sourceDestination)
 
-        guard let itemIndex = sourceItems.firstIndex(where: { $0.id == item.id }) else {
+        guard
+            let itemIndex = sourceItems.firstIndex(where: { $0.id == item.id }),
+            let movingBlock = TodoHierarchyBlockEngine.block(
+                startingAt: itemIndex,
+                in: sourceItems
+            )
+        else {
             return
         }
 
-        var itemsToMove = [item]
-        var movingIds: Set<UUID> = [item.id]
-        let baseIndent = item.indentLevel
-
-        for index in (itemIndex + 1)..<sourceItems.count {
-            let child = sourceItems[index]
-            if child.indentLevel > baseIndent {
-                itemsToMove.append(child)
-                movingIds.insert(child.id)
-            } else {
-                break
-            }
+        let movingIds = Set(movingBlock.itemIds)
+        if sourceDestination.normalized == normalizedDestination,
+           let afterItem,
+           movingIds.contains(afterItem.id) {
+            return
+        }
+        if sourceDestination.normalized == normalizedDestination,
+           afterItem == nil,
+           movingBlock.range.lowerBound == 0 {
+            return
         }
 
+        let normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(in: sourceItems)
+        for index in movingBlock.range
+        where sourceItems[index].indentLevel != normalizedIndentLevels[index] {
+            sourceItems[index].indentLevel = normalizedIndentLevels[index]
+            sourceItems[index].updatedAt = .now
+        }
+
+        let itemsToMove = movingBlock.range.map { sourceItems[$0] }
+        let baseIndent = movingBlock.rootIndentLevel
         let snapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
         let indentDelta = newIndentLevel - baseIndent
 

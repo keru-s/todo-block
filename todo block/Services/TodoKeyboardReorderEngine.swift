@@ -18,12 +18,6 @@ struct TodoKeyboardReorderPlan: Equatable {
 }
 
 enum TodoKeyboardReorderEngine {
-    private struct Movement {
-        let plan: TodoKeyboardReorderPlan
-        let block: TodoHierarchyBlock
-        let normalizedIndentLevels: [Int]
-    }
-
     static func canMove(
         itemId: UUID,
         direction: TodoKeyboardReorderDirection,
@@ -42,23 +36,17 @@ enum TodoKeyboardReorderEngine {
     ) -> Bool {
         guard
             let item = store.todoItemsCache[itemId],
-            let movement = movement(itemId: itemId, direction: direction, items: items)
+            let plan = movementPlan(itemId: itemId, direction: direction, items: items)
         else {
             return false
         }
 
-        for index in movement.block.range
-        where items[index].indentLevel != movement.normalizedIndentLevels[index] {
-            items[index].indentLevel = movement.normalizedIndentLevels[index]
-            items[index].updatedAt = .now
-        }
-
-        let afterItem = movement.plan.afterItemId.flatMap { store.todoItemsCache[$0] }
+        let afterItem = plan.afterItemId.flatMap { store.todoItemsCache[$0] }
         store.moveItemWithChildren(
             item,
             to: destination,
             afterItem: afterItem,
-            newIndentLevel: movement.plan.indentLevel
+            newIndentLevel: plan.indentLevel
         )
         store.requestFocus(itemId)
         return true
@@ -69,14 +57,6 @@ enum TodoKeyboardReorderEngine {
         direction: TodoKeyboardReorderDirection,
         items: [TodoItem]
     ) -> TodoKeyboardReorderPlan? {
-        movement(itemId: itemId, direction: direction, items: items)?.plan
-    }
-
-    private static func movement(
-        itemId: UUID,
-        direction: TodoKeyboardReorderDirection,
-        items: [TodoItem]
-    ) -> Movement? {
         guard let currentIndex = items.firstIndex(where: { $0.id == itemId }) else {
             return nil
         }
@@ -118,13 +98,9 @@ enum TodoKeyboardReorderEngine {
         let afterItemId =
             adjustedInsertIndex > 0 ? remainingItems[adjustedInsertIndex - 1].id : nil
 
-        return Movement(
-            plan: TodoKeyboardReorderPlan(
-                afterItemId: afterItemId,
-                indentLevel: movingBlock.rootIndentLevel
-            ),
-            block: movingBlock,
-            normalizedIndentLevels: TodoHierarchyBlockEngine.normalizedIndentLevels(in: items)
+        return TodoKeyboardReorderPlan(
+            afterItemId: afterItemId,
+            indentLevel: movingBlock.rootIndentLevel
         )
     }
 }

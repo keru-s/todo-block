@@ -1,10 +1,3 @@
-//
-//  TodoReorderMoveEngine.swift
-//  todo block
-//
-//  Created by Codex on 2026/2/22.
-//
-
 import Foundation
 
 enum TodoReorderMoveEngine {
@@ -24,22 +17,17 @@ enum TodoReorderMoveEngine {
         let normalizedDestination = destination.normalized
 
         if store.destination(for: draggedItem) == normalizedDestination,
-            let draggedIndex = items.firstIndex(where: { $0.id == draggedId })
+            let draggedIndex = items.firstIndex(where: { $0.id == draggedId }),
+            let movingBlock = TodoHierarchyBlockEngine.block(
+                startingAt: draggedIndex,
+                in: items
+            )
         {
-            let baseIndent = items[draggedIndex].indentLevel
-            movingItemIds.insert(draggedId)
-
-            var nextIndex = draggedIndex + 1
-            while nextIndex < items.count {
-                let candidate = items[nextIndex]
-                if candidate.indentLevel > baseIndent {
-                    movingItemIds.insert(candidate.id)
-                    nextIndex += 1
-                } else {
-                    break
-                }
+            if normalizedToIndex >= movingBlock.range.lowerBound,
+               normalizedToIndex <= movingBlock.range.upperBound {
+                return
             }
-
+            movingItemIds = Set(movingBlock.itemIds)
             remainingItems.removeAll { movingItemIds.contains($0.id) }
         }
 
