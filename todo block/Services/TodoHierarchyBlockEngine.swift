@@ -27,12 +27,24 @@ enum TodoHierarchyBlockEngine {
     }
 
     static func normalizedIndentLevels(in items: [TodoItem]) -> [Int] {
-        var previousIndentLevel = 0
+        normalizedIndentLevels(items.map(\.indentLevel), baseIndentLevel: 0)
+    }
 
-        return items.enumerated().map { index, item in
-            let maximumIndentLevel = index == 0 ? 0 : previousIndentLevel + 1
+    static func normalizedIndentLevels(
+        _ indentLevels: [Int],
+        baseIndentLevel: Int
+    ) -> [Int] {
+        let clampedBaseIndentLevel = min(
+            max(baseIndentLevel, 0),
+            TodoItem.maxIndentLevel
+        )
+        var previousIndentLevel = clampedBaseIndentLevel
+
+        return indentLevels.enumerated().map { index, indentLevel in
+            let maximumIndentLevel =
+                index == 0 ? clampedBaseIndentLevel : previousIndentLevel + 1
             let normalizedIndentLevel = min(
-                max(item.indentLevel, 0),
+                max(indentLevel, 0),
                 min(maximumIndentLevel, TodoItem.maxIndentLevel)
             )
             previousIndentLevel = normalizedIndentLevel
@@ -75,17 +87,32 @@ enum TodoHierarchyBlockEngine {
         rootedAt rootIds: Set<UUID>,
         in items: [TodoItem]
     ) -> [UUID] {
-        var coveredIds: [UUID] = []
-        var coveredIdSet = Set<UUID>()
+        selectedBlocks(rootedAt: rootIds, in: items).flatMap(\.itemIds)
+    }
+
+    static func blockRootIds(
+        selectedFrom selectedIds: Set<UUID>,
+        in items: [TodoItem]
+    ) -> [UUID] {
+        selectedBlocks(rootedAt: selectedIds, in: items).compactMap { block in
+            block.itemIds.first
+        }
+    }
+
+    private static func selectedBlocks(
+        rootedAt rootIds: Set<UUID>,
+        in items: [TodoItem]
+    ) -> [TodoHierarchyBlock] {
+        var blocks: [TodoHierarchyBlock] = []
+        var coveredIds = Set<UUID>()
 
         for (index, item) in items.enumerated()
-        where rootIds.contains(item.id) && coveredIdSet.contains(item.id) == false {
+        where rootIds.contains(item.id) && coveredIds.contains(item.id) == false {
             guard let block = block(startingAt: index, in: items) else { continue }
-            for itemId in block.itemIds where coveredIdSet.insert(itemId).inserted {
-                coveredIds.append(itemId)
-            }
+            blocks.append(block)
+            coveredIds.formUnion(block.itemIds)
         }
 
-        return coveredIds
+        return blocks
     }
 }

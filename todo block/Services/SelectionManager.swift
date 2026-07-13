@@ -205,6 +205,18 @@ final class SelectionManager {
         guard !selectedItemIds.isEmpty else { return }
 
         let itemsToDelete = selectedItemIds.compactMap { id in store.todoItemsCache[id] }
+        var deletedItemIds = Set<UUID>()
+        let selectedByDate = Dictionary(grouping: itemsToDelete) {
+            Calendar.current.startOfDay(for: $0.dayDate)
+        }
+        for (date, selectedItems) in selectedByDate {
+            deletedItemIds.formUnion(
+                TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
+                    rootedAt: Set(selectedItems.map(\.id)),
+                    in: allItemsLookup(date)
+                )
+            )
+        }
         // 优先以当前焦点作为删除锚点；否则使用选中项中排序最靠前的项
         let firstSelectedId: UUID? =
             if let focusedItemId, selectedItemIds.contains(focusedItemId) {
@@ -232,7 +244,7 @@ final class SelectionManager {
             if let firstIndex = allItems.firstIndex(where: { $0.id == firstItemToDelete.id }) {
                 // 1. 尝试向上找最近未被删除的
                 for i in stride(from: firstIndex - 1, through: 0, by: -1) {
-                    if !selectedItemIds.contains(allItems[i].id) {
+                    if !deletedItemIds.contains(allItems[i].id) {
                         nextFocusId = allItems[i].id
                         break
                     }
@@ -241,7 +253,7 @@ final class SelectionManager {
                 // 2. 如果上面没了，尝试向下找
                 if nextFocusId == nil {
                     for i in (firstIndex + 1)..<allItems.count {
-                        if !selectedItemIds.contains(allItems[i].id) {
+                        if !deletedItemIds.contains(allItems[i].id) {
                             nextFocusId = allItems[i].id
                             break
                         }

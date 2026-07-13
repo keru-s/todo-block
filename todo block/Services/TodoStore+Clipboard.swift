@@ -30,10 +30,13 @@ extension TodoStore {
         selection: TodoClipboardSelectionSnapshot
     ) -> TodoClipboardImportResult? {
         let target = resolveImportTarget(scope: scope, selection: selection)
-        let parsedEntries = MarkdownTodoCodec.decode(
-            markdown,
-            baseIndentLevel: target.baseIndentLevel,
-            maxIndentLevel: TodoItem.maxIndentLevel
+        let parsedEntries = normalizeClipboardEntries(
+            MarkdownTodoCodec.decode(
+                markdown,
+                baseIndentLevel: target.baseIndentLevel,
+                maxIndentLevel: TodoItem.maxIndentLevel
+            ),
+            baseIndentLevel: target.baseIndentLevel
         )
         guard parsedEntries.isEmpty == false else { return nil }
 
@@ -103,6 +106,23 @@ extension TodoStore {
 }
 
 private extension TodoStore {
+    func normalizeClipboardEntries(
+        _ entries: [MarkdownTodoEntry],
+        baseIndentLevel: Int
+    ) -> [MarkdownTodoEntry] {
+        let normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
+            entries.map(\.indentLevel),
+            baseIndentLevel: baseIndentLevel
+        )
+        return entries.enumerated().map { index, entry in
+            return MarkdownTodoEntry(
+                title: entry.title,
+                isCompleted: entry.isCompleted,
+                indentLevel: normalizedIndentLevels[index]
+            )
+        }
+    }
+
     struct ClipboardPasteTarget {
         let dayDate: Date
         let containerKind: TodoContainerKind
@@ -115,19 +135,29 @@ private extension TodoStore {
         scope: TodoClipboardScope,
         selection: TodoClipboardSelectionSnapshot
     ) -> [TodoItem] {
-        let lookup = Dictionary(uniqueKeysWithValues: items(inClipboardScope: scope).map { ($0.id, $0) })
-        let selectedItems = selection.selectedItemIds.compactMap { lookup[$0] }
-        if selectedItems.isEmpty == false {
-            return selectedItems
+        let scopeItems = sortItemsForClipboard(items(inClipboardScope: scope), scope: scope)
+        let scopeItemIds = Set(scopeItems.map(\.id))
+        var rootIds = selection.selectedItemIds.intersection(scopeItemIds)
+        if rootIds.isEmpty,
+           let focusedItemId = selection.focusedItemId,
+           scopeItemIds.contains(focusedItemId) {
+            rootIds = [focusedItemId]
         }
+        guard rootIds.isEmpty == false else { return [] }
 
-        guard
-            let focusedItemId = selection.focusedItemId,
-            let focusedItem = lookup[focusedItemId]
-        else {
-            return []
+        var coveredIds = Set<UUID>()
+        let itemsByDestination = Dictionary(grouping: scopeItems) {
+            destination(for: $0).normalized
         }
-        return [focusedItem]
+        for destinationItems in itemsByDestination.values {
+            coveredIds.formUnion(
+                TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
+                    rootedAt: rootIds,
+                    in: destinationItems
+                )
+            )
+        }
+        return scopeItems.filter { coveredIds.contains($0.id) }
     }
 
     func resolveImportTarget(

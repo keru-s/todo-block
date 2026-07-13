@@ -260,6 +260,33 @@ final class SelectionManagerDeleteTests: XCTestCase {
         XCTAssertEqual(selectionManager.focusedItemId, i3.id, "上方无项，焦点向下")
     }
 
+    func testDeleteSelectedParentSkipsDeletedDescendantsWhenRestoringFocus() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 10, day: 6)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let tail = store.createItem(
+            title: "tail",
+            dayDate: day,
+            afterItem: child,
+            indentLevel: 0
+        )
+
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
+
+        XCTAssertEqual(store.items(for: day).map(\.id), [tail.id])
+        XCTAssertEqual(selectionManager.focusedItemId, tail.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [tail.id])
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

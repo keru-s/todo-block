@@ -57,39 +57,45 @@ final class TodoReorderCommandManager {
         store: TodoStore,
         selectionManager: SelectionManager
     ) -> Bool {
-        guard
-            let itemId = activeItemId(in: selectionManager),
-            let item = store.todoItemsCache[itemId]
-        else {
-            return false
+        var selectedIds = selectionManager.selectedItemIds
+        if selectedIds.isEmpty, let focusedItemId = selectionManager.focusedItemId {
+            selectedIds = [focusedItemId]
+        }
+        let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
+        guard selectedItems.isEmpty == false else { return false }
+
+        let originalFocusedItemId = selectionManager.focusedItemId
+        var didMoveAnyBlock = false
+        let selectedByDestination = Dictionary(grouping: selectedItems) {
+            store.destination(for: $0).normalized
         }
 
-        let destination = store.destination(for: item)
-        let items = store.items(in: destination)
-        let didMove = TodoKeyboardReorderEngine.move(
-            itemId: itemId,
-            direction: direction,
-            items: items,
-            destination: destination,
-            store: store
-        )
-
-        if didMove {
-            selectionManager.restoreFocus(to: itemId)
+        for (destination, destinationSelection) in selectedByDestination {
+            let currentItems = store.items(in: destination)
+            let rootIds = TodoHierarchyBlockEngine.blockRootIds(
+                selectedFrom: Set(destinationSelection.map(\.id)),
+                in: currentItems
+            )
+            let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
+            for rootId in moveOrder {
+                let didMove = TodoKeyboardReorderEngine.move(
+                    itemId: rootId,
+                    direction: direction,
+                    items: store.items(in: destination),
+                    destination: destination,
+                    store: store
+                )
+                didMoveAnyBlock = didMoveAnyBlock || didMove
+            }
         }
 
-        return didMove
-    }
-
-    private static func activeItemId(in selectionManager: SelectionManager) -> UUID? {
-        if let focusedItemId = selectionManager.focusedItemId {
-            return focusedItemId
+        if didMoveAnyBlock {
+            selectionManager.selectedItemIds = selectedIds
+            selectionManager.focusedItemId = originalFocusedItemId
+            selectionManager.lastSelectedId = originalFocusedItemId
+            store.requestFocus(originalFocusedItemId)
         }
 
-        if selectionManager.selectedItemIds.count == 1 {
-            return selectionManager.selectedItemIds.first
-        }
-
-        return nil
+        return didMoveAnyBlock
     }
 }

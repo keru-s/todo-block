@@ -362,6 +362,64 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(markdown, "- [ ] in-scope")
     }
 
+    func testExportParentAndSelectedChildIncludesHierarchyOnce() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let parent = store.createItem(title: "parent", dayDate: targetDate, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: targetDate,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        _ = store.createItem(
+            title: "grandchild",
+            dayDate: targetDate,
+            afterItem: child,
+            indentLevel: 2
+        )
+
+        let markdown = store.exportMarkdown(
+            scope: .scheduledMonth(year: 2026, month: 2),
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: parent.id,
+                selectedItemIds: [parent.id, child.id]
+            )
+        )
+
+        XCTAssertEqual(
+            markdown,
+            """
+            - [ ] parent
+              - [ ] child
+                - [ ] grandchild
+            """
+        )
+    }
+
+    func testImportMarkdownTightensJumpedIndentWithoutChangingOrder() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let anchor = store.createItem(title: "anchor", dayDate: targetDate)
+
+        let result = store.importMarkdown(
+            """
+                - [ ] parent
+                        - [ ] child
+                          - [ ] grandchild
+            """,
+            scope: .scheduledMonth(year: 2026, month: 2),
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: anchor.id,
+                selectedItemIds: [anchor.id]
+            )
+        )
+
+        let created = result?.createdItemIds.compactMap { store.todoItemsCache[$0] } ?? []
+        XCTAssertEqual(created.map(\.title), ["parent", "child", "grandchild"])
+        XCTAssertEqual(created.map(\.indentLevel), [0, 1, 2])
+    }
+
     func testImportMarkdownScheduledMonthPrefersFocusedItem() {
         let store = TodoStore.shared
         let targetDate = date(year: 2026, month: 2, day: 16)
