@@ -233,27 +233,50 @@ final class SelectionManager {
     /// - Parameters:
     ///   - store: TodoStore 实例
     ///   - allItemsLookup: 一个闭包，用于获取某一天的所有 items（用于计算上下文）
-    func deleteSelectedItems(store: TodoStore, allItemsLookup: (Date) -> [TodoItem]) {
-        guard !selectedItemIds.isEmpty else { return }
+    @discardableResult
+    func deleteSelectedItems(store: TodoStore, allItemsLookup: (Date) -> [TodoItem]) -> Bool {
+        deleteItems(
+            selectedItemIds,
+            store: store,
+            allItemsLookup: { item in allItemsLookup(item.dayDate) }
+        )
+    }
 
-        let itemsToDelete = selectedItemIds.compactMap { id in store.todoItemsCache[id] }
-        guard itemsToDelete.count == selectedItemIds.count else { return }
+    @discardableResult
+    func deleteItems(_ itemIds: Set<UUID>, store: TodoStore) -> Bool {
+        deleteItems(
+            itemIds,
+            store: store,
+            allItemsLookup: { item in store.items(in: store.destination(for: item)) }
+        )
+    }
+
+    private func deleteItems(
+        _ itemIds: Set<UUID>,
+        store: TodoStore,
+        allItemsLookup: (TodoItem) -> [TodoItem]
+    ) -> Bool {
+        guard itemIds.isEmpty == false else { return false }
+
+        let itemsToDelete = itemIds.compactMap { id in store.todoItemsCache[id] }
+        guard itemsToDelete.count == itemIds.count else { return false }
         let selectionBefore = TodoSelectionState(selectionManager: self)
         var deletedItemIds = Set<UUID>()
-        let selectedByDate = Dictionary(grouping: itemsToDelete) {
-            Calendar.current.startOfDay(for: $0.dayDate)
+        let selectedByDestination = Dictionary(grouping: itemsToDelete) {
+            store.destination(for: $0).normalized
         }
-        for (date, selectedItems) in selectedByDate {
+        for selectedItems in selectedByDestination.values {
+            guard let representative = selectedItems.first else { continue }
             deletedItemIds.formUnion(
                 TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
                     rootedAt: Set(selectedItems.map(\.id)),
-                    in: allItemsLookup(date)
+                    in: allItemsLookup(representative)
                 )
             )
         }
         // 优先以当前焦点作为删除锚点；否则使用选中项中排序最靠前的项
         let firstSelectedId: UUID? =
-            if let focusedItemId, selectedItemIds.contains(focusedItemId) {
+            if let focusedItemId, itemIds.contains(focusedItemId) {
                 focusedItemId
             } else {
                 itemsToDelete
@@ -273,7 +296,7 @@ final class SelectionManager {
         if let firstSelectedId,
             let firstItemToDelete = store.todoItemsCache[firstSelectedId]
         {
-            let allItems = allItemsLookup(firstItemToDelete.dayDate)
+            let allItems = allItemsLookup(firstItemToDelete)
 
             if let firstIndex = allItems.firstIndex(where: { $0.id == firstItemToDelete.id }) {
                 // 1. 尝试向上找最近未被删除的
@@ -301,6 +324,6 @@ final class SelectionManager {
             before: selectionBefore,
             after: TodoSelectionState(focusing: nextFocusId)
         )
-        _ = store.deleteItemsAsBatch(itemsToDelete, selectionChange: selectionChange)
+        return store.deleteItemsAsBatch(itemsToDelete, selectionChange: selectionChange)
     }
 }

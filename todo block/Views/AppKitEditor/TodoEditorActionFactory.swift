@@ -92,11 +92,13 @@ enum TodoEditorActionFactory {
                         selectionManager: selectionManager
                     )
                 case .splitIntoChild(let newCurrentTitle, let childTitle):
-                    newItem = store.splitItem(
+                    guard let splitItem = store.splitItem(
                         item,
                         newCurrentTitle: newCurrentTitle,
-                        childTitle: childTitle
-                    )
+                        childTitle: childTitle,
+                        selectionManager: selectionManager
+                    ) else { return }
+                    newItem = splitItem
                 }
                 selectionManager.handleSelect(
                     item: newItem,

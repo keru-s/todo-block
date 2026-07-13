@@ -124,35 +124,60 @@ extension TodoStore {
     /// 紧邻其下方插入一条 indent + 1 的子项（已达 max 时降级为同级 sibling），
     /// title = `childTitle`。两个操作合并为 1 步撤销。
     @discardableResult
-    func splitItem(_ item: TodoItem, newCurrentTitle: String, childTitle: String) -> TodoItem {
-        let oldTitle = item.title
+    func splitItem(
+        _ item: TodoItem,
+        newCurrentTitle: String,
+        childTitle: String,
+        selectionManager: SelectionManager? = nil
+    ) -> TodoItem? {
+        guard todoItemsCache[item.id] === item else { return nil }
+        let before = TodoItemSnapshot(from: item)
         let newIndent = min(item.indentLevel + 1, TodoItem.maxIndentLevel)
-
-        nsUndoManager.beginUndoGrouping()
-        defer {
-            nsUndoManager.endUndoGrouping()
-            nsUndoManager.setActionName("拆分")
+        let destinationItems = items(in: destination(for: item))
+        guard let itemIndex = destinationItems.firstIndex(where: { $0.id == item.id }) else {
+            return nil
         }
-
-        item.title = newCurrentTitle
-        item.updatedAt = Date()
-        undoManager.registerTitleChange(
-            itemId: item.id,
-            oldTitle: oldTitle,
-            newTitle: newCurrentTitle,
-            store: self
-        )
-
-        let child = createItem(
+        let childSortOrder: Double
+        if itemIndex + 1 < destinationItems.count {
+            childSortOrder = (item.sortOrder + destinationItems[itemIndex + 1].sortOrder) / 2
+        } else {
+            childSortOrder = item.sortOrder + 1000
+        }
+        let childSnapshot = TodoItemSnapshot(
             title: childTitle,
-            dayDate: item.dayDate,
-            afterItem: item,
             indentLevel: newIndent,
-            containerKind: item.containerKind
+            sortOrder: childSortOrder,
+            containerKindRaw: item.containerKindRaw,
+            dayDate: item.dayDate
         )
-
-        scheduleSave()
-        return child
+        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+            [
+                TodoSelectionChange(
+                    selectionManager: manager,
+                    before: TodoSelectionState(selectionManager: manager),
+                    after: TodoSelectionState(focusing: childSnapshot.id)
+                )
+            ]
+        } ?? []
+        let operation = TodoOperation(
+            actionName: "拆分",
+            itemExistenceChanges: [
+                TodoItemExistenceChange(
+                    snapshot: childSnapshot,
+                    beforeExists: false,
+                    afterExists: true
+                )
+            ],
+            itemStateChanges: [
+                TodoItemStateChange(
+                    before: before,
+                    after: before.replacing(title: newCurrentTitle)
+                )
+            ],
+            selectionChanges: selectionChanges
+        )
+        guard undoManager.perform(operation, store: self) else { return nil }
+        return todoItemsCache[childSnapshot.id]
     }
 
     /// 删除待办事项

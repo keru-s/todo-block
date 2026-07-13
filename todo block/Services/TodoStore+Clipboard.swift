@@ -12,6 +12,13 @@ extension TodoStore {
         copyCandidates(scope: scope, selection: selection).isEmpty == false
     }
 
+    func clipboardItemIds(
+        scope: TodoClipboardScope,
+        selection: TodoClipboardSelectionSnapshot
+    ) -> Set<UUID> {
+        Set(copyCandidates(scope: scope, selection: selection).map(\.id))
+    }
+
     func exportMarkdown(
         scope: TodoClipboardScope,
         selection: TodoClipboardSelectionSnapshot
@@ -27,7 +34,8 @@ extension TodoStore {
     func importMarkdown(
         _ markdown: String,
         scope: TodoClipboardScope,
-        selection: TodoClipboardSelectionSnapshot
+        selection: TodoClipboardSelectionSnapshot,
+        selectionManager: SelectionManager? = nil
     ) -> TodoClipboardImportResult? {
         let target = resolveImportTarget(scope: scope, selection: selection)
         let parsedEntries = normalizeClipboardEntries(
@@ -40,34 +48,49 @@ extension TodoStore {
         )
         guard parsedEntries.isEmpty == false else { return nil }
 
-        var createdItems: [TodoItem] = []
-        var currentAfterItem = target.afterItem
-
-        nsUndoManager.beginUndoGrouping()
-        defer {
-            nsUndoManager.endUndoGrouping()
-            nsUndoManager.setActionName("粘贴")
-        }
-
-        for entry in parsedEntries {
-            let newItem = createItem(
+        let sortOrders = plannedPasteSortOrders(count: parsedEntries.count, target: target)
+        guard sortOrders.count == parsedEntries.count else { return nil }
+        let snapshots = zip(parsedEntries, sortOrders).map { entry, sortOrder in
+            TodoItemSnapshot(
                 title: entry.title,
                 isCompleted: entry.isCompleted,
-                dayDate: target.dayDate,
-                afterItem: currentAfterItem,
                 indentLevel: entry.indentLevel,
-                containerKind: target.containerKind,
-                insertAtBeginning: target.insertAtBeginning && currentAfterItem == nil
+                sortOrder: sortOrder,
+                containerKindRaw: target.containerKind.rawValue,
+                dayDate: target.dayDate
             )
-            createdItems.append(newItem)
-            currentAfterItem = newItem
         }
-
-        guard let focusedItem = createdItems.last else { return nil }
-        scheduleSave()
+        guard let focusedSnapshot = snapshots.last else { return nil }
+        let createdIds = snapshots.map(\.id)
+        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+            [
+                TodoSelectionChange(
+                    selectionManager: manager,
+                    before: TodoSelectionState(selectionManager: manager),
+                    after: TodoSelectionState(
+                        focusedItemId: focusedSnapshot.id,
+                        selectedItemIds: Set(createdIds),
+                        lastSelectedId: focusedSnapshot.id,
+                        cursorPosition: 0
+                    )
+                )
+            ]
+        } ?? []
+        let operation = TodoOperation(
+            actionName: "粘贴",
+            itemExistenceChanges: snapshots.map { snapshot in
+                TodoItemExistenceChange(
+                    snapshot: snapshot,
+                    beforeExists: false,
+                    afterExists: true
+                )
+            },
+            selectionChanges: selectionChanges
+        )
+        guard undoManager.perform(operation, store: self) else { return nil }
         return TodoClipboardImportResult(
-            createdItemIds: createdItems.map(\.id),
-            focusedItemId: focusedItem.id
+            createdItemIds: createdIds,
+            focusedItemId: focusedSnapshot.id
         )
     }
 
@@ -200,9 +223,8 @@ private extension TodoStore {
             }
 
             let fallbackDate = fallbackDateForEmptyMonth(year: year, month: month)
-            let fallbackSection = getOrCreateSection(for: fallbackDate)
             return ClipboardPasteTarget(
-                dayDate: fallbackSection.date,
+                dayDate: fallbackDate,
                 containerKind: .scheduled,
                 afterItem: nil,
                 baseIndentLevel: 0,
@@ -275,6 +297,47 @@ private extension TodoStore {
                 baseIndentLevel: 0,
                 insertAtBeginning: false
             )
+        }
+    }
+
+    func plannedPasteSortOrders(count: Int, target: ClipboardPasteTarget) -> [Double] {
+        guard count > 0 else { return [] }
+        let destination: TodoDropDestination = switch target.containerKind {
+        case .scheduled:
+            .scheduled(date: target.dayDate)
+        case .longTermUrgent:
+            .longTerm(isUrgent: true)
+        case .longTermImportant:
+            .longTerm(isUrgent: false)
+        }
+        let currentItems = items(in: destination)
+        let insertionIndex: Int
+        if
+            let afterItem = target.afterItem,
+            let index = currentItems.firstIndex(where: { $0.id == afterItem.id })
+        {
+            insertionIndex = index + 1
+        } else if target.insertAtBeginning {
+            insertionIndex = 0
+        } else {
+            insertionIndex = currentItems.count
+        }
+
+        let lowerBound = insertionIndex > 0 ? currentItems[insertionIndex - 1].sortOrder : nil
+        let upperBound = insertionIndex < currentItems.count
+            ? currentItems[insertionIndex].sortOrder
+            : nil
+
+        switch (lowerBound, upperBound) {
+        case let (lower?, upper?):
+            let step = (upper - lower) / Double(count + 1)
+            return (1...count).map { lower + step * Double($0) }
+        case let (lower?, nil):
+            return (1...count).map { lower + 1000 * Double($0) }
+        case let (nil, upper?):
+            return (0..<count).map { upper - 1000 * Double(count - $0) }
+        case (nil, nil):
+            return (1...count).map { 1000 * Double($0) }
         }
     }
 

@@ -494,7 +494,6 @@ final class TodoStoreTests: XCTestCase {
 
     func testImportCompletedItemUndoRedoPreservesRecordedResult() {
         let store = TodoStore.shared
-        let targetDate = date(year: 2026, month: 2, day: 16)
         store.undoManager.clear()
 
         let result = store.importMarkdown(
@@ -515,6 +514,160 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertTrue(store.redo())
         XCTAssertEqual(store.todoItemsCache[createdId]?.isCompleted, true)
+    }
+
+    func testImportMarkdownBatchAndSelectionUndoRedoAsOneStep() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        let anchor = store.createItem(title: "anchor", dayDate: targetDate)
+        _ = store.createItem(title: "next", dayDate: targetDate, afterItem: anchor)
+        let selectionManager = SelectionManager()
+        selectionManager.selectedItemIds = [anchor.id]
+        selectionManager.focusedItemId = anchor.id
+        selectionManager.lastSelectedId = anchor.id
+        selectionManager.cursorPosition = 3
+        store.undoManager.clear()
+
+        let result = store.importMarkdown(
+            """
+            - [ ] parent
+                - [x] child
+            """,
+            scope: .scheduledMonth(year: 2026, month: 2),
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: anchor.id,
+                selectedItemIds: [anchor.id]
+            ),
+            selectionManager: selectionManager
+        )
+
+        guard let result else { return XCTFail("应整批粘贴") }
+        XCTAssertEqual(
+            store.items(for: targetDate).map(\.title),
+            ["anchor", "parent", "child", "next"]
+        )
+        XCTAssertEqual(selectionManager.selectedItemIds, Set(result.createdItemIds))
+        XCTAssertEqual(selectionManager.focusedItemId, result.focusedItemId)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: targetDate).map(\.title), ["anchor", "next"])
+        XCTAssertEqual(selectionManager.selectedItemIds, [anchor.id])
+        XCTAssertEqual(selectionManager.focusedItemId, anchor.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(
+            store.items(for: targetDate).map(\.title),
+            ["anchor", "parent", "child", "next"]
+        )
+        XCTAssertEqual(selectionManager.selectedItemIds, Set(result.createdItemIds))
+        XCTAssertEqual(selectionManager.focusedItemId, result.focusedItemId)
+    }
+
+    func testInvalidImportLeavesNoSectionAndKeepsRedoPath() {
+        let store = TodoStore.shared
+        let original = store.createItem(title: "original", dayDate: date(year: 2026, month: 1, day: 1))
+        store.undoManager.clear()
+        store.deleteItem(original)
+        XCTAssertTrue(store.undo())
+        let sectionCountBefore = store.daySectionsCache.count
+        XCTAssertTrue(store.canRedo)
+
+        let result = store.importMarkdown(
+            "not a todo",
+            scope: .scheduledMonth(year: 2026, month: 9),
+            selection: TodoClipboardSelectionSnapshot(focusedItemId: nil, selectedItemIds: [])
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(store.daySectionsCache.count, sectionCountBefore)
+        XCTAssertTrue(store.canRedo)
+        XCTAssertTrue(store.redo())
+        XCTAssertNil(store.todoItemsCache[original.id])
+    }
+
+    func testEmptyMonthPasteCreatesAndUndoRemovesDateSection() {
+        let store = TodoStore.shared
+        store.undoManager.clear()
+
+        let result = store.importMarkdown(
+            "- [ ] september",
+            scope: .scheduledMonth(year: 2026, month: 9),
+            selection: TodoClipboardSelectionSnapshot(focusedItemId: nil, selectedItemIds: [])
+        )
+
+        guard let createdId = result?.createdItemIds.first,
+              let created = store.todoItemsCache[createdId]
+        else { return XCTFail("应创建待办和日期") }
+        let pastedDate = created.dayDate
+        XCTAssertTrue(
+            store.daySectionsCache.values.contains {
+                Calendar.current.isDate($0.date, inSameDayAs: pastedDate)
+            }
+        )
+
+        XCTAssertTrue(store.undo())
+        XCTAssertNil(store.todoItemsCache[createdId])
+        XCTAssertFalse(
+            store.daySectionsCache.values.contains {
+                Calendar.current.isDate($0.date, inSameDayAs: pastedDate)
+            }
+        )
+
+        XCTAssertTrue(store.redo())
+        XCTAssertNotNil(store.todoItemsCache[createdId])
+        XCTAssertTrue(
+            store.daySectionsCache.values.contains {
+                Calendar.current.isDate($0.date, inSameDayAs: pastedDate)
+            }
+        )
+    }
+
+    func testFailedSplitLeavesItemUntouchedAndKeepsRedoPath() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 2, day: 16)
+        let staleItem = store.createItem(title: "abcde", dayDate: day)
+        store.undoManager.clear()
+        store.deleteItem(staleItem)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo)
+
+        XCTAssertNil(
+            store.splitItem(
+                staleItem,
+                newCurrentTitle: "ab",
+                childTitle: "cde"
+            )
+        )
+
+        XCTAssertEqual(store.items(for: day).map(\.title), ["abcde"])
+        XCTAssertTrue(store.canRedo)
+        XCTAssertTrue(store.redo())
+        XCTAssertTrue(store.items(for: day).isEmpty)
+    }
+
+    func testCopyExportDoesNotClearRedoPath() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 2, day: 16)
+        let item = store.createItem(title: "copy me", dayDate: day)
+        store.undoManager.clear()
+        store.deleteItem(item)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo)
+
+        XCTAssertNotNil(
+            store.exportMarkdown(
+                scope: .scheduledMonth(year: 2026, month: 2),
+                selection: TodoClipboardSelectionSnapshot(
+                    focusedItemId: item.id,
+                    selectedItemIds: [item.id]
+                )
+            )
+        )
+
+        XCTAssertTrue(store.canRedo)
+        XCTAssertTrue(store.redo())
+        XCTAssertNil(store.todoItemsCache[item.id])
     }
 
     func testImportMarkdownScheduledMonthPrefersFocusedItem() {

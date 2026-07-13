@@ -111,6 +111,11 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let item = store.createItem(title: "abcde", dayDate: day, indentLevel: 1)
         let actions = TodoEditorActionFactory.make(store: store, selectionManager: selectionManager)
+        selectionManager.selectedItemIds = [item.id]
+        selectionManager.focusedItemId = item.id
+        selectionManager.lastSelectedId = item.id
+        selectionManager.cursorPosition = 2
+        store.undoManager.clear()
 
         actions.enterPressed(
             item.id,
@@ -120,6 +125,17 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         let items = store.items(for: day)
         XCTAssertEqual(items.map(\.title), ["ab", "cde"])
         XCTAssertEqual(items.map(\.indentLevel), [1, 2])
+        XCTAssertEqual(selectionManager.focusedItemId, items.last?.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 0)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["abcde"])
+        XCTAssertEqual(selectionManager.focusedItemId, item.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [item.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["ab", "cde"])
         XCTAssertEqual(selectionManager.focusedItemId, items.last?.id)
         XCTAssertEqual(selectionManager.cursorPosition, 0)
     }

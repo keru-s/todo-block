@@ -76,6 +76,18 @@ struct TodoSelectionState: Equatable {
         self.cursorPosition = cursorPosition
     }
 
+    init(
+        focusedItemId: UUID?,
+        selectedItemIds: Set<UUID>,
+        lastSelectedId: UUID?,
+        cursorPosition: Int
+    ) {
+        self.focusedItemId = focusedItemId
+        self.selectedItemIds = selectedItemIds
+        self.lastSelectedId = lastSelectedId
+        self.cursorPosition = cursorPosition
+    }
+
     func apply(to selectionManager: SelectionManager) {
         selectionManager.focusedItemId = focusedItemId
         selectionManager.selectedItemIds = selectedItemIds
@@ -203,6 +215,7 @@ struct TodoItemSnapshot {
     }
 
     func replacing(
+        title: String? = nil,
         indentLevel: Int? = nil,
         sortOrder: Double? = nil,
         containerKindRaw: String? = nil,
@@ -210,7 +223,7 @@ struct TodoItemSnapshot {
     ) -> TodoItemSnapshot {
         TodoItemSnapshot(
             id: id,
-            title: title,
+            title: title ?? self.title,
             isCompleted: isCompleted,
             indentLevel: indentLevel ?? self.indentLevel,
             sortOrder: sortOrder ?? self.sortOrder,

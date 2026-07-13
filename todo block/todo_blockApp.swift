@@ -72,7 +72,7 @@ struct todo_blockApp: App {
 
             CommandGroup(replacing: .pasteboard) {
                 Button("剪切") {
-                    _ = NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+                    performCut()
                 }
                 .keyboardShortcut("x", modifiers: .command)
 
@@ -122,6 +122,22 @@ struct todo_blockApp: App {
         }
 
         _ = NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+    }
+
+    private func performCut() {
+        if
+            let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+            textView.selectedRange().length > 0
+        {
+            _ = NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+            return
+        }
+
+        if TodoClipboardManager.shared.cutSelectionToPasteboard() {
+            return
+        }
+
+        _ = NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
     }
 
     private func performPaste() {
