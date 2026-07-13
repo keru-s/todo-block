@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+@AGENTS.md
+
+This file contains only Claude Code-specific additions for this repository. Shared project guidance lives in `AGENTS.md` and must not be duplicated here.
 
 ## Project
 

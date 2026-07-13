@@ -1,6 +1,12 @@
 # Agent guide for the todo-block macOS app
 
-本仓是一个 macOS 原生应用，技术栈：SwiftUI + SwiftData + AppKit 编辑器（NSPopover / NSHostingController / NSViewControllerRepresentable / NSTextView）。下面这份指南给所有协作 agent 用——项目级特殊约定写在 `CLAUDE.md`，本文件提供跨项目通用的 Swift / SwiftUI / AppKit 风格规则。
+本仓是一个 macOS 原生应用，技术栈：SwiftUI + SwiftData + AppKit 编辑器（NSPopover / NSHostingController / NSViewControllerRepresentable / NSTextView）。这份文件是所有协作 agent 共用规则的唯一入口。共用规则只在这里维护；`CLAUDE.md` 通过引用本文件继承这些规则，并只保留 Claude Code 专用补充。
+
+## Instruction ownership
+
+- 所有 agent 都需要遵守的项目规则、构建命令、验证要求和工作流只写在 `AGENTS.md`。
+- `CLAUDE.md` 不复制共用规则，只引用 `AGENTS.md`，并仅记录 Claude Code 专用补充。
+- 任务跟踪和领域说明等较长资料放在 `docs/agents/`，本文件只保留入口。
 
 ## Role
 
@@ -76,3 +82,17 @@ You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with se
 - Commit message 中文为主，前缀 `feat/fix/refactor/test/docs/chore:` 之一
 - 别提交 `*.xcuserstate`、`DerivedData/`、`.codepilot-uploads/` 等本地状态（已在 `.gitignore`）
 - 不向远端 push 时不要加 `--no-verify`、`--force` 等参数
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default five-role triage vocabulary is used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. See `docs/agents/domain.md`.
