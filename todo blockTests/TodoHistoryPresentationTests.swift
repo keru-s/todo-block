@@ -35,13 +35,18 @@ final class TodoHistoryPresentationTests: XCTestCase {
     func testOtherMonthResultOpensMainWindowAndSelectsMonth() {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         var openCount = 0
-        coordinator.install { openCount += 1 }
+        var destinationWhenOpening: SidebarDestination?
+        coordinator.install {
+            openCount += 1
+            destinationWhenOpening = coordinator.revealRequest?.destination
+        }
         coordinator.activate(scope: .today)
         let targetDate = date(year: 2027, month: 4, day: 8)
 
         coordinator.reveal(destination: .scheduled(date: targetDate), itemId: nil)
 
         XCTAssertEqual(openCount, 1)
+        XCTAssertEqual(destinationWhenOpening, .month(year: 2027, month: 4))
         XCTAssertEqual(
             coordinator.revealRequest?.destination,
             .month(year: 2027, month: 4)

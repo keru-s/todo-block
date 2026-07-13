@@ -39,6 +39,11 @@ struct ContentView: View {
         .frame(minWidth: 600, minHeight: 400)
         .coordinateSpace(name: "main-window")
         .id(injectionHook)
+        .onAppear {
+            if let request = historyPresentation.revealRequest {
+                selectedDestination = request.destination
+            }
+        }
         .onChange(of: selectedDestination) { _, newValue in
             if case .month = newValue {
                 lastMonthDestination = newValue

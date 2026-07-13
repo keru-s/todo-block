@@ -27,14 +27,14 @@ final class TodoHistoryPresentationCoordinator {
 
     func reveal(destination: TodoDropDestination, itemId: UUID?) {
         let sidebarDestination = Self.sidebarDestination(for: destination)
-        if canActiveScopeDisplay(destination) == false {
-            openMainWindow?()
-        }
         revealRequest = TodoHistoryRevealRequest(
             id: UUID(),
             destination: sidebarDestination,
             itemId: itemId
         )
+        if canActiveScopeDisplay(destination) == false {
+            openMainWindow?()
+        }
     }
 
     func resetForTesting() {
