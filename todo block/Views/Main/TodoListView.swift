@@ -18,7 +18,7 @@ struct TodoListView: View {
     let month: Int
     var isActiveContext: Bool = true
 
-    @State private var selectionManager = SelectionManager()
+    @State private var selectionManager = SelectionManager(historyContext: .mainWindow)
     @State private var showModePopover = false
     @AppStorage("addTodayMode") private var addTodayModeRaw: String = AddTodayMode.carryOver.rawValue
 

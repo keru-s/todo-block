@@ -16,7 +16,7 @@ struct MenuBarView: View {
     }
 
     // 状态管理
-    @State private var selectionManager = SelectionManager()
+    @State private var selectionManager = SelectionManager(historyContext: .menuBar)
 
     private var store: TodoStore { TodoStore.shared }
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))

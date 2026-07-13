@@ -52,14 +52,13 @@ extension TodoStore {
         for entry in parsedEntries {
             let newItem = createItem(
                 title: entry.title,
+                isCompleted: entry.isCompleted,
                 dayDate: target.dayDate,
                 afterItem: currentAfterItem,
                 indentLevel: entry.indentLevel,
                 containerKind: target.containerKind,
                 insertAtBeginning: target.insertAtBeginning && currentAfterItem == nil
             )
-            newItem.isCompleted = entry.isCompleted
-            newItem.updatedAt = Date()
             createdItems.append(newItem)
             currentAfterItem = newItem
         }

@@ -337,6 +337,28 @@ final class SelectionManagerDeleteTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testUndoRestoresSelectionIntoReplacementViewContext() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 10, day: 9)
+        let first = store.createItem(title: "first", dayDate: day)
+        let second = store.createItem(title: "second", dayDate: day, afterItem: first)
+        store.undoManager.clear()
+
+        selectionManager = SelectionManager(historyContext: .mainWindow)
+        selectionManager.selectedItemIds = [first.id, second.id]
+        selectionManager.focusedItemId = first.id
+        selectionManager.lastSelectedId = first.id
+        selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
+
+        let replacement = SelectionManager(historyContext: .mainWindow)
+        selectionManager = replacement
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(replacement.focusedItemId, first.id)
+        XCTAssertEqual(replacement.selectedItemIds, [first.id, second.id])
+        XCTAssertNil(store.focusRequestId, "恢复选择不应广播到无关入口")
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

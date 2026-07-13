@@ -13,6 +13,7 @@ extension TodoStore {
     /// 创建新的待办事项
     func createItem(
         title: String = "",
+        isCompleted: Bool = false,
         dayDate: Date,
         afterItem: TodoItem? = nil,
         indentLevel: Int = 0,
@@ -54,6 +55,7 @@ extension TodoStore {
 
         let snapshot = TodoItemSnapshot(
             title: title,
+            isCompleted: isCompleted,
             indentLevel: indentLevel,
             sortOrder: newSortOrder,
             containerKindRaw: containerKind.rawValue,
@@ -80,11 +82,7 @@ extension TodoStore {
                     afterExists: true
                 )
             ],
-            selectionChanges: selectionChanges,
-            focusChange: TodoFocusChange(
-                before: selectionManager?.focusedItemId ?? afterItem?.id,
-                after: snapshot.id
-            )
+            selectionChanges: selectionChanges
         )
         guard
             undoManager.perform(operation, store: self),
@@ -220,41 +218,47 @@ extension TodoStore {
                     afterExists: false
                 )
             },
-            selectionChanges: selectionChange.map { [$0] } ?? [],
-            focusChange: selectionChange.map {
-                TodoFocusChange(
-                    before: $0.before.focusedItemId,
-                    after: $0.after.focusedItemId
-                )
-            }
+            selectionChanges: selectionChange.map { [$0] } ?? []
         )
         return undoManager.perform(operation, store: self)
     }
 
     /// 恢复已删除的待办事项
     func restoreItem(from snapshot: TodoItemSnapshot) {
+        _ = restoreItems(from: [snapshot])
+    }
+
+    /// 一次恢复整组待办；写入前只落盘一次待删除状态，避免批量恢复中途部分提交。
+    @discardableResult
+    func restoreItems(from snapshots: [TodoItemSnapshot]) -> Bool {
+        guard snapshots.isEmpty == false else { return true }
         // 让 pending 的 delete 先落盘，避免与下方 insert 撞 @Attribute(.unique) UUID
-        flushPendingChangesSync()
-        let restoredItem = TodoItem(
-            id: snapshot.id,
-            title: snapshot.title,
-            isCompleted: snapshot.isCompleted,
-            indentLevel: snapshot.indentLevel,
-            sortOrder: snapshot.sortOrder,
-            containerKindRaw: snapshot.containerKindRaw,
-            dayDate: snapshot.dayDate,
-            createdAt: snapshot.createdAt,
-            updatedAt: Date()
-        )
+        guard flushPendingChangesSync() else { return false }
+        guard snapshots.allSatisfy({ todoItemsCache[$0.id] == nil }) else { return false }
 
-        if restoredItem.containerKind == .scheduled {
-            _ = ensureSectionMaterialized(for: restoredItem.dayDate)
+        for snapshot in snapshots {
+            let restoredItem = TodoItem(
+                id: snapshot.id,
+                title: snapshot.title,
+                isCompleted: snapshot.isCompleted,
+                indentLevel: snapshot.indentLevel,
+                sortOrder: snapshot.sortOrder,
+                containerKindRaw: snapshot.containerKindRaw,
+                dayDate: snapshot.dayDate,
+                createdAt: snapshot.createdAt,
+                updatedAt: Date()
+            )
+
+            if restoredItem.containerKind == .scheduled {
+                _ = ensureSectionMaterialized(for: restoredItem.dayDate)
+            }
+
+            todoItemsCache[restoredItem.id] = restoredItem
+            modelContext?.insert(restoredItem)
         }
-
-        todoItemsCache[restoredItem.id] = restoredItem
-        modelContext?.insert(restoredItem)
         refreshTrigger += 1
         scheduleSave()
+        return true
     }
 
     /// 更新待办事项

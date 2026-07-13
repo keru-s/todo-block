@@ -41,7 +41,7 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testUndoCreateItemRequestsPreviousFocus() {
+    func testUnifiedCreateWithoutSelectionDoesNotBroadcastFocus() {
         let store = TodoStore.shared
         let date = Date()
 
@@ -54,7 +54,7 @@ final class UndoManagerTests: XCTestCase {
         let undone = store.undo()
         XCTAssertTrue(undone)
         XCTAssertEqual(store.items(for: date).count, 1)
-        XCTAssertEqual(store.focusRequestId, first.id)
+        XCTAssertNil(store.focusRequestId)
     }
 
     func testUnifiedCreateRestoresSameIdentityAndSelectionOnUndoRedo() {

@@ -73,9 +73,19 @@ struct TodoSelectionState: Equatable {
 }
 
 struct TodoSelectionChange {
-    let selectionManager: SelectionManager
+    let historyContext: TodoSelectionHistoryContext
     let before: TodoSelectionState
     let after: TodoSelectionState
+
+    init(
+        selectionManager: SelectionManager,
+        before: TodoSelectionState,
+        after: TodoSelectionState
+    ) {
+        historyContext = selectionManager.historyContext
+        self.before = before
+        self.after = after
+    }
 
     func state(for target: TodoOperationValueTarget) -> TodoSelectionState {
         switch target {
@@ -85,19 +95,12 @@ struct TodoSelectionChange {
             after
         }
     }
-}
 
-struct TodoFocusChange {
-    let before: UUID?
-    let after: UUID?
-
-    func itemId(for target: TodoOperationValueTarget) -> UUID? {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
+    func apply(for target: TodoOperationValueTarget) {
+        guard let selectionManager = SelectionManager.activeManager(for: historyContext) else {
+            return
         }
+        state(for: target).apply(to: selectionManager)
     }
 }
 
@@ -106,7 +109,6 @@ struct TodoOperation {
     var completionChanges: [TodoCompletionChange] = []
     var itemExistenceChanges: [TodoItemExistenceChange] = []
     var selectionChanges: [TodoSelectionChange] = []
-    var focusChange: TodoFocusChange?
 
     var isEmpty: Bool {
         completionChanges.isEmpty
@@ -161,16 +163,6 @@ struct TodoItemSnapshot {
         self.updatedAt = updatedAt
     }
 
-    func matchesUserState(of item: TodoItem) -> Bool {
-        item.id == id
-            && item.title == title
-            && item.isCompleted == isCompleted
-            && item.indentLevel == indentLevel
-            && item.sortOrder == sortOrder
-            && item.containerKindRaw == containerKindRaw
-            && item.dayDate == dayDate
-            && item.createdAt == createdAt
-    }
 }
 
 // MARK: - 统一撤销管理器（基于 NSUndoManager）
@@ -213,7 +205,7 @@ final class TodoUndoManager {
         guard operation.isEmpty == false else { return false }
         guard canApply(operation, target: .after, store: store) else { return false }
 
-        apply(operation, target: .after, store: store)
+        guard apply(operation, target: .after, store: store) else { return false }
         register(operation, target: .before, store: store)
         store.scheduleSave()
         return true
@@ -231,7 +223,10 @@ final class TodoUndoManager {
                 return
             }
 
-            self.apply(operation, target: target, store: store)
+            guard self.apply(operation, target: target, store: store) else {
+                self.invocationResult = .invalid
+                return
+            }
             self.invocationResult = .applied
             let oppositeTarget: TodoOperationValueTarget =
                 target == .before ? .after : .before
@@ -258,8 +253,7 @@ final class TodoUndoManager {
             guard sourceExists else {
                 return store.todoItemsCache[change.snapshot.id] == nil
             }
-            guard let item = store.todoItemsCache[change.snapshot.id] else { return false }
-            return change.snapshot.matchesUserState(of: item)
+            return store.todoItemsCache[change.snapshot.id] != nil
         }
     }
 
@@ -267,10 +261,17 @@ final class TodoUndoManager {
         _ operation: TodoOperation,
         target: TodoOperationValueTarget,
         store: TodoStore
-    ) {
-        for change in operation.itemExistenceChanges
-        where change.exists(for: target) && store.todoItemsCache[change.snapshot.id] == nil {
-            store.restoreItem(from: change.snapshot)
+    ) -> Bool {
+        let snapshotsToRestore: [TodoItemSnapshot] =
+            operation.itemExistenceChanges.compactMap { change -> TodoItemSnapshot? in
+            guard
+                change.exists(for: target),
+                store.todoItemsCache[change.snapshot.id] == nil
+            else { return nil }
+            return change.snapshot
+        }
+        guard store.restoreItems(from: snapshotsToRestore) else {
+            return false
         }
 
         for change in operation.completionChanges {
@@ -285,12 +286,8 @@ final class TodoUndoManager {
             store.deleteItemWithoutUndo(item)
         }
 
-        for change in operation.selectionChanges {
-            change.state(for: target).apply(to: change.selectionManager)
-        }
-        if let focusChange = operation.focusChange {
-            store.requestFocus(focusChange.itemId(for: target))
-        }
+        operation.selectionChanges.forEach { $0.apply(for: target) }
+        return true
     }
 
     // MARK: - 失效记录跳过

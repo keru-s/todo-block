@@ -492,6 +492,31 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(created.map(\.indentLevel), [0, 1, 2])
     }
 
+    func testImportCompletedItemUndoRedoPreservesRecordedResult() {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 16)
+        store.undoManager.clear()
+
+        let result = store.importMarkdown(
+            "- [x] completed",
+            scope: .scheduledMonth(year: 2026, month: 2),
+            selection: TodoClipboardSelectionSnapshot(
+                focusedItemId: nil,
+                selectedItemIds: []
+            )
+        )
+        guard let createdId = result?.createdItemIds.first else {
+            return XCTFail("应创建已完成待办")
+        }
+        XCTAssertEqual(store.todoItemsCache[createdId]?.isCompleted, true)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertNil(store.todoItemsCache[createdId])
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.todoItemsCache[createdId]?.isCompleted, true)
+    }
+
     func testImportMarkdownScheduledMonthPrefersFocusedItem() {
         let store = TodoStore.shared
         let targetDate = date(year: 2026, month: 2, day: 16)

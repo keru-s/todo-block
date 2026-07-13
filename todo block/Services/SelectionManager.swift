@@ -13,10 +13,29 @@ enum VerticalMoveDirection: Equatable {
     case down
 }
 
+enum TodoSelectionHistoryContext: Hashable {
+    case mainWindow
+    case longTerm
+    case menuBar
+    case ephemeral(UUID)
+}
+
+private final class WeakSelectionManager {
+    weak var value: SelectionManager?
+
+    init(_ value: SelectionManager) {
+        self.value = value
+    }
+}
+
 /// 集中管理多选、焦点移动、删除等逻辑
 @MainActor
 @Observable
 final class SelectionManager {
+    private static var historyManagers: [TodoSelectionHistoryContext: WeakSelectionManager] = [:]
+
+    let historyContext: TodoSelectionHistoryContext
+
     // MARK: - 状态属性
 
     var focusedItemId: UUID?
@@ -31,6 +50,20 @@ final class SelectionManager {
     var cursorPosition: Int = 0
     var preferredHorizontalOffset: CGFloat?
     var verticalMoveDirection: VerticalMoveDirection?
+
+    init(historyContext: TodoSelectionHistoryContext = .ephemeral(UUID())) {
+        self.historyContext = historyContext
+        activateHistoryContext()
+    }
+
+    func activateHistoryContext() {
+        Self.historyManagers = Self.historyManagers.filter { $0.value.value != nil }
+        Self.historyManagers[historyContext] = WeakSelectionManager(self)
+    }
+
+    static func activeManager(for context: TodoSelectionHistoryContext) -> SelectionManager? {
+        historyManagers[context]?.value
+    }
 
     // MARK: - 选择逻辑
 

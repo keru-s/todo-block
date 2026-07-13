@@ -23,6 +23,7 @@ enum ActiveListCommandContext {
         store: TodoStore,
         selectionManager: SelectionManager
     ) {
+        selectionManager.activateHistoryContext()
         TodoClipboardManager.shared.activateListContext(
             scope: scope,
             store: store,

@@ -11,7 +11,7 @@ import SwiftUI
 struct LongTermListView: View {
     var isActiveContext: Bool = true
 
-    @State private var selectionManager = SelectionManager()
+    @State private var selectionManager = SelectionManager(historyContext: .longTerm)
 
     private var store: TodoStore { TodoStore.shared }
     private let urgentSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
