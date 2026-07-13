@@ -3,6 +3,7 @@ import Foundation
 struct TodoHistoryRevealRequest: Equatable {
     let id: UUID
     let destination: SidebarDestination
+    let resultDestination: TodoDropDestination
     let itemId: UUID?
     let selectionState: TodoSelectionState?
 }
@@ -35,6 +36,7 @@ final class TodoHistoryPresentationCoordinator {
         revealRequest = TodoHistoryRevealRequest(
             id: UUID(),
             destination: sidebarDestination,
+            resultDestination: destination.normalized,
             itemId: itemId,
             selectionState: selectionState
         )

@@ -32,6 +32,25 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertNotNil(coordinator.revealRequest)
     }
 
+    func testTodayResultWithoutItemStillCarriesEmptySelectionState() {
+        let coordinator = TodoHistoryPresentationCoordinator.shared
+        let emptySelection = TodoSelectionState(focusing: nil)
+        let today = Date.now
+        coordinator.activate(scope: .today)
+
+        coordinator.reveal(
+            destination: .scheduled(date: today),
+            itemId: nil,
+            selectionState: emptySelection
+        )
+
+        XCTAssertEqual(
+            coordinator.revealRequest?.resultDestination,
+            .scheduled(date: Calendar.current.startOfDay(for: today))
+        )
+        XCTAssertEqual(coordinator.revealRequest?.selectionState, emptySelection)
+    }
+
     func testOtherMonthResultOpensMainWindowAndSelectsMonth() {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         var openCount = 0

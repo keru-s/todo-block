@@ -143,33 +143,20 @@ private extension MenuBarView {
     func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
         guard let request,
               handledHistoryRevealId != request.id,
-              request.destination == SidebarDestination.month(
-                  year: Calendar.current.component(.year, from: .now),
-                  month: Calendar.current.component(.month, from: .now)
-              ),
-              let itemId = request.itemId,
-              let item = store.todoItemsCache[itemId],
-              item.containerKind == .scheduled,
-              Calendar.current.isDateInToday(item.dayDate)
+              visibleHistoryRevealRequest?.id == request.id
         else { return }
         handledHistoryRevealId = request.id
         if let selectionState = request.selectionState {
             selectionState.apply(to: selectionManager)
-        } else {
+        } else if let itemId = request.itemId {
             selectionManager.restoreFocus(to: itemId)
         }
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
         guard let request = historyPresentation.revealRequest,
-              request.destination == SidebarDestination.month(
-                  year: Calendar.current.component(.year, from: .now),
-                  month: Calendar.current.component(.month, from: .now)
-              ),
-              let itemId = request.itemId,
-              let item = store.todoItemsCache[itemId],
-              item.containerKind == .scheduled,
-              Calendar.current.isDateInToday(item.dayDate)
+              case .scheduled(let date) = request.resultDestination.normalized,
+              Calendar.current.isDateInToday(date)
         else { return nil }
         return request
     }
