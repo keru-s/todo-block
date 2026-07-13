@@ -242,36 +242,26 @@ extension TodoStore {
     /// 标记完成（包括子任务）
     func toggleComplete(_ item: TodoItem) {
         let allItems = items(in: destination(for: item))
-        let oldState = item.isCompleted
-        let newState = oldState == false
+        let newState = item.isCompleted == false
 
         guard
             let itemIndex = allItems.firstIndex(where: { $0.id == item.id }),
             let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: allItems)
         else { return }
 
-        var childStates: [(UUID, Bool)] = []
-
-        for index in block.range {
+        let changes = block.range.compactMap { index -> TodoCompletionChange? in
             let blockItem = allItems[index]
-            if index != block.range.lowerBound {
-                childStates.append((blockItem.id, blockItem.isCompleted))
-            }
-            blockItem.isCompleted = newState
-            blockItem.updatedAt = .now
+            guard blockItem.isCompleted != newState else { return nil }
+            return TodoCompletionChange(
+                itemId: blockItem.id,
+                before: blockItem.isCompleted,
+                after: newState
+            )
         }
-
-        let childNewStates = childStates.map { ($0.0, newState) }
-        undoManager.registerToggleComplete(
-            itemId: item.id,
-            oldState: oldState,
-            newState: newState,
-            childOldStates: childStates,
-            childNewStates: childNewStates,
+        undoManager.perform(
+            TodoOperation(actionName: "勾选", completionChanges: changes),
             store: self
         )
-
-        scheduleSave()
     }
 
     func indentItem(_ item: TodoItem) {

@@ -83,17 +83,13 @@ final class TodoStore {
     /// 执行撤销操作
     @discardableResult
     func undo() -> Bool {
-        guard undoManager.canUndo else { return false }
         undoManager.undo()
-        return true
     }
 
     /// 执行重做操作
     @discardableResult
     func redo() -> Bool {
-        guard undoManager.canRedo else { return false }
         undoManager.redo()
-        return true
     }
 
     /// 是否有可撤销的操作

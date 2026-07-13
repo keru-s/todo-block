@@ -133,6 +133,39 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertFalse(child2.isCompleted)
     }
 
+    func testStaleCompletionUndoDoesNotPartiallyRestoreParentBlock() {
+        let store = TodoStore.shared
+        let date = Date()
+        let parent = store.createItem(title: "Parent", dayDate: date, indentLevel: 0)
+        let child = store.createItem(title: "Child", dayDate: date, indentLevel: 1)
+        store.undoManager.clear()
+
+        store.toggleComplete(parent)
+        store.deleteItemWithoutUndo(child)
+
+        XCTAssertFalse(store.undo())
+        XCTAssertTrue(parent.isCompleted)
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testStaleCompletionUndoSynchronouslySkipsToPreviousValidOperation() {
+        let store = TodoStore.shared
+        let date = Date()
+        let first = store.createItem(title: "First", dayDate: date)
+        let parent = store.createItem(title: "Parent", dayDate: date)
+        let child = store.createItem(title: "Child", dayDate: date, indentLevel: 1)
+        store.undoManager.clear()
+
+        store.toggleComplete(first)
+        store.toggleComplete(parent)
+        store.deleteItemWithoutUndo(child)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertFalse(first.isCompleted)
+        XCTAssertTrue(parent.isCompleted)
+        XCTAssertFalse(store.canUndo)
+    }
+
     // MARK: - 测试撤销缩进变化
 
     func testUndoIndentChange() {

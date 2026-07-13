@@ -7,6 +7,35 @@
 
 import Foundation
 
+enum TodoOperationValueTarget {
+    case before
+    case after
+}
+
+struct TodoCompletionChange {
+    let itemId: UUID
+    let before: Bool
+    let after: Bool
+
+    func value(for target: TodoOperationValueTarget) -> Bool {
+        switch target {
+        case .before:
+            before
+        case .after:
+            after
+        }
+    }
+}
+
+struct TodoOperation {
+    let actionName: String
+    let completionChanges: [TodoCompletionChange]
+
+    var isEmpty: Bool {
+        completionChanges.isEmpty
+    }
+}
+
 // MARK: - TodoItem 快照（用于恢复已删除或移动的项目）
 
 struct TodoItemSnapshot {
@@ -46,6 +75,14 @@ final class TodoUndoManager {
     /// 最大撤销步数
     private let maxUndoSteps = 50
 
+    private enum InvocationResult {
+        case untracked
+        case applied
+        case invalid
+    }
+
+    private var invocationResult = InvocationResult.untracked
+
     /// 是否有可撤销的操作
     var canUndo: Bool {
         nsUndoManager.canUndo
@@ -58,6 +95,63 @@ final class TodoUndoManager {
 
     init() {
         nsUndoManager.levelsOfUndo = maxUndoSteps
+    }
+
+    @discardableResult
+    func perform(_ operation: TodoOperation, store: TodoStore) -> Bool {
+        guard operation.isEmpty == false else { return false }
+        guard canApply(operation, target: .after, store: store) else { return false }
+
+        apply(operation, target: .after, store: store)
+        register(operation, target: .before, store: store)
+        store.scheduleSave()
+        return true
+    }
+
+    private func register(
+        _ operation: TodoOperation,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) {
+        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+            guard let self else { return }
+            guard self.canApply(operation, target: target, store: store) else {
+                self.invocationResult = .invalid
+                return
+            }
+
+            self.apply(operation, target: target, store: store)
+            self.invocationResult = .applied
+            let oppositeTarget: TodoOperationValueTarget =
+                target == .before ? .after : .before
+            self.register(operation, target: oppositeTarget, store: store)
+            store.scheduleSave()
+        }
+        nsUndoManager.setActionName(operation.actionName)
+    }
+
+    private func canApply(
+        _ operation: TodoOperation,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) -> Bool {
+        let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
+        return operation.completionChanges.allSatisfy { change in
+            guard let item = store.todoItemsCache[change.itemId] else { return false }
+            return item.isCompleted == change.value(for: sourceTarget)
+        }
+    }
+
+    private func apply(
+        _ operation: TodoOperation,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) {
+        for change in operation.completionChanges {
+            guard let item = store.todoItemsCache[change.itemId] else { continue }
+            item.isCompleted = change.value(for: target)
+            item.updatedAt = .now
+        }
     }
 
     // MARK: - 失效 undo 跳过
@@ -256,17 +350,35 @@ final class TodoUndoManager {
     }
 
     /// 执行撤销
-    func undo() {
-        if nsUndoManager.canUndo {
+    @discardableResult
+    func undo() -> Bool {
+        while nsUndoManager.canUndo {
+            invocationResult = .untracked
             nsUndoManager.undo()
+            switch invocationResult {
+            case .invalid:
+                continue
+            case .applied, .untracked:
+                return true
+            }
         }
+        return false
     }
 
     /// 执行重做
-    func redo() {
-        if nsUndoManager.canRedo {
+    @discardableResult
+    func redo() -> Bool {
+        while nsUndoManager.canRedo {
+            invocationResult = .untracked
             nsUndoManager.redo()
+            switch invocationResult {
+            case .invalid:
+                continue
+            case .applied, .untracked:
+                return true
+            }
         }
+        return false
     }
 
     /// 清空撤销栈
