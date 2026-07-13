@@ -62,13 +62,17 @@ final class TodoReorderCommandManager {
             selectedIds = [focusedItemId]
         }
         let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
-        guard selectedItems.isEmpty == false else { return false }
+        guard selectedItems.isEmpty == false, selectedItems.count == selectedIds.count else {
+            return false
+        }
 
         let originalFocusedItemId = selectionManager.focusedItemId
-        var didMoveAnyBlock = false
+        let selectionBefore = TodoSelectionState(selectionManager: selectionManager)
         let selectedByDestination = Dictionary(grouping: selectedItems) {
             store.destination(for: $0).normalized
         }
+        var rootsByDestination: [(TodoDropDestination, [UUID])] = []
+        var beforeSnapshotsById: [UUID: TodoItemSnapshot] = [:]
 
         for (destination, destinationSelection) in selectedByDestination {
             let currentItems = store.items(in: destination)
@@ -76,26 +80,75 @@ final class TodoReorderCommandManager {
                 selectedFrom: Set(destinationSelection.map(\.id)),
                 in: currentItems
             )
-            let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
-            for rootId in moveOrder {
-                let didMove = TodoKeyboardReorderEngine.move(
+            guard rootIds.isEmpty == false else { return false }
+            guard rootIds.allSatisfy({ rootId in
+                TodoKeyboardReorderEngine.movementPlan(
                     itemId: rootId,
                     direction: direction,
-                    items: store.items(in: destination),
-                    destination: destination,
-                    store: store
-                )
-                didMoveAnyBlock = didMoveAnyBlock || didMove
+                    items: currentItems
+                ) != nil
+            }) else {
+                return false
+            }
+            rootsByDestination.append((destination, rootIds))
+            for item in currentItems {
+                beforeSnapshotsById[item.id] = TodoItemSnapshot(from: item)
             }
         }
 
-        if didMoveAnyBlock {
-            selectionManager.selectedItemIds = selectedIds
-            selectionManager.focusedItemId = originalFocusedItemId
-            selectionManager.lastSelectedId = originalFocusedItemId
-            store.requestFocus(originalFocusedItemId)
+        let didMoveAllBlocks = store.undoManager.performWithoutRecording {
+            for (destination, rootIds) in rootsByDestination {
+                let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
+                for rootId in moveOrder {
+                    guard TodoKeyboardReorderEngine.move(
+                        itemId: rootId,
+                        direction: direction,
+                        items: store.items(in: destination),
+                        destination: destination,
+                        store: store,
+                        selectionManager: selectionManager
+                    ) else {
+                        return false
+                    }
+                }
+            }
+            return true
+        }
+        guard didMoveAllBlocks else {
+            _ = store.applyExistingItemSnapshots(Array(beforeSnapshotsById.values))
+            selectionBefore.apply(to: selectionManager)
+            return false
         }
 
-        return didMoveAnyBlock
+        selectionManager.selectedItemIds = selectedIds
+        selectionManager.focusedItemId = originalFocusedItemId
+        selectionManager.lastSelectedId = originalFocusedItemId
+
+        let stateChanges = beforeSnapshotsById.values.compactMap { before -> TodoItemStateChange? in
+            guard
+                let item = store.todoItemsCache[before.id],
+                before.matchesUserState(of: item) == false
+            else { return nil }
+            return TodoItemStateChange(before: before, after: TodoItemSnapshot(from: item))
+        }
+        let selectionAfter = TodoSelectionState(selectionManager: selectionManager)
+        let operation = TodoOperation(
+            actionName: "移动",
+            itemStateChanges: stateChanges,
+            selectionChanges: [
+                TodoSelectionChange(
+                    selectionManager: selectionManager,
+                    before: selectionBefore,
+                    after: selectionAfter
+                )
+            ]
+        )
+        guard store.undoManager.recordApplied(operation, store: store) else {
+            _ = store.applyExistingItemSnapshots(Array(beforeSnapshotsById.values))
+            selectionBefore.apply(to: selectionManager)
+            return false
+        }
+
+        return true
     }
 }

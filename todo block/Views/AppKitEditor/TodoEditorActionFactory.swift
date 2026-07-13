@@ -121,11 +121,11 @@ enum TodoEditorActionFactory {
             },
             indent: { itemId in
                 guard let item = store.todoItemsCache[itemId] else { return }
-                store.indentItem(item)
+                store.indentItem(item, selectionManager: selectionManager)
             },
             outdent: { itemId in
                 guard let item = store.todoItemsCache[itemId] else { return }
-                store.outdentItem(item)
+                store.outdentItem(item, selectionManager: selectionManager)
             },
             moveFocus: { itemId, direction, cursorPosition, horizontalOffset in
                 guard let item = store.todoItemsCache[itemId] else { return }
@@ -155,7 +155,8 @@ enum TodoEditorActionFactory {
                     direction: direction,
                     items: store.items(in: destination),
                     destination: destination,
-                    store: store
+                    store: store,
+                    selectionManager: selectionManager
                 )
                 selectionManager.restoreFocus(to: itemId)
             },
@@ -166,7 +167,8 @@ enum TodoEditorActionFactory {
                     indentLevel: indentLevel,
                     items: store.items(in: destination),
                     destination: destination,
-                    store: store
+                    store: store,
+                    selectionManager: selectionManager
                 )
                 selectionManager.restoreFocus(to: itemId)
             },
@@ -179,7 +181,8 @@ enum TodoEditorActionFactory {
                         item,
                         to: .longTerm(isUrgent: false),
                         afterItem: nil,
-                        newIndentLevel: 0
+                        newIndentLevel: 0,
+                        selectionManager: selectionManager
                     )
                 case .month(let year, let month):
                     let target = store.tailItemForScheduledMonth(year: year, month: month)
@@ -187,7 +190,8 @@ enum TodoEditorActionFactory {
                         item,
                         to: .scheduled(date: target.date),
                         afterItem: nil,
-                        newIndentLevel: 0
+                        newIndentLevel: 0,
+                        selectionManager: selectionManager
                     )
                 }
                 selectionManager.restoreFocus(to: itemId)

@@ -42,6 +42,20 @@ struct TodoItemExistenceChange {
     }
 }
 
+struct TodoItemStateChange {
+    let before: TodoItemSnapshot
+    let after: TodoItemSnapshot
+
+    func snapshot(for target: TodoOperationValueTarget) -> TodoItemSnapshot {
+        switch target {
+        case .before:
+            before
+        case .after:
+            after
+        }
+    }
+}
+
 struct TodoSelectionState: Equatable {
     let focusedItemId: UUID?
     let selectedItemIds: Set<UUID>
@@ -109,11 +123,13 @@ struct TodoOperation {
     let actionName: String
     var completionChanges: [TodoCompletionChange] = []
     var itemExistenceChanges: [TodoItemExistenceChange] = []
+    var itemStateChanges: [TodoItemStateChange] = []
     var selectionChanges: [TodoSelectionChange] = []
 
     var isEmpty: Bool {
         completionChanges.isEmpty
             && itemExistenceChanges.isEmpty
+            && itemStateChanges.isEmpty
     }
 }
 
@@ -175,6 +191,25 @@ struct TodoItemSnapshot {
             && item.createdAt == createdAt
     }
 
+    func replacing(
+        indentLevel: Int? = nil,
+        sortOrder: Double? = nil,
+        containerKindRaw: String? = nil,
+        dayDate: Date? = nil
+    ) -> TodoItemSnapshot {
+        TodoItemSnapshot(
+            id: id,
+            title: title,
+            isCompleted: isCompleted,
+            indentLevel: indentLevel ?? self.indentLevel,
+            sortOrder: sortOrder ?? self.sortOrder,
+            containerKindRaw: containerKindRaw ?? self.containerKindRaw,
+            dayDate: dayDate ?? self.dayDate,
+            createdAt: createdAt,
+            updatedAt: .now
+        )
+    }
+
 }
 
 // MARK: - 统一撤销管理器（基于 NSUndoManager）
@@ -197,6 +232,7 @@ final class TodoUndoManager {
     }
 
     private var invocationResult = InvocationResult.legacyApplied
+    private var suppressesRegistration = false
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -218,8 +254,25 @@ final class TodoUndoManager {
         guard canApply(operation, target: .after, store: store) else { return false }
 
         guard apply(operation, target: .after, store: store) else { return false }
-        register(operation, target: .before, store: store)
+        if suppressesRegistration == false {
+            register(operation, target: .before, store: store)
+        }
         store.scheduleSave()
+        return true
+    }
+
+    func performWithoutRecording(_ body: () -> Bool) -> Bool {
+        let wasSuppressingRegistration = suppressesRegistration
+        suppressesRegistration = true
+        defer { suppressesRegistration = wasSuppressingRegistration }
+        return body()
+    }
+
+    @discardableResult
+    func recordApplied(_ operation: TodoOperation, store: TodoStore) -> Bool {
+        guard operation.isEmpty == false else { return false }
+        guard canApply(operation, target: .before, store: store) else { return false }
+        register(operation, target: .before, store: store)
         return true
     }
 
@@ -260,6 +313,13 @@ final class TodoUndoManager {
         }
         guard completionChangesAreValid else { return false }
 
+        let itemStateChangesAreValid = operation.itemStateChanges.allSatisfy { change in
+            let sourceSnapshot = change.snapshot(for: sourceTarget)
+            guard let item = store.todoItemsCache[sourceSnapshot.id] else { return false }
+            return sourceSnapshot.matchesUserState(of: item)
+        }
+        guard itemStateChangesAreValid else { return false }
+
         return operation.itemExistenceChanges.allSatisfy { change in
             let sourceExists = change.exists(for: sourceTarget)
             guard sourceExists else {
@@ -291,6 +351,12 @@ final class TodoUndoManager {
             guard let item = store.todoItemsCache[change.itemId] else { continue }
             item.isCompleted = change.value(for: target)
             item.updatedAt = .now
+        }
+
+        guard store.applyExistingItemSnapshots(
+            operation.itemStateChanges.map { $0.snapshot(for: target) }
+        ) else {
+            return false
         }
 
         for change in operation.itemExistenceChanges

@@ -261,6 +261,40 @@ extension TodoStore {
         return true
     }
 
+    /// 把一组已有待办一次改到记录好的状态，并把日期维护并入同一步。
+    @discardableResult
+    func applyExistingItemSnapshots(_ snapshots: [TodoItemSnapshot]) -> Bool {
+        guard snapshots.isEmpty == false else { return true }
+        let items = snapshots.compactMap { todoItemsCache[$0.id] }
+        guard items.count == snapshots.count else { return false }
+
+        let sourceScheduledDates = Set(items.compactMap { item -> Date? in
+            guard item.containerKind == .scheduled else { return nil }
+            return Calendar.current.startOfDay(for: item.dayDate)
+        })
+        for snapshot in snapshots
+        where snapshot.containerKindRaw == TodoContainerKind.scheduled.rawValue {
+            _ = ensureSectionMaterialized(for: snapshot.dayDate)
+        }
+
+        for (item, snapshot) in zip(items, snapshots) {
+            item.title = snapshot.title
+            item.isCompleted = snapshot.isCompleted
+            item.indentLevel = snapshot.indentLevel
+            item.sortOrder = snapshot.sortOrder
+            item.containerKindRaw = snapshot.containerKindRaw
+            item.dayDate = snapshot.dayDate
+            item.updatedAt = .now
+        }
+
+        for date in sourceScheduledDates {
+            cleanupSectionIfEmpty(scheduledDate: date)
+        }
+        refreshTrigger += 1
+        scheduleSave()
+        return true
+    }
+
     /// 更新待办事项
     func updateItem(_ item: TodoItem) {
         item.updatedAt = Date()
@@ -292,15 +326,19 @@ extension TodoStore {
         )
     }
 
-    func indentItem(_ item: TodoItem) {
-        changeIndent(of: item, requestedDelta: 1)
+    func indentItem(_ item: TodoItem, selectionManager: SelectionManager? = nil) {
+        changeIndent(of: item, requestedDelta: 1, selectionManager: selectionManager)
     }
 
-    func outdentItem(_ item: TodoItem) {
-        changeIndent(of: item, requestedDelta: -1)
+    func outdentItem(_ item: TodoItem, selectionManager: SelectionManager? = nil) {
+        changeIndent(of: item, requestedDelta: -1, selectionManager: selectionManager)
     }
 
-    private func changeIndent(of item: TodoItem, requestedDelta: Int) {
+    private func changeIndent(
+        of item: TodoItem,
+        requestedDelta: Int,
+        selectionManager: SelectionManager?
+    ) {
         let destinationItems = items(in: destination(for: item))
         guard
             let itemIndex = destinationItems.firstIndex(where: { $0.id == item.id }),
@@ -321,22 +359,34 @@ extension TodoStore {
 
         let blockItems = block.range.map { destinationItems[$0] }
         let oldSnapshots = blockItems.map { TodoItemSnapshot(from: $0) }
-        for (offset, blockItem) in blockItems.enumerated() {
-            blockItem.indentLevel = blockIndentLevels[offset] + appliedDelta
-            blockItem.updatedAt = .now
+        let newSnapshots = oldSnapshots.enumerated().map { offset, snapshot in
+            snapshot.replacing(indentLevel: blockIndentLevels[offset] + appliedDelta)
         }
-        let newSnapshots = blockItems.map { TodoItemSnapshot(from: $0) }
-        undoManager.registerMoveItems(from: oldSnapshots, to: newSnapshots, store: self)
-        scheduleSave()
+        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+            let state = TodoSelectionState(selectionManager: manager)
+            return [TodoSelectionChange(selectionManager: manager, before: state, after: state)]
+        } ?? []
+        undoManager.perform(
+            TodoOperation(
+                actionName: appliedDelta > 0 ? "缩进" : "反缩进",
+                itemStateChanges: zip(oldSnapshots, newSnapshots).map {
+                    TodoItemStateChange(before: $0.0, after: $0.1)
+                },
+                selectionChanges: selectionChanges
+            ),
+            store: self
+        )
     }
 
     /// 移动待办事项及其子项到新位置
+    @discardableResult
     func moveItemWithChildren(
         _ item: TodoItem,
         to destination: TodoDropDestination,
         afterItem: TodoItem?,
-        newIndentLevel: Int
-    ) {
+        newIndentLevel: Int,
+        selectionManager: SelectionManager? = nil
+    ) -> Bool {
         let normalizedDestination = destination.normalized
         let sourceDestination = self.destination(for: item)
         let sourceItems = items(in: sourceDestination)
@@ -348,28 +398,34 @@ extension TodoStore {
                 in: sourceItems
             )
         else {
-            return
+            return false
         }
 
         let movingIds = Set(movingBlock.itemIds)
         if sourceDestination.normalized == normalizedDestination,
            let afterItem,
            movingIds.contains(afterItem.id) {
-            return
+            return false
         }
         if sourceDestination.normalized == normalizedDestination,
            afterItem == nil,
            movingBlock.range.lowerBound == 0 {
-            return
+            return false
         }
 
         let normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(in: sourceItems)
-        for index in movingBlock.range
-        where sourceItems[index].indentLevel != normalizedIndentLevels[index] {
-            sourceItems[index].indentLevel = normalizedIndentLevels[index]
-            sourceItems[index].updatedAt = .now
+        let currentPredecessor = movingBlock.range.lowerBound > 0
+            ? sourceItems[movingBlock.range.lowerBound - 1]
+            : nil
+        let needsIndentNormalization = movingBlock.range.contains { index in
+            sourceItems[index].indentLevel != normalizedIndentLevels[index]
         }
-
+        if sourceDestination.normalized == normalizedDestination,
+           currentPredecessor?.id == afterItem?.id,
+           newIndentLevel == movingBlock.rootIndentLevel,
+           needsIndentNormalization == false {
+            return false
+        }
         let itemsToMove = movingBlock.range.map { sourceItems[$0] }
         let baseIndent = movingBlock.rootIndentLevel
         let snapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
@@ -407,33 +463,40 @@ extension TodoStore {
             stepSize = 0.001
         }
 
-        if case .scheduled(let date) = normalizedDestination {
-            _ = ensureSectionMaterialized(for: date)
-        }
-
-        for (offset, movingItem) in itemsToMove.enumerated() {
-            movingItem.containerKind = normalizedDestination.containerKind
-            if case .scheduled(let date) = normalizedDestination {
-                movingItem.dayDate = date
+        let movedSnapshots = snapshots.enumerated().map { offset, snapshot in
+            let sourceIndex = movingBlock.range.lowerBound + offset
+            let movedDate: Date = if case .scheduled(let date) = normalizedDestination {
+                date
+            } else {
+                snapshot.dayDate
             }
-            movingItem.sortOrder = baseSortOrder + Double(offset) * stepSize
-            movingItem.indentLevel = max(
+            return snapshot.replacing(
+                indentLevel: max(
                 0,
-                min(TodoItem.maxIndentLevel, movingItem.indentLevel + indentDelta)
+                    min(
+                        TodoItem.maxIndentLevel,
+                        normalizedIndentLevels[sourceIndex] + indentDelta
+                    )
+                ),
+                sortOrder: baseSortOrder + Double(offset) * stepSize,
+                containerKindRaw: normalizedDestination.containerKind.rawValue,
+                dayDate: movedDate
             )
-            movingItem.updatedAt = Date()
         }
 
-        let movedSnapshots = itemsToMove.map { TodoItemSnapshot(from: $0) }
-        undoManager.registerMoveItems(from: snapshots, to: movedSnapshots, store: self)
-
-        // 若源是 scheduled 且目标 ≠ 源，源日期可能变成空 section，清理掉。
-        if case .scheduled(let sourceDate) = sourceDestination.normalized,
-           sourceDestination.normalized != normalizedDestination {
-            cleanupSectionIfEmpty(scheduledDate: sourceDate)
-        }
-
-        refreshTrigger += 1
-        scheduleSave()
+        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+            let state = TodoSelectionState(selectionManager: manager)
+            return [TodoSelectionChange(selectionManager: manager, before: state, after: state)]
+        } ?? []
+        return undoManager.perform(
+            TodoOperation(
+                actionName: "移动",
+                itemStateChanges: zip(snapshots, movedSnapshots).map {
+                    TodoItemStateChange(before: $0.0, after: $0.1)
+                },
+                selectionChanges: selectionChanges
+            ),
+            store: self
+        )
     }
 }

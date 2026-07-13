@@ -7,7 +7,8 @@ enum TodoReorderMoveEngine {
         indentLevel: Int,
         items: [TodoItem],
         destination: TodoDropDestination,
-        store: TodoStore
+        store: TodoStore,
+        selectionManager: SelectionManager? = nil
     ) {
         guard let draggedItem = store.todoItemsCache[draggedId] else { return }
 
@@ -54,7 +55,8 @@ enum TodoReorderMoveEngine {
             draggedItem,
             to: normalizedDestination,
             afterItem: afterItem,
-            newIndentLevel: clampedIndentLevel
+            newIndentLevel: clampedIndentLevel,
+            selectionManager: selectionManager
         )
     }
 }

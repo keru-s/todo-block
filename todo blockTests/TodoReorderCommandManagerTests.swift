@@ -56,6 +56,7 @@ final class TodoReorderCommandManagerTests: XCTestCase {
         let d = store.createItem(title: "d", dayDate: day, afterItem: c)
         selectionManager.selectedItemIds = [b.id, d.id]
         selectionManager.focusedItemId = b.id
+        store.undoManager.clear()
         TodoReorderCommandManager.shared.activateListContext(
             store: store,
             selectionManager: selectionManager
@@ -64,5 +65,32 @@ final class TodoReorderCommandManagerTests: XCTestCase {
         XCTAssertTrue(TodoReorderCommandManager.shared.moveSelectionUp())
         XCTAssertEqual(store.items(for: day).map(\.title), ["b", "a", "d", "c"])
         XCTAssertEqual(selectionManager.selectedItemIds, [b.id, d.id])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["a", "b", "c", "d"])
+        XCTAssertFalse(store.canUndo, "多个选中组必须只占一步")
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["b", "a", "d", "c"])
+    }
+
+    func testMoveSelectionDoesNothingWhenAnySelectedBlockCannotMove() {
+        let store = TodoStore.shared
+        let day = Date.now
+        let a = store.createItem(title: "a", dayDate: day)
+        let b = store.createItem(title: "b", dayDate: day, afterItem: a)
+        let c = store.createItem(title: "c", dayDate: day, afterItem: b)
+        _ = store.createItem(title: "d", dayDate: day, afterItem: c)
+        selectionManager.selectedItemIds = [a.id, c.id]
+        selectionManager.focusedItemId = a.id
+        store.undoManager.clear()
+        TodoReorderCommandManager.shared.activateListContext(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertFalse(TodoReorderCommandManager.shared.moveSelectionUp())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["a", "b", "c", "d"])
+        XCTAssertFalse(store.canUndo)
     }
 }

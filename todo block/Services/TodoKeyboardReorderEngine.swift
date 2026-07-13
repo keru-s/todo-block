@@ -32,7 +32,8 @@ enum TodoKeyboardReorderEngine {
         direction: TodoKeyboardReorderDirection,
         items: [TodoItem],
         destination: TodoDropDestination,
-        store: TodoStore
+        store: TodoStore,
+        selectionManager: SelectionManager? = nil
     ) -> Bool {
         guard
             let item = store.todoItemsCache[itemId],
@@ -42,14 +43,13 @@ enum TodoKeyboardReorderEngine {
         }
 
         let afterItem = plan.afterItemId.flatMap { store.todoItemsCache[$0] }
-        store.moveItemWithChildren(
+        return store.moveItemWithChildren(
             item,
             to: destination,
             afterItem: afterItem,
-            newIndentLevel: plan.indentLevel
+            newIndentLevel: plan.indentLevel,
+            selectionManager: selectionManager
         )
-        store.requestFocus(itemId)
-        return true
     }
 
     static func movementPlan(
