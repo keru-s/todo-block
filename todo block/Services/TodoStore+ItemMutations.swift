@@ -315,12 +315,6 @@ extension TodoStore {
         return true
     }
 
-    /// 更新待办事项
-    func updateItem(_ item: TodoItem) {
-        item.updatedAt = Date()
-        scheduleSave()
-    }
-
     /// 标记完成（包括子任务）
     func toggleComplete(_ item: TodoItem) {
         let allItems = items(in: destination(for: item))
