@@ -387,6 +387,82 @@ final class TodoKeyboardReorderEngineTests: XCTestCase {
         )
     }
 
+    func testMoveDownTightensJumpedIndentWithoutChangingBlockOrder() {
+        let store = TodoStore.shared
+        let dayDate = date(year: 2026, month: 3, day: 11)
+
+        let root = store.createItem(title: "root", dayDate: dayDate, indentLevel: 0)
+        let moving = store.createItem(
+            title: "moving",
+            dayDate: dayDate,
+            afterItem: root,
+            indentLevel: 3
+        )
+        let descendant = store.createItem(
+            title: "descendant",
+            dayDate: dayDate,
+            afterItem: moving,
+            indentLevel: 4
+        )
+        _ = store.createItem(
+            title: "sibling",
+            dayDate: dayDate,
+            afterItem: descendant,
+            indentLevel: 1
+        )
+
+        let didMove = TodoKeyboardReorderEngine.move(
+            itemId: moving.id,
+            direction: .down,
+            items: store.items(for: dayDate),
+            destination: .scheduled(date: dayDate),
+            store: store
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(
+            store.items(for: dayDate).map(\.title),
+            ["root", "sibling", "moving", "descendant"]
+        )
+        XCTAssertEqual(moving.indentLevel, 1)
+        XCTAssertEqual(descendant.indentLevel, 2)
+    }
+
+    func testMoveDownKeepsNormalizedDescendantWhoseRawIndentIsShallower() {
+        let store = TodoStore.shared
+        let dayDate = date(year: 2026, month: 3, day: 11)
+
+        let moving = store.createItem(title: "moving", dayDate: dayDate, indentLevel: 3)
+        let descendant = store.createItem(
+            title: "descendant",
+            dayDate: dayDate,
+            afterItem: moving,
+            indentLevel: 2
+        )
+        _ = store.createItem(
+            title: "sibling",
+            dayDate: dayDate,
+            afterItem: descendant,
+            indentLevel: 0
+        )
+
+        let didMove = TodoKeyboardReorderEngine.move(
+            itemId: moving.id,
+            direction: .down,
+            items: store.items(for: dayDate),
+            destination: .scheduled(date: dayDate),
+            store: store
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(
+            store.items(for: dayDate).map(\.title),
+            ["sibling", "moving", "descendant"]
+        )
+        XCTAssertEqual(moving.indentLevel, 0)
+        XCTAssertEqual(descendant.indentLevel, 1)
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year
