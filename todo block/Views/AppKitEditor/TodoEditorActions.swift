@@ -20,7 +20,8 @@ enum TodoEditorFocusMoveDirection {
 }
 
 struct TodoEditorActions {
-    var titleChanged: (UUID, String) -> Void = { _, _ in }
+    var titleChanged: (UUID, TodoTextEditEvent) -> Void = { _, _ in }
+    var textSelectionChanged: (UUID, TodoTextSelection) -> Void = { _, _ in }
     var toggleCompleted: (UUID) -> Void = { _ in }
     var selectItem: (UUID, Bool, Int?) -> Void = { _, _, _ in }
     var beginDragSelection: (UUID, Int?) -> Void = { _, _ in }

@@ -43,6 +43,7 @@ final class TodoStore {
     // MARK: - 撤销管理
 
     let undoManager = TodoUndoManager()
+    let textEditSession = TodoTextEditSession()
 
     // MARK: - 内部状态（@ObservationIgnored，extension 跨文件需要访问）
 
@@ -72,6 +73,7 @@ final class TodoStore {
 
     /// 用于测试：重置状态
     func reset() {
+        textEditSession.reset()
         saveTask?.cancel()
         saveTask = nil
         modelContext = nil
@@ -83,18 +85,20 @@ final class TodoStore {
     /// 执行撤销操作
     @discardableResult
     func undo() -> Bool {
-        undoManager.undo()
+        flushPendingTextEdit()
+        return undoManager.undo()
     }
 
     /// 执行重做操作
     @discardableResult
     func redo() -> Bool {
-        undoManager.redo()
+        flushPendingTextEdit()
+        return undoManager.redo()
     }
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
-        undoManager.canUndo
+        textEditSession.hasPendingSegment || undoManager.canUndo
     }
 
     /// 是否有可重做的操作
@@ -105,6 +109,11 @@ final class TodoStore {
     /// 获取共享的 NSUndoManager（供 TextField 使用）
     var nsUndoManager: UndoManager {
         undoManager.nsUndoManager
+    }
+
+    @discardableResult
+    func flushPendingTextEdit() -> Bool {
+        textEditSession.flush(store: self)
     }
 
     /// 触发一次焦点恢复请求（用于撤销/重做后的光标恢复）
@@ -157,6 +166,7 @@ final class TodoStore {
     }
 
     private func clearCachesAndState(clearUndo: Bool) {
+        textEditSession.reset()
         todoItemsCache.removeAll()
         daySectionsCache.removeAll()
         focusRequestId = nil

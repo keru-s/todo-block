@@ -61,12 +61,14 @@ struct TodoSelectionState: Equatable {
     let selectedItemIds: Set<UUID>
     let lastSelectedId: UUID?
     let cursorPosition: Int
+    let textSelectionLength: Int
 
     init(selectionManager: SelectionManager) {
         focusedItemId = selectionManager.focusedItemId
         selectedItemIds = selectionManager.selectedItemIds
         lastSelectedId = selectionManager.lastSelectedId
         cursorPosition = selectionManager.cursorPosition
+        textSelectionLength = selectionManager.textSelectionLength
     }
 
     init(focusing itemId: UUID?, cursorPosition: Int = 0) {
@@ -74,18 +76,21 @@ struct TodoSelectionState: Equatable {
         selectedItemIds = itemId.map { [$0] } ?? []
         lastSelectedId = itemId
         self.cursorPosition = cursorPosition
+        textSelectionLength = 0
     }
 
     init(
         focusedItemId: UUID?,
         selectedItemIds: Set<UUID>,
         lastSelectedId: UUID?,
-        cursorPosition: Int
+        cursorPosition: Int,
+        textSelectionLength: Int = 0
     ) {
         self.focusedItemId = focusedItemId
         self.selectedItemIds = selectedItemIds
         self.lastSelectedId = lastSelectedId
         self.cursorPosition = cursorPosition
+        self.textSelectionLength = textSelectionLength
     }
 
     func apply(to selectionManager: SelectionManager) {
@@ -93,6 +98,7 @@ struct TodoSelectionState: Equatable {
         selectionManager.selectedItemIds = selectedItemIds
         selectionManager.lastSelectedId = lastSelectedId
         selectionManager.cursorPosition = cursorPosition
+        selectionManager.textSelectionLength = textSelectionLength
         selectionManager.preferredHorizontalOffset = nil
         selectionManager.verticalMoveDirection = nil
     }
@@ -269,14 +275,25 @@ final class TodoUndoManager {
 
     init() {
         nsUndoManager.levelsOfUndo = maxUndoSteps
+        nsUndoManager.groupsByEvent = false
     }
 
     @discardableResult
     func perform(_ operation: TodoOperation, store: TodoStore) -> Bool {
+        store.flushPendingTextEdit()
         guard operation.isEmpty == false else { return false }
         guard canApply(operation, target: .after, store: store) else { return false }
 
         guard apply(operation, target: .after, store: store) else { return false }
+        register(operation, target: .before, store: store)
+        store.scheduleSave()
+        return true
+    }
+
+    @discardableResult
+    func recordApplied(_ operation: TodoOperation, store: TodoStore) -> Bool {
+        guard operation.isEmpty == false else { return false }
+        guard canApply(operation, target: .before, store: store) else { return false }
         register(operation, target: .before, store: store)
         store.scheduleSave()
         return true
@@ -287,24 +304,39 @@ final class TodoUndoManager {
         target: TodoOperationValueTarget,
         store: TodoStore
     ) {
-        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-            guard let self else { return }
-            guard self.canApply(operation, target: target, store: store) else {
-                self.invocationResult = .invalid
-                return
-            }
+        registerStandalone {
+            nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+                guard let self else { return }
+                guard self.canApply(operation, target: target, store: store) else {
+                    self.invocationResult = .invalid
+                    return
+                }
 
-            guard self.apply(operation, target: target, store: store) else {
-                self.invocationResult = .invalid
-                return
+                guard self.apply(operation, target: target, store: store) else {
+                    self.invocationResult = .invalid
+                    return
+                }
+                self.invocationResult = .applied
+                let oppositeTarget: TodoOperationValueTarget =
+                    target == .before ? .after : .before
+                self.register(operation, target: oppositeTarget, store: store)
+                store.scheduleSave()
             }
-            self.invocationResult = .applied
-            let oppositeTarget: TodoOperationValueTarget =
-                target == .before ? .after : .before
-            self.register(operation, target: oppositeTarget, store: store)
-            store.scheduleSave()
+            nsUndoManager.setActionName(operation.actionName)
         }
-        nsUndoManager.setActionName(operation.actionName)
+    }
+
+    private func registerStandalone(_ registration: () -> Void) {
+        let opensGroup = nsUndoManager.isUndoing == false
+            && nsUndoManager.isRedoing == false
+            && nsUndoManager.groupingLevel == 0
+        if opensGroup {
+            nsUndoManager.beginUndoGrouping()
+        }
+        registration()
+        if opensGroup {
+            nsUndoManager.endUndoGrouping()
+        }
     }
 
     private func canApply(
@@ -443,29 +475,31 @@ final class TodoUndoManager {
 
     /// 注册批量删除的撤销（支持对称 redo）
     func registerDeleteItems(snapshots: [TodoItemSnapshot], store: TodoStore) {
-        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-            self?.markCurrentInvocationApplied()
-            // undo: 恢复所有 snapshot
-            for snapshot in snapshots.reversed() {
-                store.restoreItem(from: snapshot)
-            }
-            // 注册 redo: 再次批量删除
-            self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-                let items = snapshots.compactMap { store.todoItemsCache[$0.id] }
-                guard items.count == snapshots.count else {
-                    self?.markCurrentInvocationInvalid()
-                    return
-                }
+        registerStandalone {
+            nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 self?.markCurrentInvocationApplied()
-                for item in items {
-                    store.deleteItemWithoutUndo(item)
+                // undo: 恢复所有 snapshot
+                for snapshot in snapshots.reversed() {
+                    store.restoreItem(from: snapshot)
                 }
-                // 再注册 undo
-                self?.registerDeleteItems(snapshots: snapshots, store: store)
+                // 注册 redo: 再次批量删除
+                self?.nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+                    let items = snapshots.compactMap { store.todoItemsCache[$0.id] }
+                    guard items.count == snapshots.count else {
+                        self?.markCurrentInvocationInvalid()
+                        return
+                    }
+                    self?.markCurrentInvocationApplied()
+                    for item in items {
+                        store.deleteItemWithoutUndo(item)
+                    }
+                    // 再注册 undo
+                    self?.registerDeleteItems(snapshots: snapshots, store: store)
+                }
+                self?.nsUndoManager.setActionName("批量删除")
             }
-            self?.nsUndoManager.setActionName("批量删除")
+            nsUndoManager.setActionName("批量删除")
         }
-        nsUndoManager.setActionName("批量删除")
     }
 
     /// 注册完成状态切换的撤销
@@ -534,21 +568,23 @@ final class TodoUndoManager {
         store: TodoStore,
         apply: @escaping (TodoItem, Value) -> Void
     ) {
-        nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-            guard let item = store.todoItemsCache[itemId] else {
-                self?.markCurrentInvocationInvalid()
-                return
+        registerStandalone {
+            nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
+                guard let item = store.todoItemsCache[itemId] else {
+                    self?.markCurrentInvocationInvalid()
+                    return
+                }
+                self?.markCurrentInvocationApplied()
+                apply(item, oldValue)
+                item.updatedAt = Date()
+                self?.registerItemFieldChange(
+                    itemId: itemId, oldValue: newValue, newValue: oldValue,
+                    actionName: actionName, store: store, apply: apply
+                )
+                store.scheduleSave()
             }
-            self?.markCurrentInvocationApplied()
-            apply(item, oldValue)
-            item.updatedAt = Date()
-            self?.registerItemFieldChange(
-                itemId: itemId, oldValue: newValue, newValue: oldValue,
-                actionName: actionName, store: store, apply: apply
-            )
-            store.scheduleSave()
+            nsUndoManager.setActionName(actionName)
         }
-        nsUndoManager.setActionName(actionName)
     }
 
     /// 注册移动 Items 的撤销

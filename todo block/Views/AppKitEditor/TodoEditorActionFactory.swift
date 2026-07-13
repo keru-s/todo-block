@@ -13,12 +13,22 @@ enum TodoEditorActionFactory {
         sectionById: @escaping (UUID) -> DaySection? = { _ in nil }
     ) -> TodoEditorActions {
         TodoEditorActions(
-            titleChanged: { itemId, newTitle in
-                guard let item = store.todoItemsCache[itemId], item.title != newTitle else {
-                    return
-                }
-                item.title = newTitle
-                store.updateItem(item)
+            titleChanged: { itemId, event in
+                guard let item = store.todoItemsCache[itemId] else { return }
+                store.textEditSession.apply(
+                    event,
+                    to: item,
+                    selectionManager: selectionManager,
+                    store: store
+                )
+            },
+            textSelectionChanged: { itemId, selection in
+                store.textEditSession.selectionDidChange(
+                    itemId: itemId,
+                    selection: selection,
+                    selectionManager: selectionManager,
+                    store: store
+                )
             },
             toggleCompleted: { itemId in
                 guard let item = store.todoItemsCache[itemId] else { return }
@@ -26,6 +36,7 @@ enum TodoEditorActionFactory {
             },
             selectItem: { itemId, shiftPressed, cursorPosition in
                 guard let item = store.todoItemsCache[itemId] else { return }
+                store.flushPendingTextEdit()
                 selectionManager.handleSelect(
                     item: item,
                     allItems: store.items(in: store.destination(for: item)),

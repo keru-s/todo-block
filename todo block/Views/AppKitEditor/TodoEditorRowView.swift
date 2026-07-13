@@ -69,9 +69,14 @@ final class TodoEditorRowView: NSView {
         titleTextView.textContainer?.lineBreakMode = .byWordWrapping
         titleTextView.textContainer?.widthTracksTextView = true
         titleTextView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        titleTextView.onTextDidChange = { [weak self] newText in
+        titleTextView.allowsUndo = false
+        titleTextView.onTextDidChange = { [weak self] event in
             guard let self, let itemId, isApplyingSnapshot == false else { return }
-            actions.titleChanged(itemId, newText)
+            actions.titleChanged(itemId, event)
+        }
+        titleTextView.onSelectionDidChange = { [weak self] selection in
+            guard let self, let itemId, isApplyingSnapshot == false else { return }
+            actions.textSelectionChanged(itemId, selection)
         }
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
@@ -164,16 +169,9 @@ final class TodoEditorRowView: NSView {
 
         var didReplaceText = false
         if titleTextView.string != snapshot.title && isComposingText == false {
-            let wasFirstResponder = window?.firstResponder === titleTextView
-            let selectedRange = titleTextView.selectedRange()
             isApplyingSnapshot = true
             titleTextView.string = snapshot.title
-            if wasFirstResponder {
-                let length = (snapshot.title as NSString).length
-                titleTextView.setSelectedRange(
-                    NSRange(location: min(selectedRange.location, length), length: 0)
-                )
-            }
+            titleTextView.synchronizeReportedText(snapshot.title)
             isApplyingSnapshot = false
             didReplaceText = true
         }
@@ -192,14 +190,26 @@ final class TodoEditorRowView: NSView {
             if window?.firstResponder !== self {
                 window?.makeFirstResponder(self)
             }
-        } else if snapshot.isFocused, window?.firstResponder !== titleTextView {
-            Task { @MainActor [weak self] in
-                guard let self, self.itemId == snapshot.id else { return }
-                titleTextView.focus(
-                    cursorPosition: snapshot.cursorPosition,
-                    preferredHorizontalOffset: snapshot.preferredHorizontalOffset,
-                    verticalMoveDirection: snapshot.verticalMoveDirection
-                )
+        } else if snapshot.isFocused {
+            let textLength = (snapshot.title as NSString).length
+            let location = min(max(0, snapshot.cursorPosition), textLength)
+            let selectionLength = min(
+                max(0, snapshot.textSelectionLength),
+                textLength - location
+            )
+            let desiredRange = NSRange(location: location, length: selectionLength)
+            if window?.firstResponder !== titleTextView
+                || titleTextView.selectedRange() != desiredRange
+            {
+                Task { @MainActor [weak self] in
+                    guard let self, self.itemId == snapshot.id else { return }
+                    titleTextView.focus(
+                        cursorPosition: snapshot.cursorPosition,
+                        selectionLength: snapshot.textSelectionLength,
+                        preferredHorizontalOffset: snapshot.preferredHorizontalOffset,
+                        verticalMoveDirection: snapshot.verticalMoveDirection
+                    )
+                }
             }
         } else if snapshot.isFocused == false {
             prefersRowFirstResponder = false

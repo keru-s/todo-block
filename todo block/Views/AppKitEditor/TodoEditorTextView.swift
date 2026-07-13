@@ -7,12 +7,16 @@ import AppKit
 
 @MainActor
 final class TodoEditorTextView: NSTextView {
-    var onTextDidChange: ((String) -> Void)?
+    var onTextDidChange: ((TodoTextEditEvent) -> Void)?
+    var onSelectionDidChange: ((TodoTextSelection) -> Void)?
     var onMouseFocus: ((Bool, Int?) -> Void)?
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
     var deletesOnBackspace: Bool = false
     private var isApplyingHandledCommandText = false
+    private var lastReportedText = ""
+    private var pendingBeforeSelection: TodoTextSelection?
+    private var pendingEditKind: TodoTextEditKind?
 
     var isComposingText: Bool {
         hasMarkedText()
@@ -37,8 +41,47 @@ final class TodoEditorTextView: NSTextView {
         let composing = isComposingText
         onCompositionChange?(composing)
         if composing == false && isApplyingHandledCommandText == false {
-            onTextDidChange?(string)
+            reportCommittedTextIfNeeded()
         }
+    }
+
+    override func setSelectedRanges(
+        _ ranges: [NSValue],
+        affinity: NSSelectionAffinity,
+        stillSelecting stillSelectingFlag: Bool
+    ) {
+        super.setSelectedRanges(
+            ranges,
+            affinity: affinity,
+            stillSelecting: stillSelectingFlag
+        )
+        guard
+            pendingBeforeSelection == nil,
+            isComposingText == false,
+            isApplyingHandledCommandText == false
+        else { return }
+        onSelectionDidChange?(TodoTextSelection(selectedRange()))
+    }
+
+    override func shouldChangeText(
+        in affectedCharRange: NSRange,
+        replacementString: String?
+    ) -> Bool {
+        if isApplyingHandledCommandText == false, pendingBeforeSelection == nil {
+            pendingBeforeSelection = TodoTextSelection(selectedRange())
+            let replacementLength = ((replacementString ?? "") as NSString).length
+            if affectedCharRange.length == 0, replacementLength > 0 {
+                pendingEditKind = .insertion
+            } else if affectedCharRange.length > 0, replacementLength == 0 {
+                pendingEditKind = .deletion
+            } else {
+                pendingEditKind = .replacement
+            }
+        }
+        return super.shouldChangeText(
+            in: affectedCharRange,
+            replacementString: replacementString
+        )
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -66,7 +109,7 @@ final class TodoEditorTextView: NSTextView {
     override func unmarkText() {
         super.unmarkText()
         onCompositionChange?(false)
-        onTextDidChange?(string)
+        reportCommittedTextIfNeeded()
     }
 
     override func doCommand(by commandSelector: Selector) {
@@ -79,6 +122,7 @@ final class TodoEditorTextView: NSTextView {
 
     func focus(
         cursorPosition: Int,
+        selectionLength: Int,
         preferredHorizontalOffset: CGFloat?,
         verticalMoveDirection: VerticalMoveDirection?
     ) {
@@ -96,7 +140,14 @@ final class TodoEditorTextView: NSTextView {
 
         let textLength = (string as NSString).length
         let position = min(max(0, cursorPosition), textLength)
-        setSelectedRange(NSRange(location: position, length: 0))
+        let length = min(max(0, selectionLength), textLength - position)
+        setSelectedRange(NSRange(location: position, length: length))
+    }
+
+    func synchronizeReportedText(_ text: String) {
+        lastReportedText = text
+        pendingBeforeSelection = nil
+        pendingEditKind = nil
     }
 
     func closestCharacterIndexForVerticalMove(
@@ -244,6 +295,45 @@ final class TodoEditorTextView: NSTextView {
         setSelectedRange(NSRange(location: length, length: 0))
         invalidateIntrinsicContentSize()
         isApplyingHandledCommandText = false
+    }
+
+    private func reportCommittedTextIfNeeded() {
+        guard string != lastReportedText else {
+            pendingBeforeSelection = nil
+            pendingEditKind = nil
+            return
+        }
+        let beforeSelection = pendingBeforeSelection ?? TodoTextSelection(selectedRange())
+        let afterSelection = TodoTextSelection(selectedRange())
+        let kind = pendingEditKind ?? inferredEditKind(
+            beforeText: lastReportedText,
+            afterText: string,
+            beforeSelection: beforeSelection
+        )
+        let event = TodoTextEditEvent(
+            beforeText: lastReportedText,
+            afterText: string,
+            beforeSelection: beforeSelection,
+            afterSelection: afterSelection,
+            kind: kind
+        )
+        lastReportedText = string
+        pendingBeforeSelection = nil
+        pendingEditKind = nil
+        onTextDidChange?(event)
+    }
+
+    private func inferredEditKind(
+        beforeText: String,
+        afterText: String,
+        beforeSelection: TodoTextSelection
+    ) -> TodoTextEditKind {
+        if beforeSelection.length > 0 {
+            return .replacement
+        }
+        let beforeLength = (beforeText as NSString).length
+        let afterLength = (afterText as NSString).length
+        return afterLength >= beforeLength ? .insertion : .deletion
     }
 
     private var isOnFirstVisualLine: Bool {

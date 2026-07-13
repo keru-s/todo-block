@@ -48,6 +48,7 @@ final class SelectionManager {
 
     // 光标位置
     var cursorPosition: Int = 0
+    var textSelectionLength: Int = 0
     var preferredHorizontalOffset: CGFloat?
     var verticalMoveDirection: VerticalMoveDirection?
 
@@ -82,6 +83,7 @@ final class SelectionManager {
 
         if let pos = cursorPosition {
             self.cursorPosition = pos
+            textSelectionLength = 0
         }
 
         if shiftPressed, let lastId = lastSelectedId {
@@ -111,6 +113,7 @@ final class SelectionManager {
 
         if let pos = cursorPosition {
             self.cursorPosition = pos
+            textSelectionLength = 0
         }
 
         isDragSelecting = true
@@ -166,6 +169,7 @@ final class SelectionManager {
         let targetItem = allItems[currentIndex - 1]
         if let pos = cursorPosition {
             self.cursorPosition = pos
+            textSelectionLength = 0
         }
         setFocusAndSelect(
             targetItem,
@@ -192,6 +196,7 @@ final class SelectionManager {
         let targetItem = allItems[currentIndex + 1]
         if let pos = cursorPosition {
             self.cursorPosition = pos
+            textSelectionLength = 0
         }
         setFocusAndSelect(
             targetItem,
@@ -216,6 +221,7 @@ final class SelectionManager {
     /// 从外部（如撤销/重做）恢复焦点
     func restoreFocus(to itemId: UUID?) {
         focusedItemId = itemId
+        textSelectionLength = 0
         preferredHorizontalOffset = nil
         verticalMoveDirection = nil
         if let itemId {
