@@ -48,6 +48,7 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         selectionManager.selectedItemIds = [moving.id, next.id]
         selectionManager.focusedItemId = next.id
         selectionManager.lastSelectedId = next.id
+        selectionManager.cursorPosition = 3
         store.undoManager.clear()
 
         actions.moveItemByKeyboard(moving.id, .down)
@@ -55,14 +56,17 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(store.items(for: day).map(\.id), [next.id, moving.id, child.id])
         XCTAssertEqual(selectionManager.focusedItemId, moving.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
 
         XCTAssertTrue(store.undo())
         XCTAssertEqual(selectionManager.focusedItemId, next.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [moving.id, next.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
 
         XCTAssertTrue(store.redo())
         XCTAssertEqual(selectionManager.focusedItemId, moving.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
     }
 
     func testInvalidKeyboardMoveDoesNotChangeSelectionOrHistory() {
@@ -74,6 +78,7 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         selectionManager.selectedItemIds = [first.id, second.id]
         selectionManager.focusedItemId = second.id
         selectionManager.lastSelectedId = second.id
+        selectionManager.cursorPosition = 2
         store.undoManager.clear()
 
         actions.moveItemByKeyboard(first.id, .up)
@@ -81,6 +86,7 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(store.items(for: day).map(\.id), [first.id, second.id])
         XCTAssertEqual(selectionManager.focusedItemId, second.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [first.id, second.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
         XCTAssertFalse(store.canUndo)
     }
 
@@ -127,6 +133,7 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         selectionManager.selectedItemIds = [parent.id, child.id]
         selectionManager.focusedItemId = child.id
         selectionManager.lastSelectedId = child.id
+        selectionManager.cursorPosition = 2
         store.undoManager.clear()
 
         actions.moveDraggedItemToSidebar(parent.id, .longTerm)
@@ -139,15 +146,18 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(child.indentLevel, 1)
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
         XCTAssertTrue(store.items(for: day).isEmpty)
 
         XCTAssertTrue(store.undo())
         XCTAssertEqual(selectionManager.focusedItemId, child.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, child.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
 
         XCTAssertTrue(store.redo())
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
     }
 
     func testMoveDraggedItemAcrossLongTermBucketsKeepsParentChildBlock() {
@@ -175,6 +185,7 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         selectionManager.selectedItemIds = [parent.id, target.id]
         selectionManager.focusedItemId = target.id
         selectionManager.lastSelectedId = target.id
+        selectionManager.cursorPosition = 4
         store.undoManager.clear()
 
         actions.moveDraggedItem(parent.id, .longTerm(isUrgent: false), 1, 1)
@@ -187,14 +198,17 @@ final class TodoEditorActionFactoryTests: XCTestCase {
         XCTAssertEqual(child.indentLevel, 2)
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
 
         XCTAssertTrue(store.undo())
         XCTAssertEqual(selectionManager.focusedItemId, target.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, target.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
 
         XCTAssertTrue(store.redo())
         XCTAssertEqual(selectionManager.focusedItemId, parent.id)
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
     }
 
     func testMoveDraggedItemToMonthSidebarUsesLatestDateAndKeepsParentChildBlock() {

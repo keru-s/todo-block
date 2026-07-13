@@ -157,7 +157,10 @@ enum TodoEditorActionFactory {
                     destination: destination,
                     store: store,
                     selectionManager: selectionManager,
-                    selectionAfter: TodoSelectionState(focusing: itemId)
+                    selectionAfter: TodoSelectionState(
+                        focusing: itemId,
+                        cursorPosition: selectionManager.cursorPosition
+                    )
                 )
             },
             moveDraggedItem: { itemId, destination, toIndex, indentLevel in
@@ -169,7 +172,10 @@ enum TodoEditorActionFactory {
                     destination: destination,
                     store: store,
                     selectionManager: selectionManager,
-                    selectionAfter: TodoSelectionState(focusing: itemId)
+                    selectionAfter: TodoSelectionState(
+                        focusing: itemId,
+                        cursorPosition: selectionManager.cursorPosition
+                    )
                 )
             },
             moveDraggedItemToSidebar: { itemId, destination in
@@ -183,7 +189,10 @@ enum TodoEditorActionFactory {
                         afterItem: nil,
                         newIndentLevel: 0,
                         selectionManager: selectionManager,
-                        selectionAfter: TodoSelectionState(focusing: itemId)
+                        selectionAfter: TodoSelectionState(
+                            focusing: itemId,
+                            cursorPosition: selectionManager.cursorPosition
+                        )
                     )
                 case .month(let year, let month):
                     let target = store.tailItemForScheduledMonth(year: year, month: month)
@@ -193,7 +202,10 @@ enum TodoEditorActionFactory {
                         afterItem: nil,
                         newIndentLevel: 0,
                         selectionManager: selectionManager,
-                        selectionAfter: TodoSelectionState(focusing: itemId)
+                        selectionAfter: TodoSelectionState(
+                            focusing: itemId,
+                            cursorPosition: selectionManager.cursorPosition
+                        )
                     )
                 }
             },
