@@ -184,7 +184,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
 
         XCTAssertTrue(store.canUndo, "批量删除后应可撤销")
         XCTAssertEqual(
-            store.nsUndoManager.undoActionName,
+            store.undoManager.undoActionName,
             "批量删除",
             "actionName 应为单步'批量删除',而非逐条'删除'"
         )
@@ -357,7 +357,6 @@ final class SelectionManagerDeleteTests: XCTestCase {
         XCTAssertTrue(store.undo())
         XCTAssertEqual(replacement.focusedItemId, first.id)
         XCTAssertEqual(replacement.selectedItemIds, [first.id, second.id])
-        XCTAssertNil(store.focusRequestId, "恢复选择不应广播到无关入口")
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

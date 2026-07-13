@@ -41,7 +41,7 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testUnifiedCreateWithoutSelectionDoesNotBroadcastFocus() {
+    func testUnifiedCreateWithoutSelectionUndoesCleanly() {
         let store = TodoStore.shared
         let date = Date()
 
@@ -54,7 +54,6 @@ final class UndoManagerTests: XCTestCase {
         let undone = store.undo()
         XCTAssertTrue(undone)
         XCTAssertEqual(store.items(for: date).count, 1)
-        XCTAssertNil(store.focusRequestId)
     }
 
     func testUnifiedCreateRestoresSameIdentityAndSelectionOnUndoRedo() {
@@ -207,15 +206,7 @@ final class UndoManagerTests: XCTestCase {
 
         XCTAssertEqual(item.indentLevel, 0)
 
-        // 增加缩进
-        let oldIndent = item.indentLevel
-        item.indentLevel = 1  // 手动设置缩进
-        store.undoManager.registerIndentChange(
-            itemId: item.id,
-            oldIndent: oldIndent,
-            newIndent: item.indentLevel,
-            store: store
-        )
+        store.indentItem(item)
 
         XCTAssertEqual(item.indentLevel, 1)
 
@@ -321,27 +312,12 @@ final class UndoManagerTests: XCTestCase {
     func testMultipleUndo() {
         let store = TodoStore.shared
         let date = Date()
-        let originalGroupsByEvent = store.nsUndoManager.groupsByEvent
-
-        store.nsUndoManager.groupsByEvent = false
-        defer {
-            store.nsUndoManager.groupsByEvent = originalGroupsByEvent
-        }
-
         store.undoManager.clear()
 
         // 创建 3 个 items
-        store.nsUndoManager.beginUndoGrouping()
         _ = store.createItem(title: "Item 1", dayDate: date)
-        store.nsUndoManager.endUndoGrouping()
-
-        store.nsUndoManager.beginUndoGrouping()
         _ = store.createItem(title: "Item 2", dayDate: date)
-        store.nsUndoManager.endUndoGrouping()
-
-        store.nsUndoManager.beginUndoGrouping()
         _ = store.createItem(title: "Item 3", dayDate: date)
-        store.nsUndoManager.endUndoGrouping()
 
         XCTAssertEqual(store.items(for: date).count, 3)
 
@@ -472,7 +448,7 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertFalse(store.canUndo, "失效 undo 步骤应被跳过，整个栈应清空")
     }
 
-    func testStaleLegacyRedoIsDiscardedWithoutRunningUndoDirection() {
+    func testStaleRedoIsDiscardedWithoutRunningUndoDirection() {
         let store = TodoStore.shared
         let date = Date()
 
@@ -491,17 +467,15 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertNil(store.todoItemsCache[item.id], "跳过失效恢复时不能反向执行撤销")
     }
 
-    /// #7: 批量删除的撤销必须能 redo，与单条 registerDeleteItem 行为对称。
+    /// #7: 统一批量删除必须支持对称恢复。
     func testBatchDeleteSupportsRedo() {
         let store = TodoStore.shared
         let date = Date()
 
         let items = (0..<3).map { store.createItem(title: "item \($0)", dayDate: date) }
-        let snapshots = items.map { TodoItemSnapshot(from: $0) }
         store.undoManager.clear()
 
-        for item in items { store.deleteItemWithoutUndo(item) }
-        store.undoManager.registerDeleteItems(snapshots: snapshots, store: store)
+        XCTAssertTrue(store.deleteItemsAsBatch(items))
         XCTAssertEqual(store.items(for: date).count, 0)
 
         store.undo()
@@ -628,23 +602,29 @@ final class UndoManagerTests: XCTestCase {
         )
     }
 
-    // MARK: - registerTitleChange 对称性（Phase 1.D）
+    // MARK: - 统一文字编辑对称性
 
-    /// 11. 标题变更 undo / redo 对称
-    /// 直接走 store.undoManager 的 API（不经过 store 上的转发 wrapper），
-    /// 这样 P0-2 阶段如果删除 store.registerTitleChange 转发也不需要改测试。
-    func testRegisterTitleChangeUndoRedoSymmetry() {
+    func testUnifiedTitleChangeUndoRedoSymmetry() {
         let store = TodoStore.shared
         let item = store.createItem(title: "v1", dayDate: Date())
+        let selectionManager = SelectionManager()
+        selectionManager.restoreFocus(to: item.id)
+        selectionManager.cursorPosition = 2
+        let actions = TodoEditorActionFactory.make(
+            store: store,
+            selectionManager: selectionManager
+        )
         store.undoManager.clear()
 
-        let oldTitle = item.title
-        item.title = "v2"
-        store.undoManager.registerTitleChange(
-            itemId: item.id,
-            oldTitle: oldTitle,
-            newTitle: "v2",
-            store: store
+        actions.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "v1",
+                afterText: "v2",
+                beforeSelection: TodoTextSelection(location: 2, length: 0),
+                afterSelection: TodoTextSelection(location: 2, length: 0),
+                kind: .replacement
+            )
         )
 
         XCTAssertTrue(store.canUndo)

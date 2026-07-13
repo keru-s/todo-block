@@ -123,14 +123,6 @@ struct MenuBarView: View {
             },
             including: .gesture
         )
-        .onChange(of: store.focusRequestId) { _, newValue in
-            guard let itemId = newValue,
-                  let item = store.todoItemsCache[itemId],
-                  item.containerKind == .scheduled,
-                  Calendar.current.isDateInToday(item.dayDate)
-            else { return }
-            selectionManager.restoreFocus(to: itemId)
-        }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
         }

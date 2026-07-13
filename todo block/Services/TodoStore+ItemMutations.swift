@@ -248,11 +248,6 @@ extension TodoStore {
         return undoManager.perform(operation, store: self)
     }
 
-    /// 恢复已删除的待办事项
-    func restoreItem(from snapshot: TodoItemSnapshot) {
-        _ = restoreItems(from: [snapshot])
-    }
-
     /// 一次恢复整组待办；写入前只落盘一次待删除状态，避免批量恢复中途部分提交。
     @discardableResult
     func restoreItems(from snapshots: [TodoItemSnapshot]) -> Bool {

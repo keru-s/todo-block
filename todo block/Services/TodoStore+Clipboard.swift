@@ -98,31 +98,18 @@ extension TodoStore {
         let oldDate = section.date
         let newDateStart = Calendar.current.startOfDay(for: newDate)
         guard newDateStart != oldDate else { return }
-
-        if let existingSection = daySectionsCache.values.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: newDateStart) && $0.id != section.id
-        }) {
-            let itemsToMove = items(for: oldDate)
-            for item in itemsToMove {
-                item.dayDate = existingSection.date
-                item.updatedAt = Date()
-            }
-            deleteSection(section)
-            return
+        let oldSnapshots = items(for: oldDate).map { TodoItemSnapshot(from: $0) }
+        guard oldSnapshots.isEmpty == false else { return }
+        let changes = oldSnapshots.map { snapshot in
+            TodoItemStateChange(
+                before: snapshot,
+                after: snapshot.replacing(dayDate: newDateStart)
+            )
         }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd"
-        section.title = formatter.string(from: newDateStart)
-        section.date = newDateStart
-
-        let itemsToUpdate = items(for: oldDate)
-        for item in itemsToUpdate {
-            item.dayDate = newDateStart
-            item.updatedAt = Date()
-        }
-        bumpRefreshTrigger()
-        scheduleSave()
+        undoManager.perform(
+            TodoOperation(actionName: "更改日期", itemStateChanges: changes),
+            store: self
+        )
     }
 
 }

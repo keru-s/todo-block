@@ -33,9 +33,6 @@ final class TodoStore {
     /// 拖拽指示线重置触发器：拖拽结束后统一清理所有列表的插入提示线
     var dropIndicatorResetTrigger: Int = 0
 
-    /// 焦点恢复请求：撤销后需要聚焦的 item ID
-    var focusRequestId: UUID?
-
     /// 最近一次持久化失败的错误。出错时 modelContext 已被 rollback，
     /// UI 可订阅此属性做提示（本仓库暂未实现 banner）。
     var lastSaveError: Error?
@@ -107,20 +104,9 @@ final class TodoStore {
         undoManager.canRedo
     }
 
-    /// 获取共享的 NSUndoManager（供 TextField 使用）
-    var nsUndoManager: UndoManager {
-        undoManager.nsUndoManager
-    }
-
     @discardableResult
     func flushPendingTextEdit() -> Bool {
         textEditSession.flush(store: self)
-    }
-
-    /// 触发一次焦点恢复请求（用于撤销/重做后的光标恢复）
-    func requestFocus(_ itemId: UUID?) {
-        focusRequestId = nil
-        focusRequestId = itemId
     }
 
     /// 触发全局拖拽提示线重置（用于修复跨列表残留插入线）
@@ -170,7 +156,6 @@ final class TodoStore {
         textEditSession.reset()
         todoItemsCache.removeAll()
         daySectionsCache.removeAll()
-        focusRequestId = nil
         if clearUndo {
             undoManager.clear()
         }

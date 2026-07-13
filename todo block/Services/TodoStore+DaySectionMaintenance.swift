@@ -16,7 +16,7 @@ extension TodoStore {
 
     /// 获取或创建指定日期的 DaySection。
     /// 若新建则 bump refreshTrigger + scheduleSave；命中现存 section 时为 no-op。
-    /// 内部写路径（createItem / restoreItem / moveItemWithChildren）已在末尾统一 bump+save，
+    /// 内部写路径（createItem / restoreItems / moveItemWithChildren）已在末尾统一 bump+save，
     /// 应改用 `ensureSectionMaterialized(for:)` 跳过这层冗余触发。
     @discardableResult
     func getOrCreateSection(for date: Date) -> DaySection {
@@ -44,15 +44,6 @@ extension TodoStore {
         daySectionsCache[newSection.id] = newSection
         modelContext?.insert(newSection)
         return (newSection, true)
-    }
-
-    /// 删除 DaySection
-    func deleteSection(_ section: DaySection) {
-        daySectionsCache.removeValue(forKey: section.id)
-        modelContext?.delete(section)
-
-        refreshTrigger += 1
-        scheduleSave()
     }
 
     /// 若指定 scheduled 日期下已无任何 item，则同步删除对应 DaySection。

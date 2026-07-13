@@ -120,20 +120,15 @@ struct TodoListView: View {
         }
         .onAppear {
             bindContextsIfNeeded()
-            restoreRequestedFocusIfVisible()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             guard newValue else { return }
             bindContextsIfNeeded()
-            restoreRequestedFocusIfVisible()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
             bindContextsIfNeeded()
-        }
-        .onChange(of: store.focusRequestId) { _, newValue in
-            restoreRequestedFocusIfVisible(itemId: newValue)
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
@@ -141,17 +136,6 @@ struct TodoListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
             bindContextsIfNeeded()
         }
-    }
-
-    private func restoreRequestedFocusIfVisible(itemId: UUID? = nil) {
-        guard isActiveContext else { return }
-        guard let itemId = itemId ?? store.focusRequestId,
-              let item = store.todoItemsCache[itemId],
-              item.containerKind == .scheduled
-        else { return }
-        let components = Calendar.current.dateComponents([.year, .month], from: item.dayDate)
-        guard components.year == year, components.month == month else { return }
-        selectionManager.restoreFocus(to: itemId)
     }
 
     private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {

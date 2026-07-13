@@ -451,6 +451,24 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertNil(store.todoItemsCache[created.id])
     }
 
+    func testRestartKeepsSavedResultAndStartsWithEmptyHistory() throws {
+        let store = TodoStore.shared
+        let targetDate = date(year: 2026, month: 2, day: 20)
+        let item = store.createItem(title: "restart", dayDate: targetDate)
+        store.toggleComplete(item)
+        XCTAssertTrue(store.flushPendingChangesSync())
+        XCTAssertTrue(store.canUndo)
+
+        store.reset()
+        store.initialize(with: descriptor.mainContext)
+
+        let restored = try XCTUnwrap(store.todoItemsCache[item.id])
+        XCTAssertEqual(restored.title, "restart")
+        XCTAssertTrue(restored.isCompleted)
+        XCTAssertFalse(store.canUndo)
+        XCTAssertFalse(store.canRedo)
+    }
+
     func testItemsQuerySurvivesExternalDeletionWithoutReinitialize() throws {
         let store = TodoStore.shared
         let date = self.date(year: 2026, month: 2, day: 17)
@@ -875,8 +893,16 @@ final class TodoStoreTests: XCTestCase {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd"
-        XCTAssertTrue(Calendar.current.isDate(section.date, inSameDayAs: targetDate))
-        XCTAssertEqual(section.title, formatter.string(from: targetDate))
+        let updatedSection = store.sections(year: 2026, month: 2).first {
+            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
+        }
+        XCTAssertNotNil(updatedSection)
+        XCTAssertEqual(updatedSection?.title, formatter.string(from: targetDate))
+        XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: targetDate))
+
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: sourceDate))
+        XCTAssertTrue(store.redo())
         XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: targetDate))
     }
 

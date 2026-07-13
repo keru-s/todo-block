@@ -133,7 +133,6 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(replacementManager.focusedItemId, item.id)
         XCTAssertEqual(replacementManager.selectedItemIds, [item.id])
         XCTAssertEqual(replacementManager.textSelectionLength, 1)
-        XCTAssertNil(store.focusRequestId)
     }
 
     func testNavigationDoesNotClearRedoPath() {

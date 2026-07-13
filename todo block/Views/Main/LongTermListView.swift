@@ -53,17 +53,12 @@ struct LongTermListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             bindContextsIfNeeded()
-            restoreRequestedFocusIfVisible()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             guard newValue else { return }
             bindContextsIfNeeded()
-            restoreRequestedFocusIfVisible()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
-        }
-        .onChange(of: store.focusRequestId) { _, newValue in
-            restoreRequestedFocusIfVisible(itemId: newValue)
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
@@ -80,15 +75,6 @@ struct LongTermListView: View {
             store: store,
             selectionManager: selectionManager
         )
-    }
-
-    private func restoreRequestedFocusIfVisible(itemId: UUID? = nil) {
-        guard isActiveContext else { return }
-        guard let itemId = itemId ?? store.focusRequestId,
-              let item = store.todoItemsCache[itemId],
-              item.containerKind != .scheduled
-        else { return }
-        selectionManager.restoreFocus(to: itemId)
     }
 
     private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
