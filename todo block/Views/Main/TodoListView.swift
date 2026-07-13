@@ -58,7 +58,8 @@ struct TodoListView: View {
             TodoEditorRepresentable(
                 sections: appKitEditorSections,
                 emptyTitle: "暂无待办",
-                actions: appKitEditorActions
+                actions: appKitEditorActions,
+                revealRequest: visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -157,12 +158,23 @@ struct TodoListView: View {
         guard isActiveContext,
               let request,
               handledHistoryRevealId != request.id,
-              request.destination == .month(year: year, month: month),
-              let itemId = request.itemId,
-              store.todoItemsCache[itemId] != nil
+              request.destination == .month(year: year, month: month)
         else { return }
         handledHistoryRevealId = request.id
-        selectionManager.restoreFocus(to: itemId)
+        if let selectionState = request.selectionState {
+            selectionState.apply(to: selectionManager)
+        } else if let itemId = request.itemId,
+                  store.todoItemsCache[itemId] != nil {
+            selectionManager.restoreFocus(to: itemId)
+        }
+    }
+
+    private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
+        guard isActiveContext,
+              let request = historyPresentation.revealRequest,
+              request.destination == .month(year: year, month: month)
+        else { return nil }
+        return request
     }
 
     private var addTodayModePanel: some View {

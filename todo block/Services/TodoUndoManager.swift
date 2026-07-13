@@ -360,6 +360,7 @@ final class TodoUndoManager {
         let resultItem = (selectionIds + changedIds).lazy.compactMap {
             store.todoItemsCache[$0]
         }.first
+        let resultSelectionState = operation.selectionChanges.last?.state(for: target)
 
         let fallbackSnapshot = operation.itemStateChanges.first?.snapshot(for: target)
             ?? operation.itemExistenceChanges.first?.snapshot
@@ -378,7 +379,8 @@ final class TodoUndoManager {
         guard let resultDestination else { return }
         TodoHistoryPresentationCoordinator.shared.reveal(
             destination: resultDestination,
-            itemId: resultItem?.id
+            itemId: resultItem?.id,
+            selectionState: resultSelectionState
         )
     }
 

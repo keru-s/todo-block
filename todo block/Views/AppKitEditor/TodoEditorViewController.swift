@@ -21,6 +21,7 @@ final class TodoEditorViewController: NSViewController {
     private var emptyLabelWidthConstraint: NSLayoutConstraint?
     private var draggingItemId: UUID?
     private var activeDrop: TodoEditorResolvedDrop?
+    private var lastRevealRequestId: UUID?
     private var dragSelectionSectionId: UUID?
     private let dragSession = TodoEditorDragSession.shared
 
@@ -33,19 +34,24 @@ final class TodoEditorViewController: NSViewController {
     func update(
         sections: [TodoEditorSectionSnapshot],
         emptyTitle: String,
-        actions: TodoEditorActions
+        actions: TodoEditorActions,
+        revealRequest: TodoHistoryRevealRequest? = nil
     ) {
         loadViewIfNeeded()
         self.actions = actions
 
-        guard sections != renderedSections || emptyTitle != renderedEmptyTitle else {
-            return
+        if sections != renderedSections || emptyTitle != renderedEmptyTitle {
+            renderedSections = sections
+            renderedEmptyTitle = emptyTitle
+            rebuildContent(sections: sections, emptyTitle: emptyTitle)
         }
 
-        renderedSections = sections
-        renderedEmptyTitle = emptyTitle
-        rebuildContent(sections: sections, emptyTitle: emptyTitle)
-        scrollFocusedItemToVisible(in: sections)
+        if let revealRequest,
+           revealRequest.id != lastRevealRequestId,
+           let itemId = revealRequest.itemId {
+            lastRevealRequestId = revealRequest.id
+            scrollItemToVisible(itemId)
+        }
     }
 
     private func configureViewHierarchy() {
@@ -127,15 +133,10 @@ final class TodoEditorViewController: NSViewController {
         sectionViewsById = nextSectionViewsById
     }
 
-    private func scrollFocusedItemToVisible(in sections: [TodoEditorSectionSnapshot]) {
-        guard let focusedItemId = sections.lazy
-            .flatMap(\.items)
-            .first(where: \.isFocused)?
-            .id
-        else { return }
+    private func scrollItemToVisible(_ itemId: UUID) {
         view.layoutSubtreeIfNeeded()
         for sectionView in sectionViewsById.values
-        where sectionView.scrollItemToVisible(focusedItemId) {
+        where sectionView.scrollItemToVisible(itemId) {
             return
         }
     }

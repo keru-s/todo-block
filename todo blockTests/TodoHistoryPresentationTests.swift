@@ -71,12 +71,13 @@ final class TodoHistoryPresentationTests: XCTestCase {
         coordinator.install { openCount += 1 }
         coordinator.activate(scope: .today)
         let targetDate = date(year: 2027, month: 4, day: 8)
-        let item = store.createItem(title: "a", dayDate: targetDate)
+        let item = store.createItem(title: "abc", dayDate: targetDate)
         let selectionManager = SelectionManager(historyContext: .mainWindow)
         selectionManager.focusedItemId = item.id
         selectionManager.selectedItemIds = [item.id]
         selectionManager.lastSelectedId = item.id
         selectionManager.cursorPosition = 1
+        selectionManager.textSelectionLength = 1
         let actions = TodoEditorActionFactory.make(
             store: store,
             selectionManager: selectionManager
@@ -85,23 +86,34 @@ final class TodoHistoryPresentationTests: XCTestCase {
         actions.titleChanged(
             item.id,
             TodoTextEditEvent(
-                beforeText: "a",
-                afterText: "ab",
-                beforeSelection: TodoTextSelection(location: 1, length: 0),
+                beforeText: "abc",
+                afterText: "aXc",
+                beforeSelection: TodoTextSelection(location: 1, length: 1),
                 afterSelection: TodoTextSelection(location: 2, length: 0),
-                kind: .insertion
+                kind: .replacement
             )
         )
 
         XCTAssertTrue(store.undo())
 
-        XCTAssertEqual(item.title, "a")
+        XCTAssertEqual(item.title, "abc")
         XCTAssertEqual(openCount, 1)
         XCTAssertEqual(
             coordinator.revealRequest?.destination,
             .month(year: 2027, month: 4)
         )
         XCTAssertEqual(coordinator.revealRequest?.itemId, item.id)
+        let restoredSelection = try? XCTUnwrap(coordinator.revealRequest?.selectionState)
+        XCTAssertEqual(restoredSelection?.focusedItemId, item.id)
+        XCTAssertEqual(restoredSelection?.selectedItemIds, [item.id])
+        XCTAssertEqual(restoredSelection?.cursorPosition, 1)
+        XCTAssertEqual(restoredSelection?.textSelectionLength, 1)
+
+        let replacementManager = SelectionManager(historyContext: .mainWindow)
+        restoredSelection?.apply(to: replacementManager)
+        XCTAssertEqual(replacementManager.focusedItemId, item.id)
+        XCTAssertEqual(replacementManager.selectedItemIds, [item.id])
+        XCTAssertEqual(replacementManager.textSelectionLength, 1)
         XCTAssertNil(store.focusRequestId)
     }
 

@@ -47,7 +47,8 @@ struct LongTermListView: View {
             actions: TodoEditorActionFactory.make(
                 store: store,
                 selectionManager: selectionManager
-            )
+            ),
+            revealRequest: visibleHistoryRevealRequest
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
@@ -94,12 +95,23 @@ struct LongTermListView: View {
         guard isActiveContext,
               let request,
               handledHistoryRevealId != request.id,
-              request.destination == .longTerm,
-              let itemId = request.itemId,
-              store.todoItemsCache[itemId] != nil
+              request.destination == .longTerm
         else { return }
         handledHistoryRevealId = request.id
-        selectionManager.restoreFocus(to: itemId)
+        if let selectionState = request.selectionState {
+            selectionState.apply(to: selectionManager)
+        } else if let itemId = request.itemId,
+                  store.todoItemsCache[itemId] != nil {
+            selectionManager.restoreFocus(to: itemId)
+        }
+    }
+
+    private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
+        guard isActiveContext,
+              let request = historyPresentation.revealRequest,
+              request.destination == .longTerm
+        else { return nil }
+        return request
     }
 }
 

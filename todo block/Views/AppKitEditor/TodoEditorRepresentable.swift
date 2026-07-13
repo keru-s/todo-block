@@ -9,10 +9,16 @@ struct TodoEditorRepresentable: NSViewControllerRepresentable {
     let sections: [TodoEditorSectionSnapshot]
     var emptyTitle: String = "暂无待办"
     var actions: TodoEditorActions = .readOnly
+    var revealRequest: TodoHistoryRevealRequest? = nil
 
     func makeNSViewController(context: Context) -> TodoEditorViewController {
         let controller = TodoEditorViewController()
-        controller.update(sections: sections, emptyTitle: emptyTitle, actions: actions)
+        controller.update(
+            sections: sections,
+            emptyTitle: emptyTitle,
+            actions: actions,
+            revealRequest: revealRequest
+        )
         return controller
     }
 
@@ -20,6 +26,11 @@ struct TodoEditorRepresentable: NSViewControllerRepresentable {
         _ nsViewController: TodoEditorViewController,
         context: Context
     ) {
-        nsViewController.update(sections: sections, emptyTitle: emptyTitle, actions: actions)
+        nsViewController.update(
+            sections: sections,
+            emptyTitle: emptyTitle,
+            actions: actions,
+            revealRequest: revealRequest
+        )
     }
 }

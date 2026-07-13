@@ -4,6 +4,7 @@ struct TodoHistoryRevealRequest: Equatable {
     let id: UUID
     let destination: SidebarDestination
     let itemId: UUID?
+    let selectionState: TodoSelectionState?
 }
 
 @MainActor
@@ -25,12 +26,17 @@ final class TodoHistoryPresentationCoordinator {
         activeScope = scope
     }
 
-    func reveal(destination: TodoDropDestination, itemId: UUID?) {
+    func reveal(
+        destination: TodoDropDestination,
+        itemId: UUID?,
+        selectionState: TodoSelectionState? = nil
+    ) {
         let sidebarDestination = Self.sidebarDestination(for: destination)
         revealRequest = TodoHistoryRevealRequest(
             id: UUID(),
             destination: sidebarDestination,
-            itemId: itemId
+            itemId: itemId,
+            selectionState: selectionState
         )
         if canActiveScopeDisplay(destination) == false {
             openMainWindow?()

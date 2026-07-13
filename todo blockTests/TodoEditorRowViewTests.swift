@@ -125,6 +125,41 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 1, length: 1))
     }
 
+    func testApplySnapshotRestoresChangedSelectionWhenTitleIsUnchanged() throws {
+        let item = TodoItem(title: "abc")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id]
+        selectionManager.cursorPosition = 2
+
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            actions: .readOnly
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+
+        selectionManager.cursorPosition = 1
+        selectionManager.textSelectionLength = 1
+        rowView.apply(snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager))
+
+        XCTAssertEqual(textView.string, "abc")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 1, length: 1))
+    }
+
     private func firstSubview<T: NSView>(of type: T.Type, in view: NSView) -> T? {
         if let matchingView = view as? T {
             return matchingView

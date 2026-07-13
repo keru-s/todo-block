@@ -69,7 +69,8 @@ struct MenuBarView: View {
                 actions: TodoEditorActionFactory.make(
                     store: store,
                     selectionManager: selectionManager
-                )
+                ),
+                revealRequest: visibleHistoryRevealRequest
             )
             .frame(minHeight: 80, maxHeight: 350)
 
@@ -152,7 +153,25 @@ private extension MenuBarView {
               Calendar.current.isDateInToday(item.dayDate)
         else { return }
         handledHistoryRevealId = request.id
-        selectionManager.restoreFocus(to: itemId)
+        if let selectionState = request.selectionState {
+            selectionState.apply(to: selectionManager)
+        } else {
+            selectionManager.restoreFocus(to: itemId)
+        }
+    }
+
+    var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
+        guard let request = historyPresentation.revealRequest,
+              request.destination == SidebarDestination.month(
+                  year: Calendar.current.component(.year, from: .now),
+                  month: Calendar.current.component(.month, from: .now)
+              ),
+              let itemId = request.itemId,
+              let item = store.todoItemsCache[itemId],
+              item.containerKind == .scheduled,
+              Calendar.current.isDateInToday(item.dayDate)
+        else { return nil }
+        return request
     }
 
     func addTodayItem() {

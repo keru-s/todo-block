@@ -153,6 +153,12 @@ final class TodoEditorRowView: NSView {
 
         focusUpdateVersion += 1
         let currentFocusUpdateVersion = focusUpdateVersion
+        let previousSnapshot = latestSnapshot
+        let didRecordedTextSelectionChange = previousSnapshot.map {
+            $0.cursorPosition != snapshot.cursorPosition
+                || $0.textSelectionLength != snapshot.textSelectionLength
+                || $0.isFocused != snapshot.isFocused
+        } ?? false
         latestSnapshot = snapshot
         itemId = snapshot.id
 
@@ -202,7 +208,8 @@ final class TodoEditorRowView: NSView {
             )
             let desiredRange = NSRange(location: location, length: selectionLength)
             if window?.firstResponder !== titleTextView
-                || didReplaceText && titleTextView.selectedRange() != desiredRange
+                || (didReplaceText || didRecordedTextSelectionChange)
+                    && titleTextView.selectedRange() != desiredRange
             {
                 if window?.firstResponder === titleTextView {
                     titleTextView.focus(
