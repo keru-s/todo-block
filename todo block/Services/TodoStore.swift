@@ -74,6 +74,7 @@ final class TodoStore {
     /// 用于测试：重置状态
     func reset() {
         textEditSession.reset()
+        TodoHistoryPresentationCoordinator.shared.resetForTesting()
         saveTask?.cancel()
         saveTask = nil
         modelContext = nil

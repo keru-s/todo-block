@@ -24,6 +24,7 @@ enum ActiveListCommandContext {
         selectionManager: SelectionManager
     ) {
         selectionManager.activateHistoryContext()
+        TodoHistoryPresentationCoordinator.shared.activate(scope: scope)
         TodoClipboardManager.shared.activateListContext(
             scope: scope,
             store: store,

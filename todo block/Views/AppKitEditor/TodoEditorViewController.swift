@@ -45,6 +45,7 @@ final class TodoEditorViewController: NSViewController {
         renderedSections = sections
         renderedEmptyTitle = emptyTitle
         rebuildContent(sections: sections, emptyTitle: emptyTitle)
+        scrollFocusedItemToVisible(in: sections)
     }
 
     private func configureViewHierarchy() {
@@ -124,6 +125,19 @@ final class TodoEditorViewController: NSViewController {
             nextSectionViewsById[section.id] = sectionView
         }
         sectionViewsById = nextSectionViewsById
+    }
+
+    private func scrollFocusedItemToVisible(in sections: [TodoEditorSectionSnapshot]) {
+        guard let focusedItemId = sections.lazy
+            .flatMap(\.items)
+            .first(where: \.isFocused)?
+            .id
+        else { return }
+        view.layoutSubtreeIfNeeded()
+        for sectionView in sectionViewsById.values
+        where sectionView.scrollItemToVisible(focusedItemId) {
+            return
+        }
     }
 
     private func handleDragBegan(itemId: UUID, windowLocation: NSPoint) {

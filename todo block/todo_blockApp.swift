@@ -45,11 +45,13 @@ struct todo_blockApp: App {
                     TodoStore.shared.undo()
                 }
                 .keyboardShortcut("z", modifiers: .command)
+                .disabled(TodoStore.shared.canUndo == false)
 
                 Button("重做") {
                     TodoStore.shared.redo()
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(TodoStore.shared.canRedo == false)
             }
 
             CommandGroup(replacing: .pasteboard) {

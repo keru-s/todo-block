@@ -163,6 +163,13 @@ final class TodoEditorSectionView: NSView {
         }
     }
 
+    @discardableResult
+    func scrollItemToVisible(_ itemId: UUID) -> Bool {
+        guard let rowView = rowViewsById[itemId] else { return false }
+        rowView.scrollToVisible(rowView.bounds.insetBy(dx: 0, dy: -8))
+        return true
+    }
+
     @objc private func addItem() {
         guard let snapshot else { return }
         actions.addItem(snapshot.destination)

@@ -19,6 +19,10 @@ struct MenuBarStatusItemBootstrapView: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             .task {
+                TodoHistoryPresentationCoordinator.shared.install {
+                    openWindow(id: "mainWindow")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 MenuBarStatusItemController.shared.installIfNeeded(
                     modelContainer: modelContainer,
                     openMainWindow: {

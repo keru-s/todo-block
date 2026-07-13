@@ -12,8 +12,10 @@ struct LongTermListView: View {
     var isActiveContext: Bool = true
 
     @State private var selectionManager = SelectionManager(historyContext: .longTerm)
+    @State private var handledHistoryRevealId: UUID?
 
     private var store: TodoStore { TodoStore.shared }
+    private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
     private let urgentSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
     private let importantSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
 
@@ -50,14 +52,20 @@ struct LongTermListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             bindContextsIfNeeded()
+            restoreRequestedFocusIfVisible()
+            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             guard newValue else { return }
             bindContextsIfNeeded()
+            restoreRequestedFocusIfVisible()
+            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: store.focusRequestId) { _, newValue in
-            guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
-            selectionManager.restoreFocus(to: itemId)
+            restoreRequestedFocusIfVisible(itemId: newValue)
+        }
+        .onChange(of: historyPresentation.revealRequest) { _, request in
+            restoreHistoryRevealIfVisible(request)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
             bindContextsIfNeeded()
@@ -71,6 +79,27 @@ struct LongTermListView: View {
             store: store,
             selectionManager: selectionManager
         )
+    }
+
+    private func restoreRequestedFocusIfVisible(itemId: UUID? = nil) {
+        guard isActiveContext else { return }
+        guard let itemId = itemId ?? store.focusRequestId,
+              let item = store.todoItemsCache[itemId],
+              item.containerKind != .scheduled
+        else { return }
+        selectionManager.restoreFocus(to: itemId)
+    }
+
+    private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
+        guard isActiveContext,
+              let request,
+              handledHistoryRevealId != request.id,
+              request.destination == .longTerm,
+              let itemId = request.itemId,
+              store.todoItemsCache[itemId] != nil
+        else { return }
+        handledHistoryRevealId = request.id
+        selectionManager.restoreFocus(to: itemId)
     }
 }
 

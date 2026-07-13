@@ -17,8 +17,10 @@ struct MenuBarView: View {
 
     // 状态管理
     @State private var selectionManager = SelectionManager(historyContext: .menuBar)
+    @State private var handledHistoryRevealId: UUID?
 
     private var store: TodoStore { TodoStore.shared }
+    private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
@@ -108,9 +110,11 @@ struct MenuBarView: View {
         .background(TodoDesignTokens.windowBackground)
         .onAppear {
             bindContexts()
+            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
             bindContexts()
+            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .gesture(
             TapGesture().onEnded {
@@ -119,8 +123,15 @@ struct MenuBarView: View {
             including: .gesture
         )
         .onChange(of: store.focusRequestId) { _, newValue in
-            guard let itemId = newValue, store.todoItemsCache[itemId] != nil else { return }
+            guard let itemId = newValue,
+                  let item = store.todoItemsCache[itemId],
+                  item.containerKind == .scheduled,
+                  Calendar.current.isDateInToday(item.dayDate)
+            else { return }
             selectionManager.restoreFocus(to: itemId)
+        }
+        .onChange(of: historyPresentation.revealRequest) { _, request in
+            restoreHistoryRevealIfVisible(request)
         }
     }
 }
@@ -128,6 +139,22 @@ struct MenuBarView: View {
 // MARK: - Actions
 
 private extension MenuBarView {
+    func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
+        guard let request,
+              handledHistoryRevealId != request.id,
+              request.destination == SidebarDestination.month(
+                  year: Calendar.current.component(.year, from: .now),
+                  month: Calendar.current.component(.month, from: .now)
+              ),
+              let itemId = request.itemId,
+              let item = store.todoItemsCache[itemId],
+              item.containerKind == .scheduled,
+              Calendar.current.isDateInToday(item.dayDate)
+        else { return }
+        handledHistoryRevealId = request.id
+        selectionManager.restoreFocus(to: itemId)
+    }
+
     func addTodayItem() {
         _ = store.getOrCreateTodaySection()
         let newItem = store.createItem(

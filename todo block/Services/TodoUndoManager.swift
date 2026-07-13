@@ -262,15 +262,18 @@ final class TodoUndoManager {
     }
 
     private var invocationResult = InvocationResult.legacyApplied
+    private var historyRevision = 0
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
-        nsUndoManager.canUndo
+        _ = historyRevision
+        return nsUndoManager.canUndo
     }
 
     /// 是否有可重做的操作
     var canRedo: Bool {
-        nsUndoManager.canRedo
+        _ = historyRevision
+        return nsUndoManager.canRedo
     }
 
     init() {
@@ -317,6 +320,7 @@ final class TodoUndoManager {
                     return
                 }
                 self.invocationResult = .applied
+                self.revealResult(of: operation, target: target, store: store)
                 let oppositeTarget: TodoOperationValueTarget =
                     target == .before ? .after : .before
                 self.register(operation, target: oppositeTarget, store: store)
@@ -336,6 +340,56 @@ final class TodoUndoManager {
         registration()
         if opensGroup {
             nsUndoManager.endUndoGrouping()
+        }
+        historyRevision += 1
+    }
+
+    private func revealResult(
+        of operation: TodoOperation,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) {
+        let selectionIds = operation.selectionChanges.reversed().flatMap { change in
+            let state = change.state(for: target)
+            return [state.focusedItemId].compactMap { $0 }
+                + Array(state.selectedItemIds)
+        }
+        let changedIds = operation.itemStateChanges.map { $0.snapshot(for: target).id }
+            + operation.itemExistenceChanges.map(\.snapshot.id)
+            + operation.completionChanges.map(\.itemId)
+        let resultItem = (selectionIds + changedIds).lazy.compactMap {
+            store.todoItemsCache[$0]
+        }.first
+
+        let fallbackSnapshot = operation.itemStateChanges.first?.snapshot(for: target)
+            ?? operation.itemExistenceChanges.first?.snapshot
+        let resultDestination: TodoDropDestination?
+        if let resultItem {
+            resultDestination = store.destination(for: resultItem)
+        } else if let fallbackSnapshot {
+            resultDestination = destination(for: fallbackSnapshot)
+        } else if let completion = operation.completionChanges.first,
+                  let item = store.todoItemsCache[completion.itemId] {
+            resultDestination = store.destination(for: item)
+        } else {
+            resultDestination = nil
+        }
+
+        guard let resultDestination else { return }
+        TodoHistoryPresentationCoordinator.shared.reveal(
+            destination: resultDestination,
+            itemId: resultItem?.id
+        )
+    }
+
+    private func destination(for snapshot: TodoItemSnapshot) -> TodoDropDestination {
+        switch TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled {
+        case .scheduled:
+            .scheduled(date: snapshot.dayDate)
+        case .longTermUrgent:
+            .longTerm(isUrgent: true)
+        case .longTermImportant:
+            .longTerm(isUrgent: false)
         }
     }
 
@@ -621,6 +675,7 @@ final class TodoUndoManager {
         while nsUndoManager.canUndo {
             invocationResult = .legacyApplied
             nsUndoManager.undo()
+            historyRevision += 1
             switch invocationResult {
             case .invalid:
                 continue
@@ -637,6 +692,7 @@ final class TodoUndoManager {
         while nsUndoManager.canRedo {
             invocationResult = .legacyApplied
             nsUndoManager.redo()
+            historyRevision += 1
             switch invocationResult {
             case .invalid:
                 continue
@@ -650,5 +706,6 @@ final class TodoUndoManager {
     /// 清空撤销栈
     func clear() {
         nsUndoManager.removeAllActions()
+        historyRevision += 1
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 enum TodoTextEditKind: Equatable {
     case insertion
@@ -33,6 +34,7 @@ struct TodoTextEditEvent: Equatable {
 }
 
 @MainActor
+@Observable
 final class TodoTextEditSession {
     private struct PendingSegment {
         let itemId: UUID
@@ -46,13 +48,11 @@ final class TodoTextEditSession {
         var lastEditAt: ContinuousClock.Instant
     }
 
-    private let clock = ContinuousClock()
-    private var pending: PendingSegment?
-    private var flushTask: Task<Void, Never>?
+    @ObservationIgnored private let clock = ContinuousClock()
+    @ObservationIgnored private var pending: PendingSegment?
+    @ObservationIgnored private var flushTask: Task<Void, Never>?
 
-    var hasPendingSegment: Bool {
-        pending != nil
-    }
+    private(set) var hasPendingSegment = false
 
     func apply(
         _ event: TodoTextEditEvent,
@@ -112,6 +112,7 @@ final class TodoTextEditSession {
                 lastEditAt: now
             )
         }
+        hasPendingSegment = true
         scheduleFlush(store: store)
     }
 
@@ -135,6 +136,7 @@ final class TodoTextEditSession {
         flushTask = nil
         guard let segment = pending else { return false }
         pending = nil
+        hasPendingSegment = false
         return store.undoManager.recordApplied(
             TodoOperation(
                 actionName: "编辑",
@@ -157,6 +159,7 @@ final class TodoTextEditSession {
         flushTask?.cancel()
         flushTask = nil
         pending = nil
+        hasPendingSegment = false
     }
 
     private func scheduleFlush(store: TodoStore) {

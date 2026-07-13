@@ -9,6 +9,10 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
+    private var historyPresentation: TodoHistoryPresentationCoordinator {
+        .shared
+    }
+
     @State private var selectedDestination: SidebarDestination = .month(
         year: Calendar.current.component(.year, from: Date()),
         month: Calendar.current.component(.month, from: Date())
@@ -39,6 +43,10 @@ struct ContentView: View {
             if case .month = newValue {
                 lastMonthDestination = newValue
             }
+        }
+        .onChange(of: historyPresentation.revealRequest) { _, request in
+            guard let request else { return }
+            selectedDestination = request.destination
         }
         .onReceive(
             NotificationCenter.default.publisher(

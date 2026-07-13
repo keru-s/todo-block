@@ -24,6 +24,7 @@ final class TodoEditorRowView: NSView {
     private var didStartDragSelection = false
     private var prefersRowFirstResponder = false
     private var lastStyledCompleted: Bool?
+    private var focusUpdateVersion = 0
 
     var onDragBegan: ((UUID, NSPoint) -> Void)?
     var onDragChanged: ((UUID, NSPoint) -> Void)?
@@ -150,6 +151,8 @@ final class TodoEditorRowView: NSView {
             self.actions = actions
         }
 
+        focusUpdateVersion += 1
+        let currentFocusUpdateVersion = focusUpdateVersion
         latestSnapshot = snapshot
         itemId = snapshot.id
 
@@ -199,16 +202,28 @@ final class TodoEditorRowView: NSView {
             )
             let desiredRange = NSRange(location: location, length: selectionLength)
             if window?.firstResponder !== titleTextView
-                || titleTextView.selectedRange() != desiredRange
+                || didReplaceText && titleTextView.selectedRange() != desiredRange
             {
-                Task { @MainActor [weak self] in
-                    guard let self, self.itemId == snapshot.id else { return }
+                if window?.firstResponder === titleTextView {
                     titleTextView.focus(
                         cursorPosition: snapshot.cursorPosition,
                         selectionLength: snapshot.textSelectionLength,
                         preferredHorizontalOffset: snapshot.preferredHorizontalOffset,
                         verticalMoveDirection: snapshot.verticalMoveDirection
                     )
+                } else {
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.itemId == snapshot.id,
+                              focusUpdateVersion == currentFocusUpdateVersion
+                        else { return }
+                        titleTextView.focus(
+                            cursorPosition: snapshot.cursorPosition,
+                            selectionLength: snapshot.textSelectionLength,
+                            preferredHorizontalOffset: snapshot.preferredHorizontalOffset,
+                            verticalMoveDirection: snapshot.verticalMoveDirection
+                        )
+                    }
                 }
             }
         } else if snapshot.isFocused == false {
