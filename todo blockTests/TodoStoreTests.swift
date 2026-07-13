@@ -151,7 +151,7 @@ final class TodoStoreTests: XCTestCase {
             title: "grandchild", dayDate: previousDate, afterItem: child, indentLevel: 2)
         store.undoManager.clear()
 
-        let todaySection = store.carryOverIncompleteItems()
+        let todaySection = try XCTUnwrap(store.carryOverIncompleteItems())
         let carriedItems = store.items(for: todaySection.date)
 
         XCTAssertEqual(carriedItems.map(\.title), ["parent", "child", "grandchild"])
@@ -163,6 +163,13 @@ final class TodoStoreTests: XCTestCase {
             [2, 4, 2]
         )
         XCTAssertEqual(grandchild.dayDate, Calendar.current.startOfDay(for: previousDate))
+        XCTAssertFalse(store.canUndo)
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(
+            store.items(for: todaySection.date).map(\.id),
+            [parent.id, child.id, grandchild.id]
+        )
     }
 
     func testCarryOverSkipsReopenedChildOfCompletedTopLevelParent() throws {
@@ -177,7 +184,7 @@ final class TodoStoreTests: XCTestCase {
 
         let todaySection = store.carryOverIncompleteItems()
 
-        XCTAssertTrue(store.items(for: todaySection.date).isEmpty)
+        XCTAssertNil(todaySection)
         XCTAssertEqual(store.items(for: previousDate).map(\.title), ["parent", "child"])
     }
 
@@ -193,7 +200,7 @@ final class TodoStoreTests: XCTestCase {
         completedChild.isCompleted = true
         store.undoManager.clear()
 
-        let todaySection = store.carryOverIncompleteItems()
+        let todaySection = try XCTUnwrap(store.carryOverIncompleteItems())
         let carriedItems = store.items(for: todaySection.date)
 
         XCTAssertEqual(carriedItems.map(\.title), ["parent", "incomplete"])
@@ -210,6 +217,81 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertTrue(store.redo())
         XCTAssertEqual(store.items(for: todaySection.date).map(\.title), ["parent", "incomplete"])
+    }
+
+    func testCarryOverWithNoEligibleContentKeepsRedoAndDoesNotCreateToday() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now)
+        )
+        _ = store.createItem(
+            title: "completed",
+            isCompleted: true,
+            dayDate: previousDate
+        )
+        let futureDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: 2, to: .now)
+        )
+        let temporary = store.createItem(title: "temporary", dayDate: futureDate)
+        store.undoManager.clear()
+        store.deleteItem(temporary)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo)
+
+        XCTAssertNil(store.carryOverIncompleteItems())
+
+        XCTAssertTrue(store.canRedo)
+        XCTAssertNotNil(store.todoItemsCache[temporary.id])
+        XCTAssertTrue(store.todayItems().isEmpty)
+        XCTAssertTrue(store.redo())
+        XCTAssertNil(store.todoItemsCache[temporary.id])
+    }
+
+    func testAutomaticCarryOverWaitsForRedoButUserInitiatedCarryOverStartsNewDirection() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now)
+        )
+        let pending = store.createItem(title: "pending", dayDate: previousDate)
+        let temporary = store.createItem(title: "temporary", dayDate: .now)
+        store.undoManager.clear()
+        store.deleteItem(temporary)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo)
+
+        XCTAssertNil(store.carryOverIncompleteItems(trigger: .automatic))
+        XCTAssertTrue(Calendar.current.isDate(pending.dayDate, inSameDayAs: previousDate))
+        XCTAssertTrue(store.canRedo)
+
+        let todaySection = try XCTUnwrap(
+            store.carryOverIncompleteItems(trigger: .userInitiated)
+        )
+        XCTAssertEqual(store.items(for: todaySection.date).map(\.id), [temporary.id, pending.id])
+        XCTAssertFalse(store.canRedo)
+        XCTAssertTrue(store.canUndo)
+    }
+
+    func testCarryOverRedoUsesRecordedItemsWithoutReevaluatingNewContent() throws {
+        let store = TodoStore.shared
+        let previousDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: .now)
+        )
+        let original = store.createItem(title: "original", dayDate: previousDate)
+        let later = store.createItem(
+            title: "later",
+            isCompleted: true,
+            dayDate: previousDate,
+            afterItem: original
+        )
+        store.undoManager.clear()
+
+        let todaySection = try XCTUnwrap(store.carryOverIncompleteItems())
+        XCTAssertTrue(store.undo())
+        later.isCompleted = false
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: todaySection.date).map(\.id), [original.id])
+        XCTAssertEqual(store.items(for: previousDate).map(\.id), [later.id])
     }
 
     func testMoveItemToAnotherMonthUsesLatestDateTail() {

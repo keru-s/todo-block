@@ -218,7 +218,7 @@ struct TodoListView: View {
         } else {
             switch addTodayMode {
             case .carryOver:
-                store.carryOverIncompleteItems()
+                store.carryOverIncompleteItems(trigger: .userInitiated)
             case .blank:
                 store.getOrCreateTodaySection()
             }
