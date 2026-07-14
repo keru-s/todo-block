@@ -42,33 +42,46 @@ struct todo_blockApp: App {
             // 完全替换默认的撤销/重做菜单
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") {
-                    TodoStore.shared.undo()
+                    ActiveListCommandCoordinator.shared.perform(.undo)
                 }
                 .keyboardShortcut("z", modifiers: .command)
-                .disabled(TodoStore.shared.canUndo == false)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .undo) != .available
+                )
 
                 Button("恢复") {
-                    TodoStore.shared.redo()
+                    ActiveListCommandCoordinator.shared.perform(.redo)
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(TodoStore.shared.canRedo == false)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .redo) != .available
+                )
             }
 
             CommandGroup(replacing: .pasteboard) {
                 Button("剪切") {
-                    performCut()
+                    ActiveListCommandCoordinator.shared.perform(.cut)
                 }
                 .keyboardShortcut("x", modifiers: .command)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .cut) != .available
+                )
 
                 Button("复制") {
-                    performCopy()
+                    ActiveListCommandCoordinator.shared.perform(.copy)
                 }
                 .keyboardShortcut("c", modifiers: .command)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .copy) != .available
+                )
 
                 Button("粘贴") {
-                    performPaste()
+                    ActiveListCommandCoordinator.shared.perform(.paste)
                 }
                 .keyboardShortcut("v", modifiers: .command)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .paste) != .available
+                )
 
                 Divider()
 
@@ -80,55 +93,22 @@ struct todo_blockApp: App {
 
             CommandMenu("排序") {
                 Button("上移当前待办") {
-                    TodoReorderCommandManager.shared.moveSelectionUp()
+                    ActiveListCommandCoordinator.shared.perform(.moveUp)
                 }
                 .keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .moveUp) != .available
+                )
 
                 Button("下移当前待办") {
-                    TodoReorderCommandManager.shared.moveSelectionDown()
+                    ActiveListCommandCoordinator.shared.perform(.moveDown)
                 }
                 .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(
+                    ActiveListCommandCoordinator.shared.availability(of: .moveDown) != .available
+                )
             }
         }
     }
 
-    private func performCopy() {
-        if
-            let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-            textView.selectedRange().length > 0
-        {
-            _ = NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
-            return
-        }
-
-        if TodoClipboardManager.shared.copySelectionToPasteboard() {
-            return
-        }
-
-        _ = NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
-    }
-
-    private func performCut() {
-        if
-            let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-            textView.selectedRange().length > 0
-        {
-            _ = NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
-            return
-        }
-
-        if TodoClipboardManager.shared.cutSelectionToPasteboard() {
-            return
-        }
-
-        _ = NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
-    }
-
-    private func performPaste() {
-        if TodoClipboardManager.shared.pasteFromPasteboard() {
-            return
-        }
-
-        _ = NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
-    }
 }

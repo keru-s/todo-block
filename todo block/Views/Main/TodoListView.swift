@@ -19,6 +19,7 @@ struct TodoListView: View {
     )
     @State private var showModePopover = false
     @State private var handledHistoryRevealId: UUID?
+    @State private var commandRegistration: TodoListCommandRegistration?
     @AppStorage("addTodayMode") private var addTodayModeRaw: String = TodoTodayAdditionMode.carryOver.rawValue
 
     private var addTodayMode: TodoTodayAdditionMode {
@@ -28,6 +29,7 @@ struct TodoListView: View {
     private var store: TodoStore { TodoStore.shared }
     private var selectionManager: SelectionManager { actionModule.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
+    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
 
     private var daySections: [DaySection] {
         store.sections(year: year, month: month)
@@ -41,6 +43,16 @@ struct TodoListView: View {
                 selectionManager: selectionManager
             )
         }
+    }
+
+    private var editorActions: TodoEditorActions {
+        var actions = actionModule.editorActions
+        let registration = commandRegistration
+        actions.userInteraction = {
+            guard let registration else { return }
+            ActiveListCommandCoordinator.shared.claim(registration)
+        }
+        return actions
     }
 
     private var clipboardScope: TodoClipboardScope {
@@ -57,7 +69,7 @@ struct TodoListView: View {
             TodoEditorRepresentable(
                 sections: appKitEditorSections,
                 emptyTitle: "暂无待办",
-                actions: actionModule.editorActions,
+                actions: editorActions,
                 revealRequest: visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -118,15 +130,21 @@ struct TodoListView: View {
             .background(TodoDesignTokens.windowBackground)
         }
         .onAppear {
+            registerCommandContextIfNeeded()
             bindContextsIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
-            guard newValue else { return }
+            guard newValue else {
+                unregisterCommandContext()
+                return
+            }
+            registerCommandContextIfNeeded()
             bindContextsIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
+            replaceCommandContextForCurrentScope()
             bindContextsIfNeeded()
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
@@ -134,6 +152,9 @@ struct TodoListView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
             bindContextsIfNeeded()
+        }
+        .onDisappear {
+            unregisterCommandContext()
         }
     }
 
@@ -229,7 +250,30 @@ struct TodoListView: View {
     }
 
     private func executeAddToday() {
+        claimCurrentList()
         actionModule.addToday(mode: addTodayMode)
+    }
+
+    private func claimCurrentList() {
+        guard let commandRegistration else { return }
+        commandCoordinator.claim(commandRegistration)
+    }
+
+    private func registerCommandContextIfNeeded() {
+        guard isActiveContext, commandRegistration == nil else { return }
+        actionModule.updateCommandScope(clipboardScope)
+        commandRegistration = commandCoordinator.register(actionModule)
+    }
+
+    private func replaceCommandContextForCurrentScope() {
+        unregisterCommandContext()
+        registerCommandContextIfNeeded()
+    }
+
+    private func unregisterCommandContext() {
+        guard let commandRegistration else { return }
+        commandCoordinator.unregister(commandRegistration)
+        self.commandRegistration = nil
     }
 
     private func bindContextsIfNeeded() {

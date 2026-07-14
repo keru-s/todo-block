@@ -172,11 +172,13 @@ final class TodoEditorSectionView: NSView {
 
     @objc private func addItem() {
         guard let snapshot else { return }
+        actions.userInteraction()
         actions.addItem(snapshot.destination)
     }
 
     @objc private func showDatePicker() {
         guard let snapshot, let editableDate = snapshot.editableDate else { return }
+        actions.userInteraction()
 
         let picker = NSDatePicker()
         picker.datePickerStyle = .clockAndCalendar

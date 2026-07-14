@@ -10,6 +10,7 @@ final class TodoEditorTextView: NSTextView {
     var onTextDidChange: ((TodoTextEditEvent) -> Void)?
     var onSelectionDidChange: ((TodoTextSelection) -> Void)?
     var onMouseFocus: ((Bool, Int?) -> Void)?
+    var onUserInteraction: (() -> Void)?
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
     var deletesOnBackspace: Bool = false
@@ -95,6 +96,11 @@ final class TodoEditorTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
         onMouseFocus?(event.modifierFlags.contains(.shift), selectedRange().location)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        onUserInteraction?()
+        super.keyDown(with: event)
     }
 
     override func setMarkedText(

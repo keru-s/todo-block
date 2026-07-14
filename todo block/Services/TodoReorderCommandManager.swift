@@ -52,40 +52,29 @@ final class TodoReorderCommandManager {
         moveDownHandler?() ?? false
     }
 
-    private static func moveSelection(
+    static func canMoveSelection(
         direction: TodoKeyboardReorderDirection,
         store: TodoStore,
         selectionManager: SelectionManager
     ) -> Bool {
-        var selectedIds = selectionManager.selectedItemIds
-        if selectedIds.isEmpty, let focusedItemId = selectionManager.focusedItemId {
-            selectedIds = [focusedItemId]
-        }
-        let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
-        guard selectedItems.isEmpty == false, selectedItems.count == selectedIds.count else {
-            return false
-        }
+        plannedSelectionStateChanges(
+            direction: direction,
+            store: store,
+            selectionManager: selectionManager
+        ) != nil
+    }
 
+    static func moveSelection(
+        direction: TodoKeyboardReorderDirection,
+        store: TodoStore,
+        selectionManager: SelectionManager
+    ) -> Bool {
+        guard let stateChanges = plannedSelectionStateChanges(
+            direction: direction,
+            store: store,
+            selectionManager: selectionManager
+        ) else { return false }
         let selectionBefore = TodoSelectionState(selectionManager: selectionManager)
-        let selectedByDestination = Dictionary(grouping: selectedItems) {
-            store.destination(for: $0).normalized
-        }
-        var stateChanges: [TodoItemStateChange] = []
-
-        for (destination, destinationSelection) in selectedByDestination {
-            let currentItems = store.items(in: destination)
-            let rootIds = TodoHierarchyBlockEngine.blockRootIds(
-                selectedFrom: Set(destinationSelection.map(\.id)),
-                in: currentItems
-            )
-            guard rootIds.isEmpty == false else { return false }
-            guard let destinationChanges = plannedStateChanges(
-                direction: direction,
-                rootIds: rootIds,
-                items: currentItems
-            ) else { return false }
-            stateChanges.append(contentsOf: destinationChanges)
-        }
 
         return store.undoManager.perform(
             TodoOperation(
@@ -101,6 +90,43 @@ final class TodoReorderCommandManager {
             ),
             store: store
         )
+    }
+
+    private static func plannedSelectionStateChanges(
+        direction: TodoKeyboardReorderDirection,
+        store: TodoStore,
+        selectionManager: SelectionManager
+    ) -> [TodoItemStateChange]? {
+        var selectedIds = selectionManager.selectedItemIds
+        if selectedIds.isEmpty, let focusedItemId = selectionManager.focusedItemId {
+            selectedIds = [focusedItemId]
+        }
+        let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
+        guard selectedItems.isEmpty == false, selectedItems.count == selectedIds.count else {
+            return nil
+        }
+
+        let selectedByDestination = Dictionary(grouping: selectedItems) {
+            store.destination(for: $0).normalized
+        }
+        var stateChanges: [TodoItemStateChange] = []
+
+        for (destination, destinationSelection) in selectedByDestination {
+            let currentItems = store.items(in: destination)
+            let rootIds = TodoHierarchyBlockEngine.blockRootIds(
+                selectedFrom: Set(destinationSelection.map(\.id)),
+                in: currentItems
+            )
+            guard rootIds.isEmpty == false else { return nil }
+            guard let destinationChanges = plannedStateChanges(
+                direction: direction,
+                rootIds: rootIds,
+                items: currentItems
+            ) else { return nil }
+            stateChanges.append(contentsOf: destinationChanges)
+        }
+
+        return stateChanges.isEmpty ? nil : stateChanges
     }
 
     private static func plannedStateChanges(

@@ -81,8 +81,12 @@ final class TodoEditorRowView: NSView {
         }
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
+            actions.userInteraction()
             prefersRowFirstResponder = false
             actions.selectItem(itemId, shiftPressed, cursorPosition)
+        }
+        titleTextView.onUserInteraction = { [weak self] in
+            self?.actions.userInteraction()
         }
         titleTextView.onCompositionChange = { [weak self] composing in
             self?.isComposingText = composing
@@ -112,6 +116,7 @@ final class TodoEditorRowView: NSView {
 
         handleView.onDragBegan = { [weak self] location in
             guard let self, let itemId else { return }
+            actions.userInteraction()
             prefersRowFirstResponder = true
             window?.makeFirstResponder(self)
             onDragBegan?(itemId, location)
@@ -244,6 +249,7 @@ final class TodoEditorRowView: NSView {
 
     @objc private func toggleCompleted() {
         guard let itemId else { return }
+        actions.userInteraction()
         actions.toggleCompleted(itemId)
     }
 
@@ -251,6 +257,7 @@ final class TodoEditorRowView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if let itemId {
+            actions.userInteraction()
             selectionMouseDownTime = Date()
             didStartDragSelection = false
             prefersRowFirstResponder = true
@@ -292,16 +299,19 @@ final class TodoEditorRowView: NSView {
         }
 
         if event.modifierFlags.contains(.command), event.keyCode == 126 {
+            actions.userInteraction()
             actions.moveItemByKeyboard(itemId, .up)
             return
         }
 
         if event.modifierFlags.contains(.command), event.keyCode == 125 {
+            actions.userInteraction()
             actions.moveItemByKeyboard(itemId, .down)
             return
         }
 
         if event.charactersIgnoringModifiers == " " {
+            actions.userInteraction()
             actions.toggleCompleted(itemId)
             return
         }

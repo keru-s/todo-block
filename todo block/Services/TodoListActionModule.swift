@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 struct TodoListActionRejection: Equatable {
@@ -26,17 +27,125 @@ final class TodoListActionModule {
 
     private let store: TodoStore
     private let sectionById: (UUID) -> DaySection?
+    private var commandScope: TodoClipboardScope?
 
     var editorActions: TodoEditorActions { makeEditorActions() }
 
     init(
         store: TodoStore,
         selectionManager: SelectionManager,
+        commandScope: TodoClipboardScope? = nil,
         sectionById: ((UUID) -> DaySection?)? = nil
     ) {
         self.store = store
         self.selectionManager = selectionManager
+        self.commandScope = commandScope
         self.sectionById = sectionById ?? { store.daySectionsCache[$0] }
+    }
+
+    func updateCommandScope(_ scope: TodoClipboardScope) {
+        commandScope = scope
+    }
+
+    func commandAvailability(_ command: TodoListCommand) -> TodoListCommandAvailability {
+        switch command {
+        case .copy, .cut:
+            guard let commandScope else { return .unavailable(nil) }
+            return store.canCopy(scope: commandScope, selection: clipboardSelection)
+                ? .available
+                : .unavailable(nil)
+        case .paste:
+            guard commandScope != nil,
+                  let content = NSPasteboard.general.string(forType: .string),
+                  MarkdownTodoCodec.decode(
+                    content,
+                    baseIndentLevel: 0,
+                    maxIndentLevel: TodoItem.maxIndentLevel
+                  ).isEmpty == false
+            else { return .unavailable(nil) }
+            return .available
+        case .moveUp:
+            return TodoReorderCommandManager.canMoveSelection(
+                direction: .up,
+                store: store,
+                selectionManager: selectionManager
+            ) ? .available : .unavailable(nil)
+        case .moveDown:
+            return TodoReorderCommandManager.canMoveSelection(
+                direction: .down,
+                store: store,
+                selectionManager: selectionManager
+            ) ? .available : .unavailable(nil)
+        case .undo:
+            return store.canUndo ? .available : .unavailable(nil)
+        case .redo:
+            return store.canRedo ? .available : .unavailable(nil)
+        }
+    }
+
+    @discardableResult
+    func perform(_ command: TodoListCommand) -> TodoListActionResult {
+        guard commandAvailability(command) == .available else { return .noChange }
+
+        switch command {
+        case .copy:
+            guard let markdown = exportedMarkdown else { return .noChange }
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(markdown, forType: .string)
+                ? .performed
+                : .noChange
+        case .cut:
+            guard let markdown = exportedMarkdown else { return .noChange }
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.setString(markdown, forType: .string) else {
+                return .noChange
+            }
+            let itemIds = commandScope.map {
+                store.clipboardItemIds(scope: $0, selection: clipboardSelection)
+            } ?? []
+            return selectionManager.deleteItems(itemIds, store: store)
+                ? .performed
+                : .noChange
+        case .paste:
+            guard let commandScope,
+                  let content = NSPasteboard.general.string(forType: .string),
+                  store.importMarkdown(
+                    content,
+                    scope: commandScope,
+                    selection: clipboardSelection,
+                    selectionManager: selectionManager
+                  ) != nil
+            else { return .noChange }
+            return .performed
+        case .moveUp:
+            return TodoReorderCommandManager.moveSelection(
+                direction: .up,
+                store: store,
+                selectionManager: selectionManager
+            ) ? .performed : .noChange
+        case .moveDown:
+            return TodoReorderCommandManager.moveSelection(
+                direction: .down,
+                store: store,
+                selectionManager: selectionManager
+            ) ? .performed : .noChange
+        case .undo:
+            return store.undo() ? .performed : .noChange
+        case .redo:
+            return store.redo() ? .performed : .noChange
+        }
+    }
+
+    private var clipboardSelection: TodoClipboardSelectionSnapshot {
+        TodoClipboardSelectionSnapshot(
+            focusedItemId: selectionManager.focusedItemId,
+            selectedItemIds: selectionManager.selectedItemIds
+        )
+    }
+
+    private var exportedMarkdown: String? {
+        guard let commandScope else { return nil }
+        return store.exportMarkdown(scope: commandScope, selection: clipboardSelection)
     }
 
     @discardableResult
