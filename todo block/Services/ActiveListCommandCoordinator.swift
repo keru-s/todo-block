@@ -51,6 +51,16 @@ final class ActiveListCommandCoordinator {
         }
     }
 
+    func replaceAndClaim(
+        _ registration: TodoListCommandRegistration,
+        with module: TodoListActionModule
+    ) -> TodoListCommandRegistration {
+        unregister(registration)
+        let replacement = register(module)
+        claim(replacement)
+        return replacement
+    }
+
     @discardableResult
     func claim(_ registration: TodoListCommandRegistration) -> Bool {
         removeExpiredRegistrations()

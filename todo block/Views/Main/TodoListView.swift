@@ -259,8 +259,17 @@ struct TodoListView: View {
     }
 
     private func replaceCommandContextForCurrentScope() {
-        unregisterCommandContext()
-        registerCommandContextIfNeeded()
+        guard isActiveContext else { return }
+        actionModule.updateCommandScope(clipboardScope)
+        guard let commandRegistration else {
+            registerCommandContextIfNeeded()
+            claimCurrentList()
+            return
+        }
+        self.commandRegistration = commandCoordinator.replaceAndClaim(
+            commandRegistration,
+            with: actionModule
+        )
     }
 
     private func unregisterCommandContext() {

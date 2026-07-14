@@ -75,6 +75,42 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.perform(.undo), .noChange)
     }
 
+    func testReplacingVisibleMonthRegistrationImmediatelyClaimsTheNewScope() {
+        let store = TodoStore.shared
+        let aprilItem = store.createItem(
+            title: "April",
+            dayDate: date(year: 2026, month: 4, day: 2)
+        )
+        let mayItem = store.createItem(
+            title: "May",
+            dayDate: date(year: 2026, month: 5, day: 3)
+        )
+        let selection = SelectionManager(historyContext: .mainWindow)
+        selection.focusedItemId = aprilItem.id
+        selection.selectedItemIds = [aprilItem.id]
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 4)
+        )
+        let aprilRegistration = coordinator.register(module)
+        XCTAssertTrue(coordinator.claim(aprilRegistration))
+
+        selection.focusedItemId = mayItem.id
+        selection.selectedItemIds = [mayItem.id]
+        module.updateCommandScope(.scheduledMonth(year: 2026, month: 5))
+        let mayRegistration = coordinator.replaceAndClaim(
+            aprilRegistration,
+            with: module
+        )
+
+        XCTAssertTrue(coordinator.isCurrent(module))
+        XCTAssertFalse(coordinator.claim(aprilRegistration))
+        XCTAssertTrue(coordinator.claim(mayRegistration))
+        XCTAssertEqual(coordinator.perform(.copy), .performed)
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] May")
+    }
+
     func testCommandsAndAvailabilityFollowOnlyTheClaimedListModule() {
         let store = TodoStore.shared
         let firstDay = date(year: 2026, month: 4, day: 2)
