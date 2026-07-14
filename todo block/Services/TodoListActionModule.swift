@@ -32,6 +32,14 @@ final class TodoListActionModule {
 
     var editorActions: TodoEditorActions { makeEditorActions() }
 
+    func editorActions(
+        claimCurrentList: @escaping () -> Void
+    ) -> TodoEditorActions {
+        var actions = makeEditorActions()
+        actions.claimCurrentList = claimCurrentList
+        return actions
+    }
+
     init(
         store: TodoStore,
         selectionManager: SelectionManager,

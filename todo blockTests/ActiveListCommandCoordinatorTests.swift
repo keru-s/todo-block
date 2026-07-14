@@ -110,6 +110,82 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] May")
     }
 
+    func testLongTermEditorInteractionClaimsItsModuleBeforeChangingItem() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "long term",
+            dayDate: .now,
+            containerKind: .longTermUrgent
+        )
+        let monthModule = TodoListActionModule(
+            store: store,
+            selectionManager: SelectionManager(historyContext: .mainWindow),
+            commandScope: .today
+        )
+        let longTermSelection = SelectionManager(historyContext: .longTerm)
+        let longTermModule = TodoListActionModule(
+            store: store,
+            selectionManager: longTermSelection,
+            commandScope: .longTerm
+        )
+        let monthRegistration = coordinator.register(monthModule)
+        let longTermRegistration = coordinator.register(longTermModule)
+        XCTAssertTrue(coordinator.claim(monthRegistration))
+
+        let actions = longTermModule.editorActions(claimCurrentList: {
+            self.coordinator.claim(longTermRegistration)
+        })
+        actions.claimCurrentList()
+        actions.toggleCompleted(item.id)
+
+        XCTAssertTrue(item.isCompleted)
+        XCTAssertTrue(coordinator.isCurrent(longTermModule))
+    }
+
+    func testDateAndLongTermModulesKeepIndependentSelectionWhenCommandsSwitchTarget() {
+        let store = TodoStore.shared
+        let dateItem = store.createItem(title: "date", dayDate: .now)
+        let longTermItem = store.createItem(
+            title: "long term",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let dateSelection = SelectionManager(historyContext: .mainWindow)
+        dateSelection.focusedItemId = dateItem.id
+        dateSelection.selectedItemIds = [dateItem.id]
+        dateSelection.cursorPosition = 2
+        dateSelection.textSelectionLength = 1
+        let longTermSelection = SelectionManager(historyContext: .longTerm)
+        longTermSelection.focusedItemId = longTermItem.id
+        longTermSelection.selectedItemIds = [longTermItem.id]
+        longTermSelection.cursorPosition = 4
+        let dateModule = TodoListActionModule(
+            store: store,
+            selectionManager: dateSelection,
+            commandScope: .today
+        )
+        let longTermModule = TodoListActionModule(
+            store: store,
+            selectionManager: longTermSelection,
+            commandScope: .longTerm
+        )
+        let dateRegistration = coordinator.register(dateModule)
+        let longTermRegistration = coordinator.register(longTermModule)
+
+        XCTAssertTrue(coordinator.claim(dateRegistration))
+        XCTAssertEqual(coordinator.perform(.copy), .performed)
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] date")
+
+        XCTAssertTrue(coordinator.claim(longTermRegistration))
+        XCTAssertEqual(coordinator.perform(.copy), .performed)
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] long term")
+        XCTAssertEqual(dateSelection.focusedItemId, dateItem.id)
+        XCTAssertEqual(dateSelection.cursorPosition, 2)
+        XCTAssertEqual(dateSelection.textSelectionLength, 1)
+        XCTAssertEqual(longTermSelection.focusedItemId, longTermItem.id)
+        XCTAssertEqual(longTermSelection.cursorPosition, 4)
+    }
+
     func testClaimedModuleKeepsTitleTextSelectionAheadOfWholeItemCopy() {
         let store = TodoStore.shared
         let item = store.createItem(title: "whole item", dayDate: .now)

@@ -46,13 +46,11 @@ struct TodoListView: View {
     }
 
     private var editorActions: TodoEditorActions {
-        var actions = actionModule.editorActions
         let registration = commandRegistration
-        actions.claimCurrentList = {
+        return actionModule.editorActions {
             guard let registration else { return }
             ActiveListCommandCoordinator.shared.claim(registration)
         }
-        return actions
     }
 
     private var clipboardScope: TodoClipboardScope {
@@ -139,6 +137,7 @@ struct TodoListView: View {
                 return
             }
             registerCommandContextIfNeeded()
+            claimCurrentList()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in

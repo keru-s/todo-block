@@ -11,11 +11,18 @@ import SwiftUI
 struct LongTermListView: View {
     var isActiveContext: Bool = true
 
-    @State private var selectionManager = SelectionManager(historyContext: .longTerm)
+    @State private var actionModule = TodoListActionModule(
+        store: .shared,
+        selectionManager: SelectionManager(historyContext: .longTerm),
+        commandScope: .longTerm
+    )
     @State private var handledHistoryRevealId: UUID?
+    @State private var commandRegistration: TodoListCommandRegistration?
 
     private var store: TodoStore { TodoStore.shared }
+    private var selectionManager: SelectionManager { actionModule.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
+    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
     private let urgentSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
     private let importantSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
 
@@ -40,41 +47,57 @@ struct LongTermListView: View {
         ]
     }
 
+    private var editorActions: TodoEditorActions {
+        let registration = commandRegistration
+        return actionModule.editorActions {
+            guard let registration else { return }
+            ActiveListCommandCoordinator.shared.claim(registration)
+        }
+    }
+
     var body: some View {
         TodoEditorRepresentable(
             sections: editorSections,
             emptyTitle: "暂无长期待办",
-            actions: TodoEditorActionFactory.make(
-                store: store,
-                selectionManager: selectionManager
-            ),
+            actions: editorActions,
             revealRequest: visibleHistoryRevealRequest
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            bindContextsIfNeeded()
+            registerCommandContextIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
-            guard newValue else { return }
-            bindContextsIfNeeded()
+            guard newValue else {
+                unregisterCommandContext()
+                return
+            }
+            registerCommandContextIfNeeded()
+            claimCurrentList()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
-            bindContextsIfNeeded()
+        .onDisappear {
+            unregisterCommandContext()
         }
     }
 
-    private func bindContextsIfNeeded() {
-        guard isActiveContext else { return }
-        ActiveListCommandContext.bind(
-            scope: .longTerm,
-            store: store,
-            selectionManager: selectionManager
-        )
+    private func registerCommandContextIfNeeded() {
+        guard isActiveContext, commandRegistration == nil else { return }
+        commandRegistration = commandCoordinator.register(actionModule)
+    }
+
+    private func claimCurrentList() {
+        guard let commandRegistration else { return }
+        commandCoordinator.claim(commandRegistration)
+    }
+
+    private func unregisterCommandContext() {
+        guard let commandRegistration else { return }
+        commandCoordinator.unregister(commandRegistration)
+        self.commandRegistration = nil
     }
 
     private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
