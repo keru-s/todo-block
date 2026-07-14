@@ -157,7 +157,10 @@ final class ActiveListCommandCoordinator {
     @discardableResult
     func perform(_ command: TodoListCommand, event: NSEvent?) -> TodoListActionResult {
         guard let currentModule else { return .noChange }
-        let resolvedInvocation: TodoListCommandInvocation = if event?.type == .keyDown {
+        let resolvedInvocation: TodoListCommandInvocation = if isKeyboardMoveShortcut(
+            command,
+            event: event
+        ) {
             .keyboardShortcut
         } else {
             .menu
@@ -167,6 +170,29 @@ final class ActiveListCommandCoordinator {
             invocation: resolvedInvocation,
             event: event
         )
+    }
+
+    private func isKeyboardMoveShortcut(
+        _ command: TodoListCommand,
+        event: NSEvent?
+    ) -> Bool {
+        guard let event, event.type == .keyDown else { return false }
+        let commandModifiers = event.modifierFlags.intersection([
+            .command,
+            .control,
+            .option,
+            .shift,
+        ])
+        guard commandModifiers == .command else { return false }
+
+        switch command {
+        case .moveUp:
+            return event.keyCode == 126 || event.charactersIgnoringModifiers == "\u{F700}"
+        case .moveDown:
+            return event.keyCode == 125 || event.charactersIgnoringModifiers == "\u{F701}"
+        default:
+            return false
+        }
     }
 
     func resetForTesting() {

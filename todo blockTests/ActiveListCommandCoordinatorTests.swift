@@ -344,6 +344,45 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         )
     }
 
+    func testReturnKeyFromKeyboardNavigatedMenuMovesWholeSelection() throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let selected = store.createItem(title: "selected", dayDate: day, afterItem: focused)
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: selected)
+        let selection = SelectionManager()
+        selection.focusedItemId = focused.id
+        selection.selectedItemIds = [focused.id, selected.id]
+        let textView = TodoEditorTextView()
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { textView }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        store.undoManager.clear()
+        let returnEvent = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\r",
+            charactersIgnoringModifiers: "\r",
+            isARepeat: false,
+            keyCode: 36
+        ))
+
+        XCTAssertEqual(coordinator.perform(.moveDown, event: returnEvent), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, tail.id, focused.id, selected.id]
+        )
+    }
+
     func testKeyEventDoesNotMoveItemsOrCommitMarkedText() throws {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 7, day: 14)

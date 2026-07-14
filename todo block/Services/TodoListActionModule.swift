@@ -147,29 +147,21 @@ final class TodoListActionModule {
             if activeTextView?.isComposingText == true {
                 return .unavailable(nil)
             }
-            let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
+            return TodoSelectionReorderEngine.canMoveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
             )
-            let canMoveFocusedItem = selectionManager.focusedItemId.map {
-                keyboardMoveAvailability(itemId: $0, direction: .up) == .available
-            } ?? false
-            return canMoveSelection || (activeTextView != nil && canMoveFocusedItem)
                 ? .available : .unavailable(nil)
         case .moveDown:
             if activeTextView?.isComposingText == true {
                 return .unavailable(nil)
             }
-            let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
+            return TodoSelectionReorderEngine.canMoveSelection(
                 direction: .down,
                 store: store,
                 selectionManager: selectionManager
             )
-            let canMoveFocusedItem = selectionManager.focusedItemId.map {
-                keyboardMoveAvailability(itemId: $0, direction: .down) == .available
-            } ?? false
-            return canMoveSelection || (activeTextView != nil && canMoveFocusedItem)
                 ? .available : .unavailable(nil)
         case .undo:
             if activeTextView?.hasUncommittedTextInput == true {

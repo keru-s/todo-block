@@ -560,6 +560,35 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testMenuMoveAvailabilityUsesWholeSelectionEvenWhenFocusedItemCanMoveLocally() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: focused)
+        selectionManager.selectedItemIds = [first.id, focused.id]
+        selectionManager.focusedItemId = focused.id
+        let textView = TodoEditorTextView()
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { textView }
+        )
+        store.undoManager.clear()
+
+        XCTAssertEqual(module.commandAvailability(.moveUp), .unavailable(nil))
+        XCTAssertEqual(module.perform(.moveUp), .noChange)
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, focused.id, tail.id])
+        XCTAssertFalse(store.canUndo)
+
+        XCTAssertEqual(
+            module.perform(.moveUp, invocation: .keyboardShortcut),
+            .performed
+        )
+        XCTAssertEqual(store.items(for: day).map(\.id), [focused.id, first.id, tail.id])
+    }
+
     func testBoundaryKeyboardMoveEndsPendingTextInputBeforeReturningNoChange() {
         let store = TodoStore.shared
         let (item, module) = makeModuleWithPendingComposition()
