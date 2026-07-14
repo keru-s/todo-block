@@ -167,4 +167,3 @@ final class MenuBarStatusItemController: NSObject {
         NSApp.terminate(nil)
     }
 }
-
