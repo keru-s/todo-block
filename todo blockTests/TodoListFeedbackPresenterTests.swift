@@ -66,8 +66,14 @@ final class TodoListFeedbackPresenterTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(550))
 
         XCTAssertEqual(presenter.feedback?.message, "这项待办已不存在")
+    }
 
-        try await Task.sleep(for: .milliseconds(500))
+    func testFeedbackDismissesAfterItsDisplayDuration() async throws {
+        let presenter = TodoListFeedbackPresenter(displayDuration: .milliseconds(50))
+
+        presenter.consume(.rejected(.itemNoLongerAvailable))
+        try await Task.sleep(for: .seconds(1))
+
         XCTAssertNil(presenter.feedback)
     }
 }

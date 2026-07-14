@@ -36,13 +36,14 @@ final class TodoListFeedbackPresenter {
         self.feedback = feedback
         announce(feedback.message)
 
+        let displayDuration = displayDuration
         dismissalTask = Task { [weak self] in
-            guard let self else { return }
             do {
                 try await Task.sleep(for: displayDuration)
             } catch {
                 return
             }
+            guard let self else { return }
             guard self.feedback?.id == feedback.id else { return }
             self.feedback = nil
             self.dismissalTask = nil

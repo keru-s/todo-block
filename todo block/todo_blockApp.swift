@@ -46,7 +46,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("z", modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .undo) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .undo).allowsAttempt
                 )
 
                 Button("恢复") {
@@ -54,7 +54,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .redo) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .redo).allowsAttempt
                 )
             }
 
@@ -64,7 +64,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("x", modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .cut) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .cut).allowsAttempt
                 )
 
                 Button("复制") {
@@ -72,7 +72,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("c", modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .copy) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .copy).allowsAttempt
                 )
 
                 Button("粘贴") {
@@ -80,7 +80,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut("v", modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .paste) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .paste).allowsAttempt
                 )
 
                 Divider()
@@ -97,7 +97,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .moveUp) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .moveUp).allowsAttempt
                 )
 
                 Button("下移当前待办") {
@@ -105,7 +105,7 @@ struct todo_blockApp: App {
                 }
                 .keyboardShortcut(.downArrow, modifiers: .command)
                 .disabled(
-                    ActiveListCommandCoordinator.shared.availability(of: .moveDown) != .available
+                    !ActiveListCommandCoordinator.shared.availability(of: .moveDown).allowsAttempt
                 )
             }
         }

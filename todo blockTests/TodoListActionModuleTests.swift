@@ -494,6 +494,81 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testMenuBarHistoryOutsideTodayReturnsVisibleRejectionWithoutSkippingStep() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "long term",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        store.undoManager.clear()
+        store.toggleComplete(item)
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today
+        )
+
+        XCTAssertEqual(
+            module.commandAvailability(.undo),
+            .unavailable(.openMainWindowForHistory)
+        )
+        XCTAssertEqual(module.perform(.undo), .rejected(.openMainWindowForHistory))
+        XCTAssertTrue(item.isCompleted)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertEqual(
+            module.feedbackPresenter.feedback?.message,
+            "请在主窗口撤销或恢复上一次操作"
+        )
+
+        let mainWindowModule = TodoListActionModule(
+            store: store,
+            selectionManager: SelectionManager(historyContext: .longTerm),
+            commandScope: .longTerm
+        )
+        XCTAssertEqual(mainWindowModule.perform(.undo), .performed)
+        XCTAssertFalse(item.isCompleted)
+        XCTAssertEqual(
+            module.commandAvailability(.redo),
+            .unavailable(.openMainWindowForHistory)
+        )
+        XCTAssertEqual(module.perform(.redo), .rejected(.openMainWindowForHistory))
+        XCTAssertFalse(item.isCompleted)
+        XCTAssertTrue(store.canRedo)
+    }
+
+    func testRedoDuringUncommittedInputReturnsVisibleRejectionAndKeepsBothStates() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原", dayDate: .now)
+        store.undoManager.clear()
+        store.toggleComplete(item)
+        XCTAssertTrue(store.undo())
+        let textView = TodoEditorTextView()
+        textView.string = "原"
+        textView.synchronizeReportedText("原")
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        textView.setMarkedText(
+            "文",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+
+        XCTAssertEqual(
+            module.commandAvailability(.redo),
+            .unavailable(.finishCurrentInput)
+        )
+        XCTAssertEqual(module.perform(.redo), .rejected(.finishCurrentInput))
+        XCTAssertTrue(textView.hasMarkedText())
+        XCTAssertTrue(store.canRedo)
+        XCTAssertEqual(module.feedbackPresenter.feedback?.message, "请先结束当前输入")
+    }
+
     func testEnterVariantsAndFocusNavigationThroughModuleKeepExpectedUserState() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)

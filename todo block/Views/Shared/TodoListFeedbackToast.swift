@@ -17,6 +17,10 @@ struct TodoListFeedbackToast: View {
                 .padding(.vertical, 9)
                 .background(.black.opacity(0.78))
                 .clipShape(.rect(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .accessibilityElement(children: .combine)

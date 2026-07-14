@@ -262,6 +262,8 @@ final class TodoUndoManager {
 
     private var invocationResult = InvocationResult.invalid
     private var historyRevision = 0
+    private var undoHistory: [TodoOperation] = []
+    private var redoHistory: [TodoOperation] = []
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -277,6 +279,14 @@ final class TodoUndoManager {
 
     var undoActionName: String {
         nsUndoManager.undoActionName
+    }
+
+    func nextUndoAffectsToday(store: TodoStore) -> Bool? {
+        undoHistory.last.map { affectsToday($0, store: store) }
+    }
+
+    func nextRedoAffectsToday(store: TodoStore) -> Bool? {
+        redoHistory.last.map { affectsToday($0, store: store) }
     }
 
     init() {
@@ -310,6 +320,7 @@ final class TodoUndoManager {
         target: TodoOperationValueTarget,
         store: TodoStore
     ) {
+        recordHistoryRegistration(operation)
         registerStandalone {
             nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 guard let self else { return }
@@ -330,6 +341,43 @@ final class TodoUndoManager {
                 store.scheduleSave()
             }
             nsUndoManager.setActionName(operation.actionName)
+        }
+    }
+
+    private func recordHistoryRegistration(_ operation: TodoOperation) {
+        if nsUndoManager.isUndoing {
+            redoHistory.append(operation)
+            trimHistory(&redoHistory)
+        } else if nsUndoManager.isRedoing {
+            undoHistory.append(operation)
+            trimHistory(&undoHistory)
+        } else {
+            undoHistory.append(operation)
+            trimHistory(&undoHistory)
+            redoHistory.removeAll()
+        }
+    }
+
+    private func trimHistory(_ history: inout [TodoOperation]) {
+        if history.count > maxUndoSteps {
+            history.removeFirst(history.count - maxUndoSteps)
+        }
+    }
+
+    private func affectsToday(_ operation: TodoOperation, store: TodoStore) -> Bool {
+        let calendar = Calendar.current
+        let snapshots = operation.itemExistenceChanges.map(\.snapshot)
+            + operation.itemStateChanges.flatMap { [$0.before, $0.after] }
+        let snapshotAffectsToday = snapshots.contains { snapshot in
+            (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
+                && calendar.isDateInToday(snapshot.dayDate)
+        }
+        if snapshotAffectsToday {
+            return true
+        }
+        return operation.completionChanges.contains { change in
+            guard let item = store.todoItemsCache[change.itemId] else { return false }
+            return item.containerKind == .scheduled && calendar.isDateInToday(item.dayDate)
         }
     }
 
@@ -470,6 +518,9 @@ final class TodoUndoManager {
     @discardableResult
     func undo() -> Bool {
         while nsUndoManager.canUndo {
+            if undoHistory.isEmpty == false {
+                undoHistory.removeLast()
+            }
             invocationResult = .invalid
             nsUndoManager.undo()
             historyRevision += 1
@@ -487,6 +538,9 @@ final class TodoUndoManager {
     @discardableResult
     func redo() -> Bool {
         while nsUndoManager.canRedo {
+            if redoHistory.isEmpty == false {
+                redoHistory.removeLast()
+            }
             invocationResult = .invalid
             nsUndoManager.redo()
             historyRevision += 1
@@ -503,6 +557,8 @@ final class TodoUndoManager {
     /// 清空撤销栈
     func clear() {
         nsUndoManager.removeAllActions()
+        undoHistory.removeAll()
+        redoHistory.removeAll()
         historyRevision += 1
     }
 }

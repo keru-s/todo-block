@@ -16,6 +16,15 @@ enum TodoListActionResult: Equatable {
 enum TodoListCommandAvailability: Equatable {
     case available
     case unavailable(TodoListActionRejection?)
+
+    var allowsAttempt: Bool {
+        switch self {
+        case .available, .unavailable(.some):
+            true
+        case .unavailable(nil):
+            false
+        }
+    }
 }
 
 enum TodoTodayAdditionMode: String {
@@ -112,14 +121,36 @@ final class TodoListActionModule {
                 selectionManager: selectionManager
             ) ? .available : .unavailable(nil)
         case .undo:
-            return store.canUndo || activeTextView?.hasUncommittedTextInput == true
-                ? .available
-                : .unavailable(nil)
+            if activeTextView?.hasUncommittedTextInput == true {
+                return .available
+            }
+            guard store.canUndo else { return .unavailable(nil) }
+            return historyAvailability(for: .undo)
         case .redo:
-            return store.canRedo && activeTextView?.hasUncommittedTextInput != true
-                ? .available
-                : .unavailable(nil)
+            if activeTextView?.hasUncommittedTextInput == true {
+                return .unavailable(.finishCurrentInput)
+            }
+            guard store.canRedo else { return .unavailable(nil) }
+            return historyAvailability(for: .redo)
         }
+    }
+
+    private func historyAvailability(
+        for command: TodoListCommand
+    ) -> TodoListCommandAvailability {
+        guard commandScope == .today else { return .available }
+        let affectsToday: Bool?
+        switch command {
+        case .undo:
+            affectsToday = store.undoManager.nextUndoAffectsToday(store: store)
+        case .redo:
+            affectsToday = store.undoManager.nextRedoAffectsToday(store: store)
+        default:
+            return .available
+        }
+        return affectsToday == false
+            ? .unavailable(.openMainWindowForHistory)
+            : .available
     }
 
     @discardableResult
@@ -133,7 +164,14 @@ final class TodoListActionModule {
         if command == .moveUp || command == .moveDown {
             prepareForExternalAction()
         }
-        guard commandAvailability(command) == .available else { return .noChange }
+        switch commandAvailability(command) {
+        case .available:
+            break
+        case .unavailable(nil):
+            return .noChange
+        case .unavailable(let rejection?):
+            return .rejected(rejection)
+        }
 
         switch command {
         case .copy:
