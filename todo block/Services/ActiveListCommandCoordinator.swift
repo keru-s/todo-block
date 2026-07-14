@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -5,10 +6,16 @@ enum TodoListCommand: Equatable {
     case copy
     case cut
     case paste
+    case selectAll
     case moveUp
     case moveDown
     case undo
     case redo
+}
+
+enum TodoListCommandInvocation: Equatable {
+    case keyboardShortcut
+    case menu
 }
 
 struct TodoListCommandRegistration: Hashable {
@@ -62,10 +69,18 @@ final class ActiveListCommandCoordinator {
         _ registration: TodoListCommandRegistration,
         with module: TodoListActionModule
     ) -> TodoListCommandRegistration {
-        unregister(registration)
-        let replacement = register(module)
-        claim(replacement)
-        return replacement
+        removeExpiredRegistrations()
+        guard registrations[registration.id] != nil else {
+            let replacement = register(module)
+            claim(replacement)
+            return replacement
+        }
+
+        registrations[registration.id] = WeakTodoListActionModule(module)
+        if activeTemporaryClaim?.previousRegistrationId != registration.id {
+            claim(registration)
+        }
+        return registration
     }
 
     @discardableResult
@@ -136,7 +151,18 @@ final class ActiveListCommandCoordinator {
 
     @discardableResult
     func perform(_ command: TodoListCommand) -> TodoListActionResult {
-        currentModule?.perform(command) ?? .noChange
+        perform(command, event: NSApp.currentEvent)
+    }
+
+    @discardableResult
+    func perform(_ command: TodoListCommand, event: NSEvent?) -> TodoListActionResult {
+        guard let currentModule else { return .noChange }
+        let resolvedInvocation: TodoListCommandInvocation = if event?.type == .keyDown {
+            .keyboardShortcut
+        } else {
+            .menu
+        }
+        return currentModule.perform(command, invocation: resolvedInvocation)
     }
 
     func resetForTesting() {

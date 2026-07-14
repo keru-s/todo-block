@@ -105,7 +105,8 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         )
 
         XCTAssertTrue(coordinator.isCurrent(module))
-        XCTAssertFalse(coordinator.claim(aprilRegistration))
+        XCTAssertEqual(mayRegistration, aprilRegistration)
+        XCTAssertTrue(coordinator.claim(aprilRegistration))
         XCTAssertTrue(coordinator.claim(mayRegistration))
         XCTAssertEqual(coordinator.perform(.copy), .performed)
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] May")
@@ -286,6 +287,102 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.todayItems().count, 1)
     }
 
+    func testKeyEventMovesFocusedItemLocallyWhileMenuEventMovesWholeSelection() throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let selected = store.createItem(title: "selected", dayDate: day, afterItem: focused)
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: selected)
+        let selection = SelectionManager()
+        selection.focusedItemId = focused.id
+        selection.selectedItemIds = [focused.id, selected.id]
+        let textView = TodoEditorTextView()
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { textView }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        store.undoManager.clear()
+        let keyEvent = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{F700}",
+            charactersIgnoringModifiers: "\u{F700}",
+            isARepeat: false,
+            keyCode: 126
+        ))
+
+        XCTAssertEqual(coordinator.perform(.moveUp, event: keyEvent), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [focused.id, first.id, selected.id, tail.id]
+        )
+
+        XCTAssertTrue(store.undo())
+        let menuEvent = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0
+        ))
+        XCTAssertEqual(coordinator.perform(.moveDown, event: menuEvent), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, tail.id, focused.id, selected.id]
+        )
+    }
+
+    func testKeyEventDoesNotMoveItemsOrCommitMarkedText() throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let selection = SelectionManager()
+        selection.focusedItemId = focused.id
+        selection.selectedItemIds = [focused.id]
+        let textView = TodoEditorTextView()
+        textView.setMarkedText(
+            "中",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { textView }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        let keyEvent = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{F700}",
+            charactersIgnoringModifiers: "\u{F700}",
+            isARepeat: false,
+            keyCode: 126
+        ))
+
+        XCTAssertEqual(coordinator.perform(.moveUp, event: keyEvent), .noChange)
+        XCTAssertTrue(textView.hasMarkedText())
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, focused.id])
+    }
+
     func testCommandWithoutCurrentListDoesNotChangeUserStateOrHistory() {
         let store = TodoStore.shared
         let item = store.createItem(title: "unchanged", dayDate: .now)
@@ -322,6 +419,37 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
             XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
         }
         XCTAssertTrue(coordinator.isCurrent(mainModule))
+    }
+
+    func testMenuBarCloseRestoresMainListAfterItsVisibleMonthChanges() {
+        let mainModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .mainWindow),
+            commandScope: .scheduledMonth(year: 2026, month: 7)
+        )
+        let menuBarModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today
+        )
+        let mainRegistration = coordinator.register(mainModule)
+        let menuBarRegistration = coordinator.register(menuBarModule)
+        XCTAssertTrue(coordinator.claim(mainRegistration))
+        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
+        XCTAssertNotNil(temporaryClaim)
+
+        mainModule.updateCommandScope(.scheduledMonth(year: 2026, month: 8))
+        let updatedMainRegistration = coordinator.replaceAndClaim(
+            mainRegistration,
+            with: mainModule
+        )
+
+        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
+        if let temporaryClaim {
+            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
+        }
+        XCTAssertTrue(coordinator.isCurrent(mainModule))
+        XCTAssertTrue(coordinator.claim(updatedMainRegistration))
     }
 
     func testMenuBarCloseDoesNotRestoreAListThatDisappearedWhilePopoverWasOpen() {

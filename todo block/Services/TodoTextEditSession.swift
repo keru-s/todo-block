@@ -26,7 +26,7 @@ struct TodoTextSelection: Equatable {
 }
 
 enum TodoTextInputSession: Equatable {
-    case dictation
+    case dictation(UUID)
 }
 
 struct TodoTextEditEvent: Equatable {

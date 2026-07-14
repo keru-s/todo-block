@@ -135,18 +135,36 @@ final class TodoListActionModule {
                   ).isEmpty == false
             else { return .unavailable(nil) }
             return .available
+        case .selectAll:
+            if let activeTextView {
+                return activeTextView.string.isEmpty ? .unavailable(nil) : .available
+            }
+            guard let commandScope else { return .unavailable(nil) }
+            return store.commandItems(in: commandScope).isEmpty
+                ? .unavailable(nil)
+                : .available
         case .moveUp:
-            return TodoSelectionReorderEngine.canMoveSelection(
+            let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
-            ) ? .available : .unavailable(nil)
+            )
+            let canMoveFocusedItem = selectionManager.focusedItemId.map {
+                keyboardMoveAvailability(itemId: $0, direction: .up) == .available
+            } ?? false
+            return canMoveSelection || (activeTextView != nil && canMoveFocusedItem)
+                ? .available : .unavailable(nil)
         case .moveDown:
-            return TodoSelectionReorderEngine.canMoveSelection(
+            let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
                 direction: .down,
                 store: store,
                 selectionManager: selectionManager
-            ) ? .available : .unavailable(nil)
+            )
+            let canMoveFocusedItem = selectionManager.focusedItemId.map {
+                keyboardMoveAvailability(itemId: $0, direction: .down) == .available
+            } ?? false
+            return canMoveSelection || (activeTextView != nil && canMoveFocusedItem)
+                ? .available : .unavailable(nil)
         case .undo:
             if activeTextView?.hasUncommittedTextInput == true {
                 return .available
@@ -182,13 +200,28 @@ final class TodoListActionModule {
     }
 
     @discardableResult
-    func perform(_ command: TodoListCommand) -> TodoListActionResult {
-        let result = performWithoutFeedback(command)
+    func perform(
+        _ command: TodoListCommand,
+        invocation: TodoListCommandInvocation = .menu
+    ) -> TodoListActionResult {
+        let result = performWithoutFeedback(command, invocation: invocation)
         feedbackPresenter.consume(result)
         return result
     }
 
-    private func performWithoutFeedback(_ command: TodoListCommand) -> TodoListActionResult {
+    private func performWithoutFeedback(
+        _ command: TodoListCommand,
+        invocation: TodoListCommandInvocation
+    ) -> TodoListActionResult {
+        if invocation == .keyboardShortcut,
+           let direction = keyboardMoveDirection(for: command),
+           activeTextView != nil
+        {
+            guard activeTextView?.isComposingText == false,
+                  let focusedItemId = selectionManager.focusedItemId
+            else { return .noChange }
+            return moveItemByKeyboard(itemId: focusedItemId, direction: direction)
+        }
         if command == .moveUp || command == .moveDown {
             prepareForExternalAction()
         }
@@ -246,6 +279,21 @@ final class TodoListActionModule {
                   ) != nil
             else { return .noChange }
             return .performed
+        case .selectAll:
+            if let activeTextView {
+                activeTextView.selectAll(nil)
+                return .performed
+            }
+            guard let commandScope else { return .noChange }
+            let items = store.commandItems(in: commandScope)
+            guard let firstItem = items.first else { return .noChange }
+            selectionManager.selectedItemIds = Set(items.map(\.id))
+            if selectionManager.focusedItemId.map(selectionManager.selectedItemIds.contains) != true {
+                selectionManager.focusedItemId = firstItem.id
+            }
+            selectionManager.lastSelectedId = firstItem.id
+            selectionManager.textSelectionLength = 0
+            return .performed
         case .moveUp:
             return TodoSelectionReorderEngine.moveSelection(
                 direction: .up,
@@ -264,6 +312,19 @@ final class TodoListActionModule {
         case .redo:
             prepareForExternalAction()
             return store.redo() ? .performed : .noChange
+        }
+    }
+
+    private func keyboardMoveDirection(
+        for command: TodoListCommand
+    ) -> TodoKeyboardReorderDirection? {
+        switch command {
+        case .moveUp:
+            .up
+        case .moveDown:
+            .down
+        default:
+            nil
         }
     }
 
@@ -355,6 +416,9 @@ final class TodoListActionModule {
                     selectionManager: selectionManager,
                     store: store
                 )
+            },
+            inputSessionEnded: { [self] in
+                store.flushPendingTextEdit()
             },
             toggleCompleted: { [self] itemId in
                 self.toggleCompleted(itemId: itemId)

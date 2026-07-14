@@ -23,6 +23,7 @@ struct TodoEditorActions {
     var claimCurrentList: () -> Void = {}
     var titleChanged: (UUID, TodoTextEditEvent) -> Void = { _, _ in }
     var textSelectionChanged: (UUID, TodoTextSelection) -> Void = { _, _ in }
+    var inputSessionEnded: () -> Void = {}
     var toggleCompleted: (UUID) -> Void = { _ in }
     var selectItem: (UUID, Bool, Int?) -> Void = { _, _, _ in }
     var beginDragSelection: (UUID, Int?) -> Void = { _, _ in }

@@ -112,6 +112,10 @@ extension TodoStore {
         )
     }
 
+    func commandItems(in scope: TodoClipboardScope) -> [TodoItem] {
+        items(inClipboardScope: scope)
+    }
+
 }
 
 private extension TodoStore {
@@ -380,4 +384,5 @@ private extension TodoStore {
             return items.sorted { $0.sortOrder < $1.sortOrder }
         }
     }
+
 }

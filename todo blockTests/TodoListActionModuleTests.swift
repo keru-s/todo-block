@@ -294,7 +294,7 @@ final class TodoListActionModuleTests: XCTestCase {
             ),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        try await Task.sleep(for: .milliseconds(1_100))
+        try await Task.sleep(for: .milliseconds(5_100))
         let revisedPhraseAlternatives = NSTextAlternatives(
             primaryString: "明天",
             alternativeStrings: ["每天"]
@@ -316,6 +316,87 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertTrue(store.undo())
         XCTAssertEqual(item.title, "原稿")
         XCTAssertFalse(store.canUndo)
+    }
+
+    func testTwoExplicitDictationSessionsCreateSeparateUndoAndRedoSteps() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "", dayDate: .now)
+        let textView = TodoEditorTextView()
+        textView.synchronizeReportedText("")
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+        let actions = module.editorActions
+        textView.onTextDidChange = { actions.titleChanged(item.id, $0) }
+        textView.onInputSessionEnded = { store.flushPendingTextEdit() }
+        store.undoManager.clear()
+
+        textView.insertText(
+            NSAttributedString(
+                string: "第一段",
+                attributes: [.textAlternatives: NSTextAlternatives(
+                    primaryString: "第一段",
+                    alternativeStrings: ["第一部分"]
+                )]
+            ),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        textView.endCurrentInputSession()
+        textView.insertText(
+            NSAttributedString(
+                string: "第二段",
+                attributes: [.textAlternatives: NSTextAlternatives(
+                    primaryString: "第二段",
+                    alternativeStrings: ["第二部分"]
+                )]
+            ),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        textView.endCurrentInputSession()
+
+        XCTAssertEqual(item.title, "第一段第二段")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "第一段")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "")
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(item.title, "第一段")
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(item.title, "第一段第二段")
+    }
+
+    func testSelectAllUsesTitleWhileEditingAndCurrentListScopeOtherwise() {
+        let store = TodoStore.shared
+        let today = store.createItem(title: "今天", dayDate: .now)
+        _ = store.createItem(
+            title: "未来",
+            dayDate: Calendar.current.date(byAdding: .day, value: 2, to: .now) ?? .now
+        )
+        let textView = TodoEditorTextView()
+        textView.string = today.title
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        let textModule = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+
+        XCTAssertEqual(textModule.perform(.selectAll), .performed)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 0, length: 2))
+        XCTAssertTrue(selectionManager.selectedItemIds.isEmpty)
+
+        let listModule = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            activeTextViewProvider: { nil }
+        )
+        XCTAssertEqual(listModule.perform(.selectAll), .performed)
+        XCTAssertEqual(selectionManager.selectedItemIds, [today.id])
     }
 
     func testChangingSectionDateThroughModuleMovesWholeParentChildGroupAndCanUndo() throws {

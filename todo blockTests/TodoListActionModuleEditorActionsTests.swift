@@ -267,7 +267,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         components.year = year
         components.month = month
         components.day = day
-        return Calendar.current.date(from: components)!
+        return Calendar.current.date(from: components) ?? .now
     }
 
     private func makeModule(store: TodoStore) -> TodoListActionModule {

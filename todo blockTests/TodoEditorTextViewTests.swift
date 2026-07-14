@@ -90,4 +90,5 @@ final class TodoEditorTextViewTests: XCTestCase {
 
         XCTAssertEqual(selections.last, TodoTextSelection(location: 1, length: 1))
     }
+
 }

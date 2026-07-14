@@ -86,9 +86,12 @@ struct todo_blockApp: App {
                 Divider()
 
                 Button("全选") {
-                    _ = NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                    ActiveListCommandCoordinator.shared.perform(.selectAll)
                 }
                 .keyboardShortcut("a", modifiers: .command)
+                .disabled(
+                    !ActiveListCommandCoordinator.shared.availability(of: .selectAll).allowsAttempt
+                )
             }
 
             CommandMenu("排序") {

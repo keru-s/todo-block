@@ -13,12 +13,15 @@ final class TodoEditorTextView: NSTextView {
     var onUserInteraction: (() -> Void)?
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
+    var onInputSessionEnded: (() -> Void)?
     var deletesOnBackspace: Bool = false
     private var isApplyingHandledCommandText = false
     private var lastReportedText = ""
     private var pendingBeforeSelection: TodoTextSelection?
     private var pendingEditKind: TodoTextEditKind?
     private var pendingInputSession: TodoTextInputSession?
+    private var activeDictationSession: TodoTextInputSession?
+    private var dictationEndTask: Task<Void, Never>?
 
     var isComposingText: Bool {
         hasMarkedText()
@@ -99,12 +102,14 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        endCurrentInputSession()
         onUserInteraction?()
         super.mouseDown(with: event)
         onMouseFocus?(event.modifierFlags.contains(.shift), selectedRange().location)
     }
 
     override func keyDown(with event: NSEvent) {
+        endCurrentInputSession()
         onUserInteraction?()
         super.keyDown(with: event)
     }
@@ -119,9 +124,18 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        pendingInputSession = inputSession(from: string)
+        let detectedInputSession = inputSession(from: string)
+        if detectedInputSession == nil {
+            endCurrentInputSession()
+        }
+        pendingInputSession = detectedInputSession
         super.insertText(string, replacementRange: replacementRange)
         pendingInputSession = nil
+    }
+
+    override func resignFirstResponder() -> Bool {
+        endCurrentInputSession()
+        return super.resignFirstResponder()
     }
 
     override func unmarkText() {
@@ -174,6 +188,15 @@ final class TodoEditorTextView: NSTextView {
         } else {
             reportCommittedTextIfNeeded()
         }
+        endCurrentInputSession()
+    }
+
+    func endCurrentInputSession() {
+        dictationEndTask?.cancel()
+        dictationEndTask = nil
+        guard activeDictationSession != nil else { return }
+        activeDictationSession = nil
+        onInputSessionEnded?()
     }
 
     func closestCharacterIndexForVerticalMove(
@@ -352,7 +375,8 @@ final class TodoEditorTextView: NSTextView {
 
     private func inputSession(from insertedValue: Any) -> TodoTextInputSession? {
         guard let attributedString = insertedValue as? NSAttributedString else { return nil }
-        // AppKit attaches NSTextAlternatives to dictated phrases and their later revisions.
+        // AppKit has no public dictation begin/end callback. Dictated inserts carry this
+        // attribute, so its presence identifies dictation while our own UUID defines identity.
         var alternatives: NSTextAlternatives?
         attributedString.enumerateAttribute(
             .textAlternatives,
@@ -362,7 +386,22 @@ final class TodoEditorTextView: NSTextView {
             alternatives = value
             stop.pointee = true
         }
-        return alternatives == nil ? nil : .dictation
+        guard alternatives != nil else { return nil }
+        let session = activeDictationSession ?? .dictation(UUID())
+        activeDictationSession = session
+        scheduleDictationFallbackEnd()
+        return session
+    }
+
+    private func scheduleDictationFallbackEnd() {
+        dictationEndTask?.cancel()
+        dictationEndTask = Task { @MainActor [weak self] in
+            // Focus, keyboard, mouse and external commands end the session immediately.
+            // This conservative fallback only recovers an abnormally abandoned session.
+            try? await Task.sleep(for: .seconds(30))
+            guard Task.isCancelled == false else { return }
+            self?.endCurrentInputSession()
+        }
     }
 
     private func inferredEditKind(

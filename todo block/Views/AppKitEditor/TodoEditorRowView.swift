@@ -79,6 +79,9 @@ final class TodoEditorRowView: NSView {
             guard let self, let itemId, isApplyingSnapshot == false else { return }
             actions.textSelectionChanged(itemId, selection)
         }
+        titleTextView.onInputSessionEnded = { [weak self] in
+            self?.actions.inputSessionEnded()
+        }
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
             prefersRowFirstResponder = false
