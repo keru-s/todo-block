@@ -379,6 +379,116 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testKeyboardMoveMovesOnlyFocusedCompletedParentChildGroup() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: focused,
+            indentLevel: 1
+        )
+        let otherSelected = store.createItem(title: "other", dayDate: day, afterItem: child)
+        focused.isCompleted = true
+        child.isCompleted = true
+        selectionManager.selectedItemIds = [focused.id, otherSelected.id]
+        selectionManager.focusedItemId = focused.id
+        selectionManager.lastSelectedId = otherSelected.id
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+        store.undoManager.clear()
+
+        let result = module.moveItemByKeyboard(itemId: focused.id, direction: .up)
+
+        XCTAssertEqual(result, .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [focused.id, child.id, first.id, otherSelected.id]
+        )
+        XCTAssertTrue(focused.isCompleted)
+        XCTAssertTrue(child.isCompleted)
+        XCTAssertEqual(selectionManager.focusedItemId, focused.id)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, focused.id, child.id, otherSelected.id]
+        )
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testMenuMoveDeduplicatesSelectedParentAndChildAndKeepsIndependentGroupsStable() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let first = store.createItem(title: "first", dayDate: day)
+        let parent = store.createItem(title: "parent", dayDate: day, afterItem: first)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
+        let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: independent)
+        selectionManager.selectedItemIds = [parent.id, child.id, independent.id]
+        selectionManager.focusedItemId = child.id
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .scheduledMonth(year: 2026, month: 5)
+        )
+        store.undoManager.clear()
+
+        let result = module.perform(.moveUp)
+
+        XCTAssertEqual(result, .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [parent.id, child.id, first.id, independent.id, middle.id, tail.id]
+        )
+        XCTAssertEqual(
+            selectionManager.selectedItemIds,
+            [parent.id, child.id, independent.id]
+        )
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, parent.id, child.id, middle.id, independent.id, tail.id]
+        )
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testBoundaryKeyboardMoveEndsPendingTextInputBeforeReturningNoChange() {
+        let store = TodoStore.shared
+        let (item, module) = makeModuleWithPendingComposition()
+
+        XCTAssertEqual(
+            module.moveItemByKeyboard(itemId: item.id, direction: .up),
+            .noChange
+        )
+
+        XCTAssertEqual(item.title, "原文")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原")
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testBoundaryMenuMoveEndsPendingTextInputBeforeReturningNoChange() {
+        let store = TodoStore.shared
+        let (item, module) = makeModuleWithPendingComposition(commandScope: .today)
+
+        XCTAssertEqual(module.perform(.moveUp), .noChange)
+
+        XCTAssertEqual(item.title, "原文")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原")
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testEnterVariantsAndFocusNavigationThroughModuleKeepExpectedUserState() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
@@ -424,6 +534,40 @@ final class TodoListActionModuleTests: XCTestCase {
 
         XCTAssertEqual(store.destination(for: item), .scheduled(date: .now).normalized)
         XCTAssertFalse(store.canUndo)
+    }
+
+    private func makeModuleWithPendingComposition(
+        commandScope: TodoClipboardScope? = nil
+    ) -> (item: TodoItem, module: TodoListActionModule) {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原", dayDate: .now)
+        selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 1
+        )
+        let textView = TodoEditorTextView()
+        textView.string = "原"
+        textView.synchronizeReportedText("原")
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: commandScope,
+            activeTextViewProvider: { textView }
+        )
+        let actions = module.editorActions
+        textView.onTextDidChange = { event in
+            actions.titleChanged(item.id, event)
+        }
+        store.undoManager.clear()
+        textView.setMarkedText(
+            "文",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        return (item, module)
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

@@ -121,6 +121,9 @@ final class TodoListActionModule {
 
     @discardableResult
     func perform(_ command: TodoListCommand) -> TodoListActionResult {
+        if command == .moveUp || command == .moveDown {
+            prepareForExternalAction()
+        }
         guard commandAvailability(command) == .available else { return .noChange }
 
         switch command {
@@ -169,14 +172,12 @@ final class TodoListActionModule {
             else { return .noChange }
             return .performed
         case .moveUp:
-            prepareForExternalAction()
             return TodoReorderCommandManager.moveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
             ) ? .performed : .noChange
         case .moveDown:
-            prepareForExternalAction()
             return TodoReorderCommandManager.moveSelection(
                 direction: .down,
                 store: store,
@@ -489,6 +490,8 @@ final class TodoListActionModule {
         itemId: UUID,
         direction: TodoKeyboardReorderDirection
     ) -> TodoListActionResult {
+        prepareForExternalAction()
+
         switch keyboardMoveAvailability(itemId: itemId, direction: direction) {
         case .unavailable(nil):
             return .noChange
@@ -497,8 +500,6 @@ final class TodoListActionModule {
         case .available:
             break
         }
-
-        prepareForExternalAction()
 
         guard let item = store.todoItemsCache[itemId] else {
             return .rejected(TodoListActionRejection(message: "待办已不存在"))
