@@ -18,6 +18,7 @@ final class TodoEditorTextView: NSTextView {
     private var lastReportedText = ""
     private var pendingBeforeSelection: TodoTextSelection?
     private var pendingEditKind: TodoTextEditKind?
+    private var pendingInputSession: TodoTextInputSession?
 
     var isComposingText: Bool {
         hasMarkedText()
@@ -115,6 +116,12 @@ final class TodoEditorTextView: NSTextView {
     ) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         onCompositionChange?(true)
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        pendingInputSession = inputSession(from: string)
+        super.insertText(string, replacementRange: replacementRange)
+        pendingInputSession = nil
     }
 
     override func unmarkText() {
@@ -334,12 +341,30 @@ final class TodoEditorTextView: NSTextView {
             afterText: string,
             beforeSelection: beforeSelection,
             afterSelection: afterSelection,
-            kind: kind
+            kind: kind,
+            inputSession: pendingInputSession
         )
         lastReportedText = string
         pendingBeforeSelection = nil
         pendingEditKind = nil
         onTextDidChange?(event)
+    }
+
+    private func inputSession(from insertedValue: Any) -> TodoTextInputSession? {
+        guard let attributedString = insertedValue as? NSAttributedString else { return nil }
+        // AppKit uses NSTextAlternatives to identify a dictated phrase and its later revisions.
+        var alternatives: NSTextAlternatives?
+        attributedString.enumerateAttribute(
+            .textAlternatives,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            guard let value = value as? NSTextAlternatives else { return }
+            alternatives = value
+            stop.pointee = true
+        }
+        return alternatives.map {
+            TodoTextInputSession(identifier: ObjectIdentifier($0))
+        }
     }
 
     private func inferredEditKind(

@@ -257,6 +257,56 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertTrue(store.canRedo)
     }
 
+    func testAttributedDictationRevisionsAcrossAPauseUndoAsOneSession() async throws {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原稿", dayDate: .now)
+        selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 2
+        )
+        let textView = TodoEditorTextView()
+        textView.string = "原稿"
+        textView.synchronizeReportedText("原稿")
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            activeTextViewProvider: { textView }
+        )
+        let actions = module.editorActions
+        textView.onTextDidChange = { event in
+            actions.titleChanged(item.id, event)
+        }
+        store.undoManager.clear()
+        let alternatives = NSTextAlternatives(
+            primaryString: "今天",
+            alternativeStrings: ["明天"]
+        )
+
+        textView.insertText(
+            NSAttributedString(
+                string: "今天",
+                attributes: [.textAlternatives: alternatives]
+            ),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        try await Task.sleep(for: .milliseconds(1_100))
+        textView.insertText(
+            NSAttributedString(
+                string: "明天",
+                attributes: [.textAlternatives: alternatives]
+            ),
+            replacementRange: NSRange(location: 2, length: 2)
+        )
+
+        XCTAssertEqual(item.title, "原稿明天")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原稿")
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testChangingSectionDateThroughModuleMovesWholeParentChildGroupAndCanUndo() throws {
         let store = TodoStore.shared
         let sourceDay = date(year: 2026, month: 5, day: 31)

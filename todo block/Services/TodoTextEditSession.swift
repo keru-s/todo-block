@@ -25,12 +25,33 @@ struct TodoTextSelection: Equatable {
     }
 }
 
+struct TodoTextInputSession: Equatable {
+    let identifier: ObjectIdentifier
+}
+
 struct TodoTextEditEvent: Equatable {
     let beforeText: String
     let afterText: String
     let beforeSelection: TodoTextSelection
     let afterSelection: TodoTextSelection
     let kind: TodoTextEditKind
+    let inputSession: TodoTextInputSession?
+
+    init(
+        beforeText: String,
+        afterText: String,
+        beforeSelection: TodoTextSelection,
+        afterSelection: TodoTextSelection,
+        kind: TodoTextEditKind,
+        inputSession: TodoTextInputSession? = nil
+    ) {
+        self.beforeText = beforeText
+        self.afterText = afterText
+        self.beforeSelection = beforeSelection
+        self.afterSelection = afterSelection
+        self.kind = kind
+        self.inputSession = inputSession
+    }
 }
 
 @MainActor
@@ -39,6 +60,7 @@ final class TodoTextEditSession {
     private struct PendingSegment {
         let itemId: UUID
         let kind: TodoTextEditKind
+        let inputSession: TodoTextInputSession?
         let before: TodoItemSnapshot
         var after: TodoItemSnapshot
         let selectionManager: SelectionManager
@@ -63,11 +85,17 @@ final class TodoTextEditSession {
         guard item.title == event.beforeText, event.beforeText != event.afterText else { return }
         let now = clock.now
         let continuesCurrentSegment = pending.map { segment in
-            segment.itemId == item.id
+            let continuesNamedInputSession = event.inputSession.map {
+                segment.inputSession == $0
+            } ?? false
+            let continuesOrdinaryInput = event.inputSession == nil
+                && segment.inputSession == nil
                 && segment.kind == event.kind
+                && now - segment.lastEditAt < .seconds(1)
+            return segment.itemId == item.id
                 && segment.after.title == event.beforeText
                 && segment.afterTextSelection == event.beforeSelection
-                && now - segment.lastEditAt < .seconds(1)
+                && (continuesNamedInputSession || continuesOrdinaryInput)
         } ?? false
 
         if continuesCurrentSegment == false {
@@ -97,6 +125,7 @@ final class TodoTextEditSession {
             pending = PendingSegment(
                 itemId: item.id,
                 kind: event.kind,
+                inputSession: event.inputSession,
                 before: beforeSnapshot,
                 after: TodoItemSnapshot(from: item),
                 selectionManager: selectionManager,
@@ -113,7 +142,12 @@ final class TodoTextEditSession {
             )
         }
         hasPendingSegment = true
-        scheduleFlush(store: store)
+        if event.inputSession == nil {
+            scheduleFlush(store: store)
+        } else {
+            flushTask?.cancel()
+            flushTask = nil
+        }
     }
 
     func selectionDidChange(
