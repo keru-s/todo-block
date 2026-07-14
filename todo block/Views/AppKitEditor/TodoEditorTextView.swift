@@ -352,7 +352,7 @@ final class TodoEditorTextView: NSTextView {
 
     private func inputSession(from insertedValue: Any) -> TodoTextInputSession? {
         guard let attributedString = insertedValue as? NSAttributedString else { return nil }
-        // AppKit uses NSTextAlternatives to identify a dictated phrase and its later revisions.
+        // AppKit attaches NSTextAlternatives to dictated phrases and their later revisions.
         var alternatives: NSTextAlternatives?
         attributedString.enumerateAttribute(
             .textAlternatives,
@@ -362,9 +362,7 @@ final class TodoEditorTextView: NSTextView {
             alternatives = value
             stop.pointee = true
         }
-        return alternatives.map {
-            TodoTextInputSession(identifier: ObjectIdentifier($0))
-        }
+        return alternatives == nil ? nil : .dictation
     }
 
     private func inferredEditKind(

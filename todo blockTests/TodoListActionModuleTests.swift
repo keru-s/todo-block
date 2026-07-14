@@ -257,7 +257,9 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertTrue(store.canRedo)
     }
 
-    func testAttributedDictationRevisionsAcrossAPauseUndoAsOneSession() async throws {
+    func testMultiPhraseDictationAcrossPauseEndsBeforeExternalActionAndUndoesAsOneSession()
+        async throws
+    {
         let store = TodoStore.shared
         let item = store.createItem(title: "原稿", dayDate: .now)
         selectionManager.handleSelect(
@@ -280,7 +282,7 @@ final class TodoListActionModuleTests: XCTestCase {
             actions.titleChanged(item.id, event)
         }
         store.undoManager.clear()
-        let alternatives = NSTextAlternatives(
+        let firstPhraseAlternatives = NSTextAlternatives(
             primaryString: "今天",
             alternativeStrings: ["明天"]
         )
@@ -288,20 +290,29 @@ final class TodoListActionModuleTests: XCTestCase {
         textView.insertText(
             NSAttributedString(
                 string: "今天",
-                attributes: [.textAlternatives: alternatives]
+                attributes: [.textAlternatives: firstPhraseAlternatives]
             ),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
         try await Task.sleep(for: .milliseconds(1_100))
+        let revisedPhraseAlternatives = NSTextAlternatives(
+            primaryString: "明天",
+            alternativeStrings: ["每天"]
+        )
         textView.insertText(
             NSAttributedString(
                 string: "明天",
-                attributes: [.textAlternatives: alternatives]
+                attributes: [.textAlternatives: revisedPhraseAlternatives]
             ),
             replacementRange: NSRange(location: 2, length: 2)
         )
 
         XCTAssertEqual(item.title, "原稿明天")
+        XCTAssertEqual(module.toggleCompleted(itemId: item.id), .performed)
+        XCTAssertTrue(item.isCompleted)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原稿明天")
+        XCTAssertFalse(item.isCompleted)
         XCTAssertTrue(store.undo())
         XCTAssertEqual(item.title, "原稿")
         XCTAssertFalse(store.canUndo)

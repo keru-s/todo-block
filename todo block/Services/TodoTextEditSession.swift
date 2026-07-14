@@ -25,8 +25,8 @@ struct TodoTextSelection: Equatable {
     }
 }
 
-struct TodoTextInputSession: Equatable {
-    let identifier: ObjectIdentifier
+enum TodoTextInputSession: Equatable {
+    case dictation
 }
 
 struct TodoTextEditEvent: Equatable {
