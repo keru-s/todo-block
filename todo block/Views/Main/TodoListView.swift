@@ -48,7 +48,7 @@ struct TodoListView: View {
     private var editorActions: TodoEditorActions {
         var actions = actionModule.editorActions
         let registration = commandRegistration
-        actions.userInteraction = {
+        actions.claimCurrentList = {
             guard let registration else { return }
             ActiveListCommandCoordinator.shared.claim(registration)
         }
@@ -131,7 +131,6 @@ struct TodoListView: View {
         }
         .onAppear {
             registerCommandContextIfNeeded()
-            bindContextsIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
@@ -140,18 +139,13 @@ struct TodoListView: View {
                 return
             }
             registerCommandContextIfNeeded()
-            bindContextsIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
             replaceCommandContextForCurrentScope()
-            bindContextsIfNeeded()
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
-            bindContextsIfNeeded()
         }
         .onDisappear {
             unregisterCommandContext()
@@ -274,15 +268,6 @@ struct TodoListView: View {
         guard let commandRegistration else { return }
         commandCoordinator.unregister(commandRegistration)
         self.commandRegistration = nil
-    }
-
-    private func bindContextsIfNeeded() {
-        guard isActiveContext else { return }
-        ActiveListCommandContext.bind(
-            scope: clipboardScope,
-            store: store,
-            selectionManager: selectionManager
-        )
     }
 
 }

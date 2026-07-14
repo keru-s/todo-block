@@ -94,6 +94,7 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        onUserInteraction?()
         super.mouseDown(with: event)
         onMouseFocus?(event.modifierFlags.contains(.shift), selectedRange().location)
     }

@@ -54,8 +54,9 @@ final class ActiveListCommandCoordinator {
     @discardableResult
     func claim(_ registration: TodoListCommandRegistration) -> Bool {
         removeExpiredRegistrations()
-        guard registrations[registration.id]?.value != nil else { return false }
+        guard let module = registrations[registration.id]?.value else { return false }
         currentRegistrationId = registration.id
+        module.activateHistoryContext()
         return true
     }
 

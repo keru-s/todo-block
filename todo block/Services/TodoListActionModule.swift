@@ -47,14 +47,31 @@ final class TodoListActionModule {
         commandScope = scope
     }
 
+    func activateHistoryContext() {
+        selectionManager.activateHistoryContext()
+        if let commandScope {
+            TodoHistoryPresentationCoordinator.shared.activate(scope: commandScope)
+        }
+    }
+
     func commandAvailability(_ command: TodoListCommand) -> TodoListCommandAvailability {
         switch command {
         case .copy, .cut:
+            if let activeTextView {
+                return activeTextView.selectedRange().length > 0
+                    ? .available
+                    : .unavailable(nil)
+            }
             guard let commandScope else { return .unavailable(nil) }
             return store.canCopy(scope: commandScope, selection: clipboardSelection)
                 ? .available
                 : .unavailable(nil)
         case .paste:
+            if activeTextView != nil {
+                return NSPasteboard.general.string(forType: .string) == nil
+                    ? .unavailable(nil)
+                    : .available
+            }
             guard commandScope != nil,
                   let content = NSPasteboard.general.string(forType: .string),
                   MarkdownTodoCodec.decode(
@@ -89,12 +106,26 @@ final class TodoListActionModule {
 
         switch command {
         case .copy:
+            if let activeTextView {
+                return NSApp.sendAction(
+                    #selector(NSText.copy(_:)),
+                    to: activeTextView,
+                    from: nil
+                ) ? .performed : .noChange
+            }
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             return NSPasteboard.general.setString(markdown, forType: .string)
                 ? .performed
                 : .noChange
         case .cut:
+            if let activeTextView {
+                return NSApp.sendAction(
+                    #selector(NSText.cut(_:)),
+                    to: activeTextView,
+                    from: nil
+                ) ? .performed : .noChange
+            }
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(markdown, forType: .string) else {
@@ -107,6 +138,13 @@ final class TodoListActionModule {
                 ? .performed
                 : .noChange
         case .paste:
+            if let activeTextView {
+                return NSApp.sendAction(
+                    #selector(NSText.paste(_:)),
+                    to: activeTextView,
+                    from: nil
+                ) ? .performed : .noChange
+            }
             guard let commandScope,
                   let content = NSPasteboard.general.string(forType: .string),
                   store.importMarkdown(
@@ -146,6 +184,10 @@ final class TodoListActionModule {
     private var exportedMarkdown: String? {
         guard let commandScope else { return nil }
         return store.exportMarkdown(scope: commandScope, selection: clipboardSelection)
+    }
+
+    private var activeTextView: TodoEditorTextView? {
+        NSApp.keyWindow?.firstResponder as? TodoEditorTextView
     }
 
     @discardableResult
