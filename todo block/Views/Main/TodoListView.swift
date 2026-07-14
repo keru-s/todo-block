@@ -8,26 +8,25 @@
 import SwiftUI
 import SwiftData
 
-enum AddTodayMode: String {
-    case carryOver
-    case blank
-}
-
 struct TodoListView: View {
     let year: Int
     let month: Int
     var isActiveContext: Bool = true
 
-    @State private var selectionManager = SelectionManager(historyContext: .mainWindow)
+    @State private var actionModule = TodoListActionModule(
+        store: .shared,
+        selectionManager: SelectionManager(historyContext: .mainWindow)
+    )
     @State private var showModePopover = false
     @State private var handledHistoryRevealId: UUID?
-    @AppStorage("addTodayMode") private var addTodayModeRaw: String = AddTodayMode.carryOver.rawValue
+    @AppStorage("addTodayMode") private var addTodayModeRaw: String = TodoTodayAdditionMode.carryOver.rawValue
 
-    private var addTodayMode: AddTodayMode {
-        get { AddTodayMode(rawValue: addTodayModeRaw) ?? .carryOver }
+    private var addTodayMode: TodoTodayAdditionMode {
+        get { TodoTodayAdditionMode(rawValue: addTodayModeRaw) ?? .carryOver }
     }
 
     private var store: TodoStore { TodoStore.shared }
+    private var selectionManager: SelectionManager { actionModule.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
 
     private var daySections: [DaySection] {
@@ -58,7 +57,7 @@ struct TodoListView: View {
             TodoEditorRepresentable(
                 sections: appKitEditorSections,
                 emptyTitle: "暂无待办",
-                actions: appKitEditorActions,
+                actions: actionModule.editorActions,
                 revealRequest: visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -164,7 +163,7 @@ struct TodoListView: View {
     private var addTodayModePanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                addTodayModeRaw = AddTodayMode.carryOver.rawValue
+                addTodayModeRaw = TodoTodayAdditionMode.carryOver.rawValue
                 showModePopover = false
             } label: {
                 HStack(alignment: .top, spacing: 8) {
@@ -193,7 +192,7 @@ struct TodoListView: View {
                 .padding(.horizontal, 12)
 
             Button {
-                addTodayModeRaw = AddTodayMode.blank.rawValue
+                addTodayModeRaw = TodoTodayAdditionMode.blank.rawValue
                 showModePopover = false
             } label: {
                 HStack(alignment: .top, spacing: 8) {
@@ -230,26 +229,7 @@ struct TodoListView: View {
     }
 
     private func executeAddToday() {
-        if hasTodaySection {
-            let section = store.getOrCreateTodaySection()
-            let newItem = store.createItem(
-                dayDate: section.date,
-                selectionManager: selectionManager
-            )
-            selectionManager.handleSelect(
-                item: newItem,
-                allItems: store.items(for: section.date),
-                shiftPressed: false,
-                cursorPosition: 0
-            )
-        } else {
-            switch addTodayMode {
-            case .carryOver:
-                store.carryOverIncompleteItems(trigger: .userInitiated)
-            case .blank:
-                store.getOrCreateTodaySection()
-            }
-        }
+        actionModule.addToday(mode: addTodayMode)
     }
 
     private func bindContextsIfNeeded() {
@@ -261,15 +241,6 @@ struct TodoListView: View {
         )
     }
 
-    private var appKitEditorActions: TodoEditorActions {
-        TodoEditorActionFactory.make(
-            store: store,
-            selectionManager: selectionManager,
-            sectionById: { sectionId in
-                daySections.first { $0.id == sectionId }
-            }
-        )
-    }
 }
 
 #Preview {

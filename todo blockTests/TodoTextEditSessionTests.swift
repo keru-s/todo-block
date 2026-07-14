@@ -21,10 +21,10 @@ final class TodoTextEditSessionTests: XCTestCase {
         store.reset()
         store.initialize(with: container.mainContext)
         selectionManager = SelectionManager()
-        actions = TodoEditorActionFactory.make(
+        actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        )
+        ).editorActions
     }
 
     func testContinuousInsertionsSaveImmediatelyAndUndoAsOneStep() {
