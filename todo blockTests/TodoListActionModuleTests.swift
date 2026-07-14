@@ -364,9 +364,10 @@ final class TodoListActionModuleTests: XCTestCase {
             module.moveItemByKeyboard(itemId: item.id, direction: .up),
             .noChange
         )
+        XCTAssertNil(module.feedbackPresenter.feedback)
 
         let missingId = UUID()
-        let rejection = TodoListActionRejection(message: "待办已不存在")
+        let rejection = TodoListActionRejection.itemNoLongerAvailable
         XCTAssertEqual(
             module.keyboardMoveAvailability(itemId: missingId, direction: .down),
             .unavailable(rejection)
@@ -374,6 +375,10 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(
             module.moveItemByKeyboard(itemId: missingId, direction: .down),
             .rejected(rejection)
+        )
+        XCTAssertEqual(
+            module.feedbackPresenter.feedback?.message,
+            "这项待办已不存在"
         )
 
         XCTAssertFalse(store.canUndo)

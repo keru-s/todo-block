@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
 
-struct TodoListActionRejection: Equatable {
-    let message: String
+enum TodoListActionRejection: Equatable {
+    case finishCurrentInput
+    case openMainWindowForHistory
+    case itemNoLongerAvailable
 }
 
 enum TodoListActionResult: Equatable {
@@ -24,6 +26,7 @@ enum TodoTodayAdditionMode: String {
 @MainActor
 final class TodoListActionModule {
     let selectionManager: SelectionManager
+    let feedbackPresenter = TodoListFeedbackPresenter()
 
     private let store: TodoStore
     private let sectionById: (UUID) -> DaySection?
@@ -121,6 +124,12 @@ final class TodoListActionModule {
 
     @discardableResult
     func perform(_ command: TodoListCommand) -> TodoListActionResult {
+        let result = performWithoutFeedback(command)
+        feedbackPresenter.consume(result)
+        return result
+    }
+
+    private func performWithoutFeedback(_ command: TodoListCommand) -> TodoListActionResult {
         if command == .moveUp || command == .moveDown {
             prepareForExternalAction()
         }
@@ -219,7 +228,11 @@ final class TodoListActionModule {
 
     @discardableResult
     func toggleCompleted(itemId: UUID) -> TodoListActionResult {
-        guard let item = store.todoItemsCache[itemId] else { return .noChange }
+        guard let item = store.todoItemsCache[itemId] else {
+            let result = TodoListActionResult.rejected(.itemNoLongerAvailable)
+            feedbackPresenter.consume(result)
+            return result
+        }
         prepareForExternalAction()
         store.toggleComplete(item)
         return .performed
@@ -475,7 +488,7 @@ final class TodoListActionModule {
         direction: TodoKeyboardReorderDirection
     ) -> TodoListCommandAvailability {
         guard let item = store.todoItemsCache[itemId] else {
-            return .unavailable(TodoListActionRejection(message: "待办已不存在"))
+            return .unavailable(.itemNoLongerAvailable)
         }
         let items = store.items(in: store.destination(for: item))
         return TodoKeyboardReorderEngine.canMove(
@@ -487,6 +500,15 @@ final class TodoListActionModule {
 
     @discardableResult
     func moveItemByKeyboard(
+        itemId: UUID,
+        direction: TodoKeyboardReorderDirection
+    ) -> TodoListActionResult {
+        let result = moveItemByKeyboardWithoutFeedback(itemId: itemId, direction: direction)
+        feedbackPresenter.consume(result)
+        return result
+    }
+
+    private func moveItemByKeyboardWithoutFeedback(
         itemId: UUID,
         direction: TodoKeyboardReorderDirection
     ) -> TodoListActionResult {
@@ -502,7 +524,7 @@ final class TodoListActionModule {
         }
 
         guard let item = store.todoItemsCache[itemId] else {
-            return .rejected(TodoListActionRejection(message: "待办已不存在"))
+            return .rejected(.itemNoLongerAvailable)
         }
         let destination = store.destination(for: item)
         let didMove = TodoKeyboardReorderEngine.move(

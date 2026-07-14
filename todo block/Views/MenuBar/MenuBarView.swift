@@ -86,6 +86,10 @@ struct MenuBarView: View {
                 revealRequest: visibleHistoryRevealRequest
             )
             .frame(minHeight: 80, maxHeight: 350)
+            .overlay(alignment: .bottom) {
+                TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+                    .padding(10)
+            }
 
             Divider()
 
@@ -135,9 +139,11 @@ struct MenuBarView: View {
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
+            actionModule.feedbackPresenter.clear()
             endTemporaryCommandClaim()
         }
         .onDisappear {
+            actionModule.feedbackPresenter.clear()
             endTemporaryCommandClaim()
         }
         .gesture(
@@ -195,6 +201,7 @@ private extension MenuBarView {
         guard temporaryCommandClaim == nil,
               let commandRegistration
         else { return }
+        actionModule.feedbackPresenter.clear()
         temporaryCommandClaim = commandCoordinator.beginTemporaryClaim(commandRegistration)
     }
 

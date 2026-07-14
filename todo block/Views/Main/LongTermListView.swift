@@ -63,12 +63,17 @@ struct LongTermListView: View {
             revealRequest: visibleHistoryRevealRequest
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottom) {
+            TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+                .padding(12)
+        }
         .onAppear {
             registerCommandContextIfNeeded()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             guard newValue else {
+                actionModule.feedbackPresenter.clear()
                 unregisterCommandContext()
                 return
             }
@@ -80,6 +85,7 @@ struct LongTermListView: View {
             restoreHistoryRevealIfVisible(request)
         }
         .onDisappear {
+            actionModule.feedbackPresenter.clear()
             unregisterCommandContext()
         }
     }

@@ -71,6 +71,10 @@ struct TodoListView: View {
                 revealRequest: visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
+                TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+                    .padding(12)
+            }
 
             HStack(spacing: 10) {
                 HStack(spacing: 0) {
@@ -133,6 +137,7 @@ struct TodoListView: View {
         }
         .onChange(of: isActiveContext) { _, newValue in
             guard newValue else {
+                actionModule.feedbackPresenter.clear()
                 unregisterCommandContext()
                 return
             }
@@ -141,12 +146,14 @@ struct TodoListView: View {
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
+            actionModule.feedbackPresenter.clear()
             replaceCommandContextForCurrentScope()
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
             restoreHistoryRevealIfVisible(request)
         }
         .onDisappear {
+            actionModule.feedbackPresenter.clear()
             unregisterCommandContext()
         }
     }
