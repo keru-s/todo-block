@@ -144,6 +144,9 @@ final class TodoListActionModule {
                 ? .unavailable(nil)
                 : .available
         case .moveUp:
+            if activeTextView?.isComposingText == true {
+                return .unavailable(nil)
+            }
             let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
                 direction: .up,
                 store: store,
@@ -155,6 +158,9 @@ final class TodoListActionModule {
             return canMoveSelection || (activeTextView != nil && canMoveFocusedItem)
                 ? .available : .unavailable(nil)
         case .moveDown:
+            if activeTextView?.isComposingText == true {
+                return .unavailable(nil)
+            }
             let canMoveSelection = TodoSelectionReorderEngine.canMoveSelection(
                 direction: .down,
                 store: store,
@@ -202,24 +208,34 @@ final class TodoListActionModule {
     @discardableResult
     func perform(
         _ command: TodoListCommand,
-        invocation: TodoListCommandInvocation = .menu
+        invocation: TodoListCommandInvocation = .menu,
+        event: NSEvent? = nil
     ) -> TodoListActionResult {
-        let result = performWithoutFeedback(command, invocation: invocation)
+        let result = performWithoutFeedback(
+            command,
+            invocation: invocation,
+            event: event
+        )
         feedbackPresenter.consume(result)
         return result
     }
 
     private func performWithoutFeedback(
         _ command: TodoListCommand,
-        invocation: TodoListCommandInvocation
+        invocation: TodoListCommandInvocation,
+        event: NSEvent?
     ) -> TodoListActionResult {
         if invocation == .keyboardShortcut,
            let direction = keyboardMoveDirection(for: command),
            activeTextView != nil
         {
-            guard activeTextView?.isComposingText == false,
-                  let focusedItemId = selectionManager.focusedItemId
-            else { return .noChange }
+            if activeTextView?.isComposingText == true {
+                if let event {
+                    activeTextView?.routeToInputMethod(event)
+                }
+                return .noChange
+            }
+            guard let focusedItemId = selectionManager.focusedItemId else { return .noChange }
             return moveItemByKeyboard(itemId: focusedItemId, direction: direction)
         }
         if command == .moveUp || command == .moveDown {

@@ -162,7 +162,11 @@ final class ActiveListCommandCoordinator {
         } else {
             .menu
         }
-        return currentModule.perform(command, invocation: resolvedInvocation)
+        return currentModule.perform(
+            command,
+            invocation: resolvedInvocation,
+            event: event
+        )
     }
 
     func resetForTesting() {

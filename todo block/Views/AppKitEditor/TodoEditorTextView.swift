@@ -199,6 +199,11 @@ final class TodoEditorTextView: NSTextView {
         onInputSessionEnded?()
     }
 
+    @discardableResult
+    func routeToInputMethod(_ event: NSEvent) -> Bool {
+        inputContext?.handleEvent(event) == true
+    }
+
     func closestCharacterIndexForVerticalMove(
         horizontalOffset: CGFloat,
         direction: VerticalMoveDirection

@@ -318,7 +318,7 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testTwoExplicitDictationSessionsCreateSeparateUndoAndRedoSteps() {
+    func testTwoExplicitDictationSessionsCreateSeparateUndoAndRedoSteps() throws {
         let store = TodoStore.shared
         let item = store.createItem(title: "", dayDate: .now)
         let textView = TodoEditorTextView()
@@ -333,6 +333,18 @@ final class TodoListActionModuleTests: XCTestCase {
         textView.onTextDidChange = { actions.titleChanged(item.id, $0) }
         textView.onInputSessionEnded = { store.flushPendingTextEdit() }
         store.undoManager.clear()
+        let keyEvent = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: 53
+        ))
 
         textView.insertText(
             NSAttributedString(
@@ -344,7 +356,7 @@ final class TodoListActionModuleTests: XCTestCase {
             ),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        textView.endCurrentInputSession()
+        textView.keyDown(with: keyEvent)
         textView.insertText(
             NSAttributedString(
                 string: "第二段",
@@ -355,7 +367,7 @@ final class TodoListActionModuleTests: XCTestCase {
             ),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        textView.endCurrentInputSession()
+        textView.keyDown(with: keyEvent)
 
         XCTAssertEqual(item.title, "第一段第二段")
         XCTAssertTrue(store.undo())

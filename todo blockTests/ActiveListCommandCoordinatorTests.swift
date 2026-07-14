@@ -378,6 +378,21 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
             keyCode: 126
         ))
 
+        XCTAssertEqual(coordinator.availability(of: .moveUp), .unavailable(nil))
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let menuItem = NSMenuItem(
+            title: "上移当前待办",
+            action: #selector(NSTextView.moveUp(_:)),
+            keyEquivalent: "\u{F700}"
+        )
+        menuItem.target = textView
+        menuItem.keyEquivalentModifierMask = .command
+        menuItem.isEnabled = coordinator.availability(of: .moveUp).allowsAttempt
+        menu.addItem(menuItem)
+        XCTAssertFalse(menuItem.isEnabled)
+
+        textView.keyDown(with: keyEvent)
         XCTAssertEqual(coordinator.perform(.moveUp, event: keyEvent), .noChange)
         XCTAssertTrue(textView.hasMarkedText())
         XCTAssertEqual(store.items(for: day).map(\.id), [first.id, focused.id])
