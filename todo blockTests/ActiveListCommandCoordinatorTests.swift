@@ -116,27 +116,17 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let selection = SelectionManager()
         selection.focusedItemId = item.id
         selection.selectedItemIds = [item.id]
-        let module = TodoListActionModule(
-            store: store,
-            selectionManager: selection,
-            commandScope: .today
-        )
-        let registration = coordinator.register(module)
-        XCTAssertTrue(coordinator.claim(registration))
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
         let textView = TodoEditorTextView()
         textView.string = "selected title"
         textView.setSelectedRange(NSRange(location: 0, length: 8))
-        window.contentView = textView
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(textView)
-        defer { window.orderOut(nil) }
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+        let registration = coordinator.register(module)
+        XCTAssertTrue(coordinator.claim(registration))
 
         XCTAssertEqual(coordinator.availability(of: .copy), .available)
         XCTAssertEqual(coordinator.perform(.copy), .performed)

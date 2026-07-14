@@ -27,6 +27,7 @@ final class TodoListActionModule {
 
     private let store: TodoStore
     private let sectionById: (UUID) -> DaySection?
+    private let activeTextViewProvider: @MainActor () -> TodoEditorTextView?
     private var commandScope: TodoClipboardScope?
 
     var editorActions: TodoEditorActions { makeEditorActions() }
@@ -35,11 +36,14 @@ final class TodoListActionModule {
         store: TodoStore,
         selectionManager: SelectionManager,
         commandScope: TodoClipboardScope? = nil,
+        activeTextViewProvider: @escaping @MainActor () -> TodoEditorTextView? =
+            TodoListActionModule.defaultActiveTextView,
         sectionById: ((UUID) -> DaySection?)? = nil
     ) {
         self.store = store
         self.selectionManager = selectionManager
         self.commandScope = commandScope
+        self.activeTextViewProvider = activeTextViewProvider
         self.sectionById = sectionById ?? { store.daySectionsCache[$0] }
     }
 
@@ -107,11 +111,8 @@ final class TodoListActionModule {
         switch command {
         case .copy:
             if let activeTextView {
-                return NSApp.sendAction(
-                    #selector(NSText.copy(_:)),
-                    to: activeTextView,
-                    from: nil
-                ) ? .performed : .noChange
+                activeTextView.copy(nil)
+                return .performed
             }
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
@@ -120,11 +121,8 @@ final class TodoListActionModule {
                 : .noChange
         case .cut:
             if let activeTextView {
-                return NSApp.sendAction(
-                    #selector(NSText.cut(_:)),
-                    to: activeTextView,
-                    from: nil
-                ) ? .performed : .noChange
+                activeTextView.cut(nil)
+                return .performed
             }
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
@@ -139,11 +137,8 @@ final class TodoListActionModule {
                 : .noChange
         case .paste:
             if let activeTextView {
-                return NSApp.sendAction(
-                    #selector(NSText.paste(_:)),
-                    to: activeTextView,
-                    from: nil
-                ) ? .performed : .noChange
+                activeTextView.paste(nil)
+                return .performed
             }
             guard let commandScope,
                   let content = NSPasteboard.general.string(forType: .string),
@@ -187,6 +182,10 @@ final class TodoListActionModule {
     }
 
     private var activeTextView: TodoEditorTextView? {
+        activeTextViewProvider()
+    }
+
+    private static func defaultActiveTextView() -> TodoEditorTextView? {
         NSApp.keyWindow?.firstResponder as? TodoEditorTextView
     }
 
