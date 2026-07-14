@@ -249,6 +249,43 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.availability(of: .copy), .unavailable(nil))
     }
 
+    func testClaimedModuleKeepsTextCutAndPasteAheadOfWholeItemCommands() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "whole item", dayDate: .now)
+        let selection = SelectionManager()
+        selection.focusedItemId = item.id
+        selection.selectedItemIds = [item.id]
+        let textView = TodoEditorTextView()
+        textView.string = "selected title"
+        textView.synchronizeReportedText("selected title")
+        textView.setSelectedRange(NSRange(location: 0, length: 8))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+        let registration = coordinator.register(module)
+        XCTAssertTrue(coordinator.claim(registration))
+
+        XCTAssertEqual(coordinator.availability(of: .cut), .available)
+        XCTAssertEqual(coordinator.perform(.cut), .performed)
+        XCTAssertEqual(textView.string, " title")
+        XCTAssertNotNil(store.todoItemsCache[item.id])
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("new", forType: .string)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(coordinator.availability(of: .cut), .unavailable(nil))
+        XCTAssertEqual(coordinator.perform(.cut), .noChange)
+        XCTAssertNotNil(store.todoItemsCache[item.id])
+
+        XCTAssertEqual(coordinator.availability(of: .paste), .available)
+        XCTAssertEqual(coordinator.perform(.paste), .performed)
+        XCTAssertEqual(textView.string, "new title")
+        XCTAssertEqual(store.todayItems().count, 1)
+    }
+
     func testCommandWithoutCurrentListDoesNotChangeUserStateOrHistory() {
         let store = TodoStore.shared
         let item = store.createItem(title: "unchanged", dayDate: .now)

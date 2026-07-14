@@ -51,6 +51,35 @@ final class TodoEditorTextViewTests: XCTestCase {
         XCTAssertEqual(event.kind, .insertion)
     }
 
+    func testDynamicMarkedTextRevisionsReportOnlyTheFinalComposition() throws {
+        let textView = TodoEditorTextView()
+        textView.synchronizeReportedText("明")
+        textView.string = "明"
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        var events: [TodoTextEditEvent] = []
+        textView.onTextDidChange = { events.append($0) }
+
+        textView.setMarkedText(
+            "天",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        textView.setMarkedText(
+            "晚",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: textView.markedRange()
+        )
+
+        XCTAssertTrue(events.isEmpty)
+        textView.unmarkText()
+
+        let event = try XCTUnwrap(events.first)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(event.beforeText, "明")
+        XCTAssertEqual(event.afterText, "明晚")
+        XCTAssertEqual(event.kind, .insertion)
+    }
+
     func testSelectionChangesAreReported() {
         let textView = TodoEditorTextView()
         textView.string = "abc"

@@ -23,6 +23,10 @@ final class TodoEditorTextView: NSTextView {
         hasMarkedText()
     }
 
+    var hasUncommittedTextInput: Bool {
+        isComposingText || string != lastReportedText
+    }
+
     override var intrinsicContentSize: NSSize {
         guard let layoutManager, let textContainer else {
             return NSSize(width: NSView.noIntrinsicMetric, height: 22)
@@ -155,6 +159,14 @@ final class TodoEditorTextView: NSTextView {
         lastReportedText = text
         pendingBeforeSelection = nil
         pendingEditKind = nil
+    }
+
+    func commitPendingTextInput() {
+        if isComposingText {
+            unmarkText()
+        } else {
+            reportCommittedTextIfNeeded()
+        }
     }
 
     func closestCharacterIndexForVerticalMove(

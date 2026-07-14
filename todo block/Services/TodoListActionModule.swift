@@ -109,9 +109,13 @@ final class TodoListActionModule {
                 selectionManager: selectionManager
             ) ? .available : .unavailable(nil)
         case .undo:
-            return store.canUndo ? .available : .unavailable(nil)
+            return store.canUndo || activeTextView?.hasUncommittedTextInput == true
+                ? .available
+                : .unavailable(nil)
         case .redo:
-            return store.canRedo ? .available : .unavailable(nil)
+            return store.canRedo && activeTextView?.hasUncommittedTextInput != true
+                ? .available
+                : .unavailable(nil)
         }
     }
 
@@ -125,6 +129,7 @@ final class TodoListActionModule {
                 activeTextView.copy(nil)
                 return .performed
             }
+            prepareForExternalAction()
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             return NSPasteboard.general.setString(markdown, forType: .string)
@@ -135,6 +140,7 @@ final class TodoListActionModule {
                 activeTextView.cut(nil)
                 return .performed
             }
+            prepareForExternalAction()
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(markdown, forType: .string) else {
@@ -151,6 +157,7 @@ final class TodoListActionModule {
                 activeTextView.paste(nil)
                 return .performed
             }
+            prepareForExternalAction()
             guard let commandScope,
                   let content = NSPasteboard.general.string(forType: .string),
                   store.importMarkdown(
@@ -162,20 +169,24 @@ final class TodoListActionModule {
             else { return .noChange }
             return .performed
         case .moveUp:
+            prepareForExternalAction()
             return TodoReorderCommandManager.moveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
             ) ? .performed : .noChange
         case .moveDown:
+            prepareForExternalAction()
             return TodoReorderCommandManager.moveSelection(
                 direction: .down,
                 store: store,
                 selectionManager: selectionManager
             ) ? .performed : .noChange
         case .undo:
+            prepareForExternalAction()
             return store.undo() ? .performed : .noChange
         case .redo:
+            prepareForExternalAction()
             return store.redo() ? .performed : .noChange
         }
     }
@@ -196,6 +207,11 @@ final class TodoListActionModule {
         activeTextViewProvider()
     }
 
+    private func prepareForExternalAction() {
+        activeTextView?.commitPendingTextInput()
+        store.flushPendingTextEdit()
+    }
+
     private static func defaultActiveTextView() -> TodoEditorTextView? {
         NSApp.keyWindow?.firstResponder as? TodoEditorTextView
     }
@@ -203,12 +219,14 @@ final class TodoListActionModule {
     @discardableResult
     func toggleCompleted(itemId: UUID) -> TodoListActionResult {
         guard let item = store.todoItemsCache[itemId] else { return .noChange }
+        prepareForExternalAction()
         store.toggleComplete(item)
         return .performed
     }
 
     @discardableResult
     func addToday(mode: TodoTodayAdditionMode) -> TodoListActionResult {
+        prepareForExternalAction()
         let today = Calendar.current.startOfDay(for: .now)
         let todaySection = store.validDaySections.first {
             Calendar.current.isDate($0.date, inSameDayAs: today)
@@ -263,7 +281,7 @@ final class TodoListActionModule {
             },
             selectItem: { [self] itemId, shiftPressed, cursorPosition in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
-                store.flushPendingTextEdit()
+                prepareForExternalAction()
                 selectionManager.handleSelect(
                     item: item,
                     allItems: store.items(in: store.destination(for: item)),
@@ -273,6 +291,7 @@ final class TodoListActionModule {
             },
             beginDragSelection: { [self] itemId, cursorPosition in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
+                prepareForExternalAction()
                 selectionManager.beginDragSelection(
                     item: item,
                     allItems: store.items(in: store.destination(for: item)),
@@ -290,20 +309,25 @@ final class TodoListActionModule {
                 self.selectionManager.endDragSelection()
             },
             addItem: { [self] destination in
+                self.prepareForExternalAction()
                 self.addItem(to: destination)
             },
             enterPressed: { [self] itemId, action in
+                self.prepareForExternalAction()
                 self.handleEnter(itemId: itemId, action: action)
             },
             deletePressed: { [self] itemId in
+                self.prepareForExternalAction()
                 self.delete(itemId: itemId)
             },
             indent: { [self] itemId in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
+                prepareForExternalAction()
                 store.indentItem(item, selectionManager: selectionManager)
             },
             outdent: { [self] itemId in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
+                prepareForExternalAction()
                 store.outdentItem(item, selectionManager: selectionManager)
             },
             moveFocus: { [self] itemId, direction, cursorPosition, horizontalOffset in
@@ -318,6 +342,7 @@ final class TodoListActionModule {
                 _ = self.moveItemByKeyboard(itemId: itemId, direction: direction)
             },
             moveDraggedItem: { [self] itemId, destination, toIndex, indentLevel in
+                prepareForExternalAction()
                 _ = TodoReorderMoveEngine.performMove(
                     draggedId: itemId,
                     toIndex: toIndex,
@@ -338,6 +363,7 @@ final class TodoListActionModule {
             },
             sectionDateChanged: { [self] sectionId, newDate in
                 guard let section = self.sectionById(sectionId) else { return }
+                prepareForExternalAction()
                 store.updateSectionDate(section, to: newDate)
             }
         )
@@ -472,6 +498,8 @@ final class TodoListActionModule {
             break
         }
 
+        prepareForExternalAction()
+
         guard let item = store.todoItemsCache[itemId] else {
             return .rejected(TodoListActionRejection(message: "待办已不存在"))
         }
@@ -496,6 +524,7 @@ final class TodoListActionModule {
         destination: SidebarDestination
     ) {
         guard let item = store.todoItemsCache[itemId] else { return }
+        prepareForExternalAction()
 
         switch destination {
         case .longTerm:

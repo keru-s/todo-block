@@ -176,6 +176,87 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(selectionManager.cursorPosition, 3)
     }
 
+    func testExternalActionCommitsMarkedTextBeforeChangingTheItem() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "明", dayDate: .now)
+        selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 1
+        )
+        let textView = TodoEditorTextView()
+        textView.string = "明"
+        textView.synchronizeReportedText("明")
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            activeTextViewProvider: { textView }
+        )
+        let actions = module.editorActions
+        textView.onTextDidChange = { event in
+            actions.titleChanged(item.id, event)
+        }
+        store.undoManager.clear()
+
+        textView.setMarkedText(
+            "晚",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertTrue(textView.hasMarkedText())
+
+        XCTAssertEqual(module.toggleCompleted(itemId: item.id), .performed)
+
+        XCTAssertFalse(textView.hasMarkedText())
+        XCTAssertEqual(item.title, "明晚")
+        XCTAssertTrue(item.isCompleted)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "明晚")
+        XCTAssertFalse(item.isCompleted)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "明")
+    }
+
+    func testUndoCommitsAndRevertsTheCurrentCompositionAsOneStep() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原", dayDate: .now)
+        selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 1
+        )
+        let textView = TodoEditorTextView()
+        textView.string = "原"
+        textView.synchronizeReportedText("原")
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+        let actions = module.editorActions
+        textView.onTextDidChange = { event in
+            actions.titleChanged(item.id, event)
+        }
+        store.undoManager.clear()
+
+        textView.setMarkedText(
+            "文",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+
+        XCTAssertEqual(module.commandAvailability(.undo), .available)
+        XCTAssertEqual(module.perform(.undo), .performed)
+        XCTAssertEqual(item.title, "原")
+        XCTAssertFalse(textView.hasMarkedText())
+        XCTAssertTrue(store.canRedo)
+    }
+
     func testChangingSectionDateThroughModuleMovesWholeParentChildGroupAndCanUndo() throws {
         let store = TodoStore.shared
         let sourceDay = date(year: 2026, month: 5, day: 31)
