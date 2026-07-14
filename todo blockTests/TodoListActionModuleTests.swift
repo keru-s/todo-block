@@ -4,16 +4,17 @@ import XCTest
 
 @MainActor
 final class TodoListActionModuleTests: XCTestCase {
-    private var container: ModelContainer!
-    private var selectionManager: SelectionManager!
+    private var container: ModelContainer?
+    private var selectionManager = SelectionManager(historyContext: .mainWindow)
 
     override func setUp() async throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(
+        let container = try ModelContainer(
             for: TodoItem.self,
             DaySection.self,
             configurations: config
         )
+        self.container = container
 
         TodoStore.shared.reset()
         TodoStore.shared.initialize(with: container.mainContext)
