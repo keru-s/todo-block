@@ -1,56 +1,13 @@
 //
-//  TodoReorderCommandManager.swift
+//  TodoSelectionReorderEngine.swift
 //  todo block
 //
 //  Created by Codex on 2026/3/11.
 //
 
 import Foundation
-import Observation
-
 @MainActor
-@Observable
-final class TodoReorderCommandManager {
-    static let shared = TodoReorderCommandManager()
-
-    private var moveUpHandler: (() -> Bool)?
-    private var moveDownHandler: (() -> Bool)?
-
-    private init() {}
-
-    func activateListContext(store: TodoStore, selectionManager: SelectionManager) {
-        moveUpHandler = { [weak selectionManager] in
-            guard let selectionManager else { return false }
-            return Self.moveSelection(
-                direction: .up,
-                store: store,
-                selectionManager: selectionManager
-            )
-        }
-        moveDownHandler = { [weak selectionManager] in
-            guard let selectionManager else { return false }
-            return Self.moveSelection(
-                direction: .down,
-                store: store,
-                selectionManager: selectionManager
-            )
-        }
-    }
-
-    func clearContext() {
-        moveUpHandler = nil
-        moveDownHandler = nil
-    }
-
-    @discardableResult
-    func moveSelectionUp() -> Bool {
-        moveUpHandler?() ?? false
-    }
-
-    @discardableResult
-    func moveSelectionDown() -> Bool {
-        moveDownHandler?() ?? false
-    }
+enum TodoSelectionReorderEngine {
 
     static func canMoveSelection(
         direction: TodoKeyboardReorderDirection,

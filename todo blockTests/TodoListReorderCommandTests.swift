@@ -3,7 +3,7 @@ import XCTest
 @testable import todo_block
 
 @MainActor
-final class TodoReorderCommandManagerTests: XCTestCase {
+final class TodoListReorderCommandTests: XCTestCase {
     private var container: ModelContainer!
     private var selectionManager: SelectionManager!
 
@@ -36,12 +36,13 @@ final class TodoReorderCommandManagerTests: XCTestCase {
         )
         selectionManager.selectedItemIds = [parent.id, child.id]
         selectionManager.focusedItemId = child.id
-        TodoReorderCommandManager.shared.activateListContext(
+        let module = TodoListActionModule(
             store: store,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            commandScope: .today
         )
 
-        XCTAssertTrue(TodoReorderCommandManager.shared.moveSelectionUp())
+        XCTAssertEqual(module.perform(.moveUp), .performed)
         XCTAssertEqual(store.items(for: day).map(\.title), ["parent", "child", "first"])
         XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, child.id])
         XCTAssertEqual(selectionManager.focusedItemId, child.id)
@@ -57,12 +58,13 @@ final class TodoReorderCommandManagerTests: XCTestCase {
         selectionManager.selectedItemIds = [b.id, d.id]
         selectionManager.focusedItemId = b.id
         store.undoManager.clear()
-        TodoReorderCommandManager.shared.activateListContext(
+        let module = TodoListActionModule(
             store: store,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            commandScope: .today
         )
 
-        XCTAssertTrue(TodoReorderCommandManager.shared.moveSelectionUp())
+        XCTAssertEqual(module.perform(.moveUp), .performed)
         XCTAssertEqual(store.items(for: day).map(\.title), ["b", "a", "d", "c"])
         XCTAssertEqual(selectionManager.selectedItemIds, [b.id, d.id])
 
@@ -84,12 +86,13 @@ final class TodoReorderCommandManagerTests: XCTestCase {
         selectionManager.selectedItemIds = [a.id, c.id]
         selectionManager.focusedItemId = a.id
         store.undoManager.clear()
-        TodoReorderCommandManager.shared.activateListContext(
+        let module = TodoListActionModule(
             store: store,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            commandScope: .today
         )
 
-        XCTAssertFalse(TodoReorderCommandManager.shared.moveSelectionUp())
+        XCTAssertEqual(module.perform(.moveUp), .noChange)
         XCTAssertEqual(store.items(for: day).map(\.title), ["a", "b", "c", "d"])
         XCTAssertFalse(store.canUndo)
     }

@@ -112,13 +112,13 @@ final class TodoListActionModule {
             else { return .unavailable(nil) }
             return .available
         case .moveUp:
-            return TodoReorderCommandManager.canMoveSelection(
+            return TodoSelectionReorderEngine.canMoveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
             ) ? .available : .unavailable(nil)
         case .moveDown:
-            return TodoReorderCommandManager.canMoveSelection(
+            return TodoSelectionReorderEngine.canMoveSelection(
                 direction: .down,
                 store: store,
                 selectionManager: selectionManager
@@ -223,13 +223,13 @@ final class TodoListActionModule {
             else { return .noChange }
             return .performed
         case .moveUp:
-            return TodoReorderCommandManager.moveSelection(
+            return TodoSelectionReorderEngine.moveSelection(
                 direction: .up,
                 store: store,
                 selectionManager: selectionManager
             ) ? .performed : .noChange
         case .moveDown:
-            return TodoReorderCommandManager.moveSelection(
+            return TodoSelectionReorderEngine.moveSelection(
                 direction: .down,
                 store: store,
                 selectionManager: selectionManager

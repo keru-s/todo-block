@@ -610,10 +610,10 @@ final class UndoManagerTests: XCTestCase {
         let selectionManager = SelectionManager()
         selectionManager.restoreFocus(to: item.id)
         selectionManager.cursorPosition = 2
-        let actions = TodoEditorActionFactory.make(
+        let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        )
+        ).editorActions
         store.undoManager.clear()
 
         actions.titleChanged(

@@ -4,7 +4,7 @@ import XCTest
 @testable import todo_block
 
 @MainActor
-final class TodoClipboardManagerTests: XCTestCase {
+final class TodoListClipboardCommandTests: XCTestCase {
     private var container: ModelContainer!
     private var selectionManager: SelectionManager!
 
@@ -18,11 +18,6 @@ final class TodoClipboardManagerTests: XCTestCase {
         TodoStore.shared.reset()
         TodoStore.shared.initialize(with: container.mainContext)
         selectionManager = SelectionManager()
-        TodoClipboardManager.shared.clearContext()
-    }
-
-    override func tearDown() {
-        TodoClipboardManager.shared.clearContext()
     }
 
     func testCutDeletesSelectionAsOneStepAndUndoDoesNotRewritePasteboard() {
@@ -33,14 +28,14 @@ final class TodoClipboardManagerTests: XCTestCase {
         selectionManager.selectedItemIds = [parent.id]
         selectionManager.focusedItemId = parent.id
         selectionManager.lastSelectedId = parent.id
-        TodoClipboardManager.shared.activateListContext(
-            scope: .today,
+        let module = TodoListActionModule(
             store: store,
-            selectionManager: selectionManager
+            selectionManager: selectionManager,
+            commandScope: .today
         )
         store.undoManager.clear()
 
-        XCTAssertTrue(TodoClipboardManager.shared.cutSelectionToPasteboard())
+        XCTAssertEqual(module.perform(.cut), .performed)
         XCTAssertNil(store.todoItemsCache[parent.id])
         XCTAssertNil(store.todoItemsCache[child.id])
         XCTAssertEqual(

@@ -97,10 +97,10 @@ final class TodoHistoryPresentationTests: XCTestCase {
         selectionManager.lastSelectedId = item.id
         selectionManager.cursorPosition = 1
         selectionManager.textSelectionLength = 1
-        let actions = TodoEditorActionFactory.make(
+        let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        )
+        ).editorActions
         store.undoManager.clear()
         actions.titleChanged(
             item.id,
@@ -204,10 +204,10 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let selectionManager = SelectionManager()
         selectionManager.focusedItemId = item.id
         selectionManager.selectedItemIds = [item.id]
-        let actions = TodoEditorActionFactory.make(
+        let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        )
+        ).editorActions
         store.undoManager.clear()
         var didChange = false
         withObservationTracking {
