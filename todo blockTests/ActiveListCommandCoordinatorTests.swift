@@ -261,6 +261,91 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testMenuBarTemporarilyClaimsCommandsAndRestoresThePreviousVisibleList() {
+        let mainModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .mainWindow),
+            commandScope: .today
+        )
+        let menuBarModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today
+        )
+        let mainRegistration = coordinator.register(mainModule)
+        let menuBarRegistration = coordinator.register(menuBarModule)
+        XCTAssertTrue(coordinator.claim(mainRegistration))
+
+        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
+
+        XCTAssertNotNil(temporaryClaim)
+        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
+
+        if let temporaryClaim {
+            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
+        }
+        XCTAssertTrue(coordinator.isCurrent(mainModule))
+    }
+
+    func testMenuBarCloseDoesNotRestoreAListThatDisappearedWhilePopoverWasOpen() {
+        let mainModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .mainWindow),
+            commandScope: .today
+        )
+        let menuBarModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today
+        )
+        let mainRegistration = coordinator.register(mainModule)
+        let menuBarRegistration = coordinator.register(menuBarModule)
+        XCTAssertTrue(coordinator.claim(mainRegistration))
+        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
+        XCTAssertNotNil(temporaryClaim)
+
+        coordinator.unregister(mainRegistration)
+        if let temporaryClaim {
+            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
+        }
+
+        XCTAssertFalse(coordinator.hasCurrentList)
+    }
+
+    func testTemporaryMenuBarClaimCannotBeOverriddenUntilItEnds() {
+        let previousModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(),
+            commandScope: .today
+        )
+        let menuBarModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today
+        )
+        let newerModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .longTerm),
+            commandScope: .longTerm
+        )
+        let previousRegistration = coordinator.register(previousModule)
+        let menuBarRegistration = coordinator.register(menuBarModule)
+        let newerRegistration = coordinator.register(newerModule)
+        XCTAssertTrue(coordinator.claim(previousRegistration))
+        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
+        XCTAssertNotNil(temporaryClaim)
+
+        XCTAssertFalse(coordinator.claim(newerRegistration))
+        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
+        if let temporaryClaim {
+            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
+        }
+
+        XCTAssertTrue(coordinator.isCurrent(previousModule))
+        XCTAssertTrue(coordinator.claim(newerRegistration))
+        XCTAssertTrue(coordinator.isCurrent(newerModule))
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.calendar = Calendar.current

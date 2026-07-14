@@ -267,6 +267,23 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(store.items(for: day).map(\.title), ["", "first", "second", ""])
     }
 
+    func testMenuBarModuleDoesNotMoveTodayItemToMainWindowSidebar() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "today", dayDate: .now)
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            allowsSidebarMoves: false
+        )
+        store.undoManager.clear()
+
+        module.editorActions.moveDraggedItemToSidebar(item.id, .longTerm)
+
+        XCTAssertEqual(store.destination(for: item), .scheduled(date: .now).normalized)
+        XCTAssertFalse(store.canUndo)
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.calendar = Calendar.current

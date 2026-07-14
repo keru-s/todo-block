@@ -15,6 +15,12 @@ struct TodoListCommandRegistration: Hashable {
     fileprivate let id: UUID
 }
 
+struct TodoListTemporaryCommandClaim: Hashable {
+    fileprivate let id: UUID
+    fileprivate let temporaryRegistrationId: UUID
+    fileprivate let previousRegistrationId: UUID?
+}
+
 private final class WeakTodoListActionModule {
     weak var value: TodoListActionModule?
 
@@ -30,6 +36,7 @@ final class ActiveListCommandCoordinator {
 
     private var registrations: [UUID: WeakTodoListActionModule] = [:]
     private var currentRegistrationId: UUID?
+    private var activeTemporaryClaim: TodoListTemporaryCommandClaim?
 
     private init() {}
 
@@ -64,6 +71,10 @@ final class ActiveListCommandCoordinator {
     @discardableResult
     func claim(_ registration: TodoListCommandRegistration) -> Bool {
         removeExpiredRegistrations()
+        if let activeTemporaryClaim,
+           activeTemporaryClaim.temporaryRegistrationId != registration.id {
+            return false
+        }
         guard let module = registrations[registration.id]?.value else { return false }
         currentRegistrationId = registration.id
         module.activateHistoryContext()
@@ -72,6 +83,47 @@ final class ActiveListCommandCoordinator {
 
     func isCurrent(_ module: TodoListActionModule) -> Bool {
         currentModule === module
+    }
+
+    func beginTemporaryClaim(
+        _ registration: TodoListCommandRegistration
+    ) -> TodoListTemporaryCommandClaim? {
+        removeExpiredRegistrations()
+        guard activeTemporaryClaim == nil,
+              let module = registrations[registration.id]?.value
+        else { return nil }
+
+        let claim = TodoListTemporaryCommandClaim(
+            id: UUID(),
+            temporaryRegistrationId: registration.id,
+            previousRegistrationId: currentRegistrationId
+        )
+        activeTemporaryClaim = claim
+        currentRegistrationId = registration.id
+        module.activateHistoryContext()
+        return claim
+    }
+
+    @discardableResult
+    func endTemporaryClaim(_ claim: TodoListTemporaryCommandClaim) -> Bool {
+        guard activeTemporaryClaim?.id == claim.id else { return false }
+        activeTemporaryClaim = nil
+
+        guard currentRegistrationId == claim.temporaryRegistrationId else {
+            return true
+        }
+
+        removeExpiredRegistrations()
+        guard let previousRegistrationId = claim.previousRegistrationId,
+              let previousModule = registrations[previousRegistrationId]?.value
+        else {
+            currentRegistrationId = nil
+            return true
+        }
+
+        currentRegistrationId = previousRegistrationId
+        previousModule.activateHistoryContext()
+        return true
     }
 
     func availability(of command: TodoListCommand) -> TodoListCommandAvailability {
@@ -86,6 +138,7 @@ final class ActiveListCommandCoordinator {
     func resetForTesting() {
         registrations.removeAll()
         currentRegistrationId = nil
+        activeTemporaryClaim = nil
     }
 
     private var currentModule: TodoListActionModule? {

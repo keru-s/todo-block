@@ -15,12 +15,20 @@ struct MenuBarView: View {
         self.onOpenMainWindow = onOpenMainWindow
     }
 
-    // 状态管理
-    @State private var selectionManager = SelectionManager(historyContext: .menuBar)
+    @State private var actionModule = TodoListActionModule(
+        store: .shared,
+        selectionManager: SelectionManager(historyContext: .menuBar),
+        commandScope: .today,
+        allowsSidebarMoves: false
+    )
     @State private var handledHistoryRevealId: UUID?
+    @State private var commandRegistration: TodoListCommandRegistration?
+    @State private var temporaryCommandClaim: TodoListTemporaryCommandClaim?
 
     private var store: TodoStore { TodoStore.shared }
+    private var selectionManager: SelectionManager { actionModule.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
+    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
@@ -46,6 +54,14 @@ struct MenuBarView: View {
         return formatter.string(from: Date())
     }
 
+    private var editorActions: TodoEditorActions {
+        let registration = commandRegistration
+        return actionModule.editorActions {
+            guard let registration else { return }
+            ActiveListCommandCoordinator.shared.claim(registration)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 标题栏
@@ -66,10 +82,7 @@ struct MenuBarView: View {
             TodoEditorRepresentable(
                 sections: editorSections,
                 emptyTitle: "今天没有待办事项",
-                actions: TodoEditorActionFactory.make(
-                    store: store,
-                    selectionManager: selectionManager
-                ),
+                actions: editorActions,
                 revealRequest: visibleHistoryRevealRequest
             )
             .frame(minHeight: 80, maxHeight: 350)
@@ -110,12 +123,22 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(TodoDesignTokens.windowBackground)
         .onAppear {
-            bindContexts()
+            registerCommandContextIfNeeded()
+            if MenuBarStatusItemController.shared.isPopoverShown {
+                beginTemporaryCommandClaim()
+            }
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
-            bindContexts()
+            registerCommandContextIfNeeded()
+            beginTemporaryCommandClaim()
             restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
+            endTemporaryCommandClaim()
+        }
+        .onDisappear {
+            endTemporaryCommandClaim()
         }
         .gesture(
             TapGesture().onEnded {
@@ -154,23 +177,35 @@ private extension MenuBarView {
     }
 
     func addTodayItem() {
-        _ = store.getOrCreateTodaySection()
-        let newItem = store.createItem(
-            dayDate: Date(),
-            selectionManager: selectionManager
-        )
-        selectionManager.handleSelect(item: newItem, allItems: todayItems, shiftPressed: false)
+        claimCurrentList()
+        actionModule.editorActions.addItem(.scheduled(date: .now))
     }
 
-    func bindContexts() {
-        ActiveListCommandContext.bind(
-            scope: .today,
-            store: store,
-            selectionManager: selectionManager
-        )
+    func registerCommandContextIfNeeded() {
+        guard commandRegistration == nil else { return }
+        commandRegistration = commandCoordinator.register(actionModule)
+    }
+
+    func claimCurrentList() {
+        guard let commandRegistration else { return }
+        commandCoordinator.claim(commandRegistration)
+    }
+
+    func beginTemporaryCommandClaim() {
+        guard temporaryCommandClaim == nil,
+              let commandRegistration
+        else { return }
+        temporaryCommandClaim = commandCoordinator.beginTemporaryClaim(commandRegistration)
+    }
+
+    func endTemporaryCommandClaim() {
+        guard let temporaryCommandClaim else { return }
+        commandCoordinator.endTemporaryClaim(temporaryCommandClaim)
+        self.temporaryCommandClaim = nil
     }
 
     func handleBackgroundTap() {
+        claimCurrentList()
         selectionManager.clearSelection()
     }
 }

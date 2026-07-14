@@ -28,6 +28,7 @@ final class TodoListActionModule {
     private let store: TodoStore
     private let sectionById: (UUID) -> DaySection?
     private let activeTextViewProvider: @MainActor () -> TodoEditorTextView?
+    private let allowsSidebarMoves: Bool
     private var commandScope: TodoClipboardScope?
 
     var editorActions: TodoEditorActions { makeEditorActions() }
@@ -44,6 +45,7 @@ final class TodoListActionModule {
         store: TodoStore,
         selectionManager: SelectionManager,
         commandScope: TodoClipboardScope? = nil,
+        allowsSidebarMoves: Bool = true,
         activeTextViewProvider: @escaping @MainActor () -> TodoEditorTextView? =
             TodoListActionModule.defaultActiveTextView,
         sectionById: ((UUID) -> DaySection?)? = nil
@@ -51,6 +53,7 @@ final class TodoListActionModule {
         self.store = store
         self.selectionManager = selectionManager
         self.commandScope = commandScope
+        self.allowsSidebarMoves = allowsSidebarMoves
         self.activeTextViewProvider = activeTextViewProvider
         self.sectionById = sectionById ?? { store.daySectionsCache[$0] }
     }
@@ -330,6 +333,7 @@ final class TodoListActionModule {
                 )
             },
             moveDraggedItemToSidebar: { [self] itemId, destination in
+                guard self.allowsSidebarMoves else { return }
                 self.moveDraggedItemToSidebar(itemId: itemId, destination: destination)
             },
             sectionDateChanged: { [self] sectionId, newDate in

@@ -21,6 +21,8 @@ final class MenuBarStatusItemController: NSObject {
     private var openMainWindow: (() -> Void)?
     private var isInstalled = false
 
+    var isPopoverShown: Bool { popover.isShown }
+
     private override init() {
         super.init()
         configurePopover()
