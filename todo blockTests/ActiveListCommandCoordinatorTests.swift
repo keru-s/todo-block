@@ -344,6 +344,88 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         )
     }
 
+    func testExactMoveShortcutsWithoutTextViewMoveOnlyFocusedParentChildGroup() throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: focused,
+            indentLevel: 1
+        )
+        let otherSelected = store.createItem(
+            title: "other selected",
+            dayDate: day,
+            afterItem: child
+        )
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: otherSelected)
+        let selection = SelectionManager()
+        selection.focusedItemId = focused.id
+        selection.selectedItemIds = [focused.id, otherSelected.id]
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { nil }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        store.undoManager.clear()
+
+        XCTAssertEqual(
+            coordinator.perform(.moveUp, event: try moveKeyEvent(direction: .up)),
+            .performed
+        )
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [focused.id, child.id, first.id, otherSelected.id, tail.id]
+        )
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            coordinator.perform(.moveDown, event: try moveKeyEvent(direction: .down)),
+            .performed
+        )
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, otherSelected.id, focused.id, child.id, tail.id]
+        )
+    }
+
+    func testExactMoveShortcutsWithoutTextViewStaySilentAtFocusedItemBoundary() throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 14)
+        let first = store.createItem(title: "first", dayDate: day)
+        let middle = store.createItem(title: "middle", dayDate: day, afterItem: first)
+        let last = store.createItem(title: "last", dayDate: day, afterItem: middle)
+        let selection = SelectionManager()
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 7),
+            activeTextViewProvider: { nil }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        store.undoManager.clear()
+
+        selection.focusedItemId = first.id
+        selection.selectedItemIds = [first.id, middle.id]
+        XCTAssertEqual(
+            coordinator.perform(.moveUp, event: try moveKeyEvent(direction: .up)),
+            .noChange
+        )
+
+        selection.focusedItemId = last.id
+        selection.selectedItemIds = [middle.id, last.id]
+        XCTAssertEqual(
+            coordinator.perform(.moveDown, event: try moveKeyEvent(direction: .down)),
+            .noChange
+        )
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, middle.id, last.id])
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testReturnKeyFromKeyboardNavigatedMenuMovesWholeSelection() throws {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 7, day: 14)
@@ -354,12 +436,11 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let selection = SelectionManager()
         selection.focusedItemId = focused.id
         selection.selectedItemIds = [focused.id, selected.id]
-        let textView = TodoEditorTextView()
         let module = TodoListActionModule(
             store: store,
             selectionManager: selection,
             commandScope: .scheduledMonth(year: 2026, month: 7),
-            activeTextViewProvider: { textView }
+            activeTextViewProvider: { nil }
         )
         XCTAssertTrue(coordinator.claim(coordinator.register(module)))
         store.undoManager.clear()
@@ -572,5 +653,32 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         components.month = month
         components.day = day
         return Calendar.current.date(from: components) ?? .now
+    }
+
+    private func moveKeyEvent(
+        direction: TodoKeyboardReorderDirection
+    ) throws -> NSEvent {
+        let keyCode: UInt16
+        let characters: String
+        switch direction {
+        case .up:
+            keyCode = 126
+            characters = "\u{F700}"
+        case .down:
+            keyCode = 125
+            characters = "\u{F701}"
+        }
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode
+        ))
     }
 }

@@ -218,12 +218,11 @@ final class TodoListActionModule {
         event: NSEvent?
     ) -> TodoListActionResult {
         if invocation == .keyboardShortcut,
-           let direction = keyboardMoveDirection(for: command),
-           activeTextView != nil
+           let direction = keyboardMoveDirection(for: command)
         {
-            if activeTextView?.isComposingText == true {
+            if let activeTextView, activeTextView.isComposingText {
                 if let event {
-                    activeTextView?.routeToInputMethod(event)
+                    activeTextView.routeToInputMethod(event)
                 }
                 return .noChange
             }
