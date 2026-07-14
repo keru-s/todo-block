@@ -249,6 +249,14 @@ struct TodoItemSnapshot {
 @MainActor
 @Observable
 final class TodoUndoManager {
+    private struct TodayImpact {
+        let scheduledDays: Set<Date>
+
+        func affectsToday(on date: Date, calendar: Calendar) -> Bool {
+            scheduledDays.contains { calendar.isDate($0, inSameDayAs: date) }
+        }
+    }
+
     /// 共享的 NSUndoManager 实例
     private let nsUndoManager = UndoManager()
 
@@ -262,8 +270,8 @@ final class TodoUndoManager {
 
     private var invocationResult = InvocationResult.invalid
     private var historyRevision = 0
-    private var undoTodayImpacts: [Bool] = []
-    private var redoTodayImpacts: [Bool] = []
+    private var undoTodayImpacts: [TodayImpact] = []
+    private var redoTodayImpacts: [TodayImpact] = []
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -281,12 +289,12 @@ final class TodoUndoManager {
         nsUndoManager.undoActionName
     }
 
-    func nextUndoAffectsToday() -> Bool? {
-        undoTodayImpacts.last
+    func nextUndoAffectsToday(on date: Date) -> Bool? {
+        undoTodayImpacts.last?.affectsToday(on: date, calendar: .current)
     }
 
-    func nextRedoAffectsToday() -> Bool? {
-        redoTodayImpacts.last
+    func nextRedoAffectsToday(on date: Date) -> Bool? {
+        redoTodayImpacts.last?.affectsToday(on: date, calendar: .current)
     }
 
     init() {
@@ -345,41 +353,42 @@ final class TodoUndoManager {
     }
 
     private func recordHistoryRegistration(_ operation: TodoOperation, store: TodoStore) {
-        let affectsToday = affectsToday(operation, store: store)
+        let todayImpact = todayImpact(of: operation, store: store)
         if nsUndoManager.isUndoing {
-            redoTodayImpacts.append(affectsToday)
+            redoTodayImpacts.append(todayImpact)
             trimHistory(&redoTodayImpacts)
         } else if nsUndoManager.isRedoing {
-            undoTodayImpacts.append(affectsToday)
+            undoTodayImpacts.append(todayImpact)
             trimHistory(&undoTodayImpacts)
         } else {
-            undoTodayImpacts.append(affectsToday)
+            undoTodayImpacts.append(todayImpact)
             trimHistory(&undoTodayImpacts)
             redoTodayImpacts.removeAll()
         }
     }
 
-    private func trimHistory(_ history: inout [Bool]) {
+    private func trimHistory(_ history: inout [TodayImpact]) {
         if history.count > maxUndoSteps {
             history.removeFirst(history.count - maxUndoSteps)
         }
     }
 
-    private func affectsToday(_ operation: TodoOperation, store: TodoStore) -> Bool {
-        let calendar = Calendar.current
+    private func todayImpact(of operation: TodoOperation, store: TodoStore) -> TodayImpact {
         let snapshots = operation.itemExistenceChanges.map(\.snapshot)
             + operation.itemStateChanges.flatMap { [$0.before, $0.after] }
-        let snapshotAffectsToday = snapshots.contains { snapshot in
-            (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
-                && calendar.isDateInToday(snapshot.dayDate)
+        let snapshotDays = snapshots.compactMap { snapshot -> Date? in
+            guard (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled)
+                == .scheduled
+            else { return nil }
+            return snapshot.dayDate
         }
-        if snapshotAffectsToday {
-            return true
+        let completionDays = operation.completionChanges.compactMap { change -> Date? in
+            guard let item = store.todoItemsCache[change.itemId],
+                  item.containerKind == .scheduled
+            else { return nil }
+            return item.dayDate
         }
-        return operation.completionChanges.contains { change in
-            guard let item = store.todoItemsCache[change.itemId] else { return false }
-            return item.containerKind == .scheduled && calendar.isDateInToday(item.dayDate)
-        }
+        return TodayImpact(scheduledDays: Set(snapshotDays + completionDays))
     }
 
     private func registerStandalone(_ registration: () -> Void) {

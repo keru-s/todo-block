@@ -40,6 +40,7 @@ final class TodoListActionModule {
     private let store: TodoStore
     private let sectionById: (UUID) -> DaySection?
     private let activeTextViewProvider: @MainActor () -> TodoEditorTextView?
+    private let todayProvider: () -> Date
     private let allowsSidebarMoves: Bool
     private var commandScope: TodoClipboardScope?
 
@@ -58,6 +59,7 @@ final class TodoListActionModule {
         selectionManager: SelectionManager,
         commandScope: TodoClipboardScope? = nil,
         allowsSidebarMoves: Bool = true,
+        todayProvider: @escaping () -> Date = { .now },
         activeTextViewProvider: @escaping @MainActor () -> TodoEditorTextView? =
             TodoListActionModule.defaultActiveTextView,
         sectionById: ((UUID) -> DaySection?)? = nil
@@ -66,6 +68,7 @@ final class TodoListActionModule {
         self.selectionManager = selectionManager
         self.commandScope = commandScope
         self.allowsSidebarMoves = allowsSidebarMoves
+        self.todayProvider = todayProvider
         self.activeTextViewProvider = activeTextViewProvider
         self.sectionById = sectionById ?? { store.daySectionsCache[$0] }
     }
@@ -142,9 +145,9 @@ final class TodoListActionModule {
         let affectsToday: Bool?
         switch command {
         case .undo:
-            affectsToday = store.undoManager.nextUndoAffectsToday()
+            affectsToday = store.undoManager.nextUndoAffectsToday(on: todayProvider())
         case .redo:
-            affectsToday = store.undoManager.nextRedoAffectsToday()
+            affectsToday = store.undoManager.nextRedoAffectsToday(on: todayProvider())
         default:
             return .available
         }

@@ -569,6 +569,40 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(module.feedbackPresenter.feedback?.message, "请先结束当前输入")
     }
 
+    func testMenuBarHistoryReevaluatesTodayWhenCalendarDayChanges() {
+        let store = TodoStore.shared
+        let firstDay = date(year: 2026, month: 7, day: 14)
+        let secondDay = date(year: 2026, month: 7, day: 15)
+        let item = store.createItem(title: "跨日", dayDate: firstDay)
+        store.undoManager.clear()
+        store.toggleComplete(item)
+        let firstDayModule = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager,
+            commandScope: .today,
+            todayProvider: { firstDay }
+        )
+        let secondDayModule = TodoListActionModule(
+            store: store,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today,
+            todayProvider: { secondDay }
+        )
+
+        XCTAssertEqual(firstDayModule.commandAvailability(.undo), .available)
+        XCTAssertEqual(
+            secondDayModule.commandAvailability(.undo),
+            .unavailable(.openMainWindowForHistory)
+        )
+
+        XCTAssertEqual(firstDayModule.perform(.undo), .performed)
+        XCTAssertEqual(firstDayModule.commandAvailability(.redo), .available)
+        XCTAssertEqual(
+            secondDayModule.commandAvailability(.redo),
+            .unavailable(.openMainWindowForHistory)
+        )
+    }
+
     func testEnterVariantsAndFocusNavigationThroughModuleKeepExpectedUserState() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
