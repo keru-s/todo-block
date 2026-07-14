@@ -113,12 +113,7 @@ struct LongTermListView: View {
               request.destination == .longTerm
         else { return }
         handledHistoryRevealId = request.id
-        if let selectionState = request.selectionState {
-            selectionState.apply(to: selectionManager)
-        } else if let itemId = request.itemId,
-                  store.todoItemsCache[itemId] != nil {
-            selectionManager.restoreFocus(to: itemId)
-        }
+        actionModule.restoreHistorySelection(request.selectionState, itemId: request.itemId)
     }
 
     private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {

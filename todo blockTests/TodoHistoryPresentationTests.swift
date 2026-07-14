@@ -7,6 +7,7 @@ import XCTest
 final class TodoHistoryPresentationTests: XCTestCase {
     private var container: ModelContainer!
     private var store: TodoStore!
+    private var commandModules: [TodoListActionModule] = []
 
     override func setUp() async throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -18,13 +19,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
         store = TodoStore.shared
         store.reset()
         store.initialize(with: container.mainContext)
+        commandModules = []
     }
 
     func testTodayResultRemainsInMenuBar() {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         var openCount = 0
         coordinator.install { openCount += 1 }
-        coordinator.activate(scope: .today)
+        claimList(scope: .today)
 
         coordinator.reveal(destination: .scheduled(date: .now), itemId: UUID())
 
@@ -36,7 +38,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         let emptySelection = TodoSelectionState(focusing: nil)
         let today = Date.now
-        coordinator.activate(scope: .today)
+        claimList(scope: .today)
 
         coordinator.reveal(
             destination: .scheduled(date: today),
@@ -59,7 +61,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             openCount += 1
             destinationWhenOpening = coordinator.revealRequest?.destination
         }
-        coordinator.activate(scope: .today)
+        claimList(scope: .today)
         let targetDate = date(year: 2027, month: 4, day: 8)
 
         coordinator.reveal(destination: .scheduled(date: targetDate), itemId: nil)
@@ -76,7 +78,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         var openCount = 0
         coordinator.install { openCount += 1 }
-        coordinator.activate(scope: .today)
+        claimList(scope: .today)
 
         coordinator.reveal(destination: .longTerm(isUrgent: true), itemId: nil)
 
@@ -88,7 +90,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let coordinator = TodoHistoryPresentationCoordinator.shared
         var openCount = 0
         coordinator.install { openCount += 1 }
-        coordinator.activate(scope: .today)
+        claimList(scope: .today)
         let targetDate = date(year: 2027, month: 4, day: 8)
         let item = store.createItem(title: "abc", dayDate: targetDate)
         let selectionManager = SelectionManager(historyContext: .mainWindow)
@@ -149,8 +151,8 @@ final class TodoHistoryPresentationTests: XCTestCase {
             shiftPressed: false,
             cursorPosition: 0
         )
-        TodoHistoryPresentationCoordinator.shared.activate(scope: .longTerm)
-        TodoHistoryPresentationCoordinator.shared.activate(scope: .today)
+        claimList(scope: .longTerm)
+        claimList(scope: .today)
 
         XCTAssertTrue(store.canRedo)
         XCTAssertTrue(store.redo())
@@ -170,13 +172,11 @@ final class TodoHistoryPresentationTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        TodoHistoryPresentationCoordinator.shared.activate(scope: .today)
+        claimList(scope: .today)
         store.toggleComplete(today)
-        TodoHistoryPresentationCoordinator.shared.activate(scope: .longTerm)
+        claimList(scope: .longTerm)
         store.toggleComplete(longTerm)
-        TodoHistoryPresentationCoordinator.shared.activate(
-            scope: .scheduledMonth(year: 2027, month: 4)
-        )
+        claimList(scope: .scheduledMonth(year: 2027, month: 4))
         store.toggleComplete(future)
 
         XCTAssertTrue(store.undo())
@@ -233,5 +233,16 @@ final class TodoHistoryPresentationTests: XCTestCase {
 
     private func date(year: Int, month: Int, day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day)) ?? .now
+    }
+
+    private func claimList(scope: TodoClipboardScope) {
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: SelectionManager(),
+            commandScope: scope
+        )
+        commandModules.append(module)
+        let registration = ActiveListCommandCoordinator.shared.register(module)
+        XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(registration))
     }
 }

@@ -72,6 +72,7 @@ final class TodoStore {
     func reset() {
         textEditSession.reset()
         TodoHistoryPresentationCoordinator.shared.resetForTesting()
+        ActiveListCommandCoordinator.shared.resetForTesting()
         saveTask?.cancel()
         saveTask = nil
         modelContext = nil

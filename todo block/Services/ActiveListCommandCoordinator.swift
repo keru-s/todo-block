@@ -130,6 +130,10 @@ final class ActiveListCommandCoordinator {
         currentModule?.commandAvailability(command) ?? .unavailable(nil)
     }
 
+    func canCurrentListDisplayHistoryResult(at destination: TodoDropDestination) -> Bool {
+        currentModule?.canDisplayHistoryResult(at: destination) == true
+    }
+
     @discardableResult
     func perform(_ command: TodoListCommand) -> TodoListActionResult {
         currentModule?.perform(command) ?? .noChange

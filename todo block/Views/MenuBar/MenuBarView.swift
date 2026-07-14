@@ -167,11 +167,7 @@ private extension MenuBarView {
               visibleHistoryRevealRequest?.id == request.id
         else { return }
         handledHistoryRevealId = request.id
-        if let selectionState = request.selectionState {
-            selectionState.apply(to: selectionManager)
-        } else if let itemId = request.itemId {
-            selectionManager.restoreFocus(to: itemId)
-        }
+        actionModule.restoreHistorySelection(request.selectionState, itemId: request.itemId)
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
@@ -213,7 +209,7 @@ private extension MenuBarView {
 
     func handleBackgroundTap() {
         claimCurrentList()
-        selectionManager.clearSelection()
+        actionModule.clearSelection()
     }
 }
 

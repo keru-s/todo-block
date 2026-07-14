@@ -60,7 +60,7 @@ Skip the relaunch step when the diff is docs-only (`*.md`, comments-only changes
 
 `TodoStore` (`todo block/Services/TodoStore.swift` + 4 extension files in same folder: `+ItemMutations`, `+Persistence`, `+DaySectionMaintenance`, `+Clipboard`) is the `@MainActor @Observable` singleton that owns **all** runtime state. The main window and menu-bar popover are bound to the same `ModelContainer` created in `todo_blockApp`, so both share `TodoStore.shared`'s in-memory caches (`todoItemsCache`, `daySectionsCache`) and stay live without any cross-window sync code.
 
-`Services/` also holds the other runtime singletons: `SelectionManager`, `TodoUndoManager`, `TodoClipboardManager`, `TodoReorderCommandManager`, `TodoKeyboardReorderEngine`, `ActiveListCommandContext` (thin facade binding both command managers in one call). `Models/` is reserved for `@Model` types only.
+`Services/` also holds the single current-list coordinator, each list's stable action module, selection state, operation history, and focused engines for text, hierarchy, reorder, clipboard, and drag behavior. `Models/` is reserved for `@Model` types only.
 
 ⚠️ Extension-file split note: because Swift `private(set)` doesn't cross files, the caches and internal counters on `TodoStore` (e.g. `todoItemsCache`, `refreshTrigger`, `modelContext`) are declared as plain `internal var`. This is a deliberate friendship pattern with the 4 extension files — **do not write these from view code**. If you find yourself wanting to, you almost certainly want a mutation method instead.
 
@@ -80,15 +80,15 @@ No SwiftData relationships; items belong to a section by matching `dayDate`/`con
 
 ### Undo / Redo
 
-`TodoUndoManager` wraps a single `NSUndoManager` (50 steps). The app menu's Undo/Redo (`todo_blockApp.swift`) first tries the focused `NSTextView`'s undo manager, then falls back to `TodoStore.shared.undo()`. All `register*` paths use `skipStaleUndo()` so that if a registered closure's target item is gone, the chain advances rather than dead-ending. Batch delete uses self-referential undo+redo registration — keep them symmetric.
+`TodoUndoManager` wraps a single `NSUndoManager` (50 steps). The app menu's Undo/Redo (`todo_blockApp.swift`) goes only through `ActiveListCommandCoordinator`; the claimed list module resolves pending text input and the shared operation history. All `register*` paths use `skipStaleUndo()` so that if a registered closure's target item is gone, the chain advances rather than dead-ending. Batch delete uses self-referential undo+redo registration — keep them symmetric.
 
 ### Menu-bar popover bridge
 
 `MenuBarStatusItemController` (singleton) creates **one** `NSHostingController` the first time `installIfNeeded` is called and **never replaces it** (swapping `contentViewController` while the popover is shown dismisses it). Popover lifecycle is observed via `NSPopover.willShow/didCloseNotification` and rebroadcast as `.menuBarPopoverWillShow` / `.menuBarPopoverDidClose` (see `MenuBarPopoverNotifications.swift`). **Do not set `popover.delegate`** — it makes `XCUIApplication.terminate()` hang for 60 s in UI tests.
 
-### Active-context handler pattern
+### Current-list command pattern
 
-`TodoClipboardManager.shared` and `TodoReorderCommandManager.shared` hold closures to the currently-active list. The active list view rebinds its context on appear *and* on `menuBarPopoverWillShow` / `menuBarPopoverDidClose` so that Cmd+C / Cmd+↑↓ always target the visually-focused list. When adding new global commands, follow the same activate/clear pattern rather than introducing per-view singletons.
+`TodoListView`, `LongTermListView`, and `MenuBarView` each retain one stable `TodoListActionModule`. `ActiveListCommandCoordinator.shared` is the only current-list command target: direct list interaction claims its registered module, while the menu-bar popover temporarily claims commands between `menuBarPopoverWillShow` and `menuBarPopoverDidClose`. Application commands query and execute only through this coordinator. Do not add another service that stores the current list or its scope.
 
 ### AppKit editor
 
@@ -96,7 +96,7 @@ The task editor lives in `Views/AppKitEditor/` and is embedded through `TodoEdit
 
 - `TodoEditorViewController` owns the AppKit list surface, row reuse, drop indicator, and drag/selection routing.
 - `TodoEditorRowView` owns row-level input: checkbox, drag handle, `NSTextView`, row focus, Space toggle, Command+Up/Down, and left-button long-press multi-select.
-- `TodoEditorActionFactory` is the boundary back into `TodoStore` and `SelectionManager`. Keep persistence, reorder, undo, clipboard, and selection rules in services rather than duplicating them in views.
+- `TodoListActionModule` is the boundary back into `TodoStore` and `SelectionManager`. Keep persistence, reorder, undo, clipboard, and selection rules in services rather than duplicating them in views.
 - `TodoEditorTextView` preserves IME composition state. Do not handle destructive commands while `hasMarkedText()` is true.
 
 ### Drag & drop

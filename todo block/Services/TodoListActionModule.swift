@@ -79,9 +79,33 @@ final class TodoListActionModule {
 
     func activateHistoryContext() {
         selectionManager.activateHistoryContext()
-        if let commandScope {
-            TodoHistoryPresentationCoordinator.shared.activate(scope: commandScope)
+    }
+
+    func canDisplayHistoryResult(at destination: TodoDropDestination) -> Bool {
+        guard let commandScope else { return false }
+        switch (commandScope, destination.normalized) {
+        case (.today, .scheduled(let date)):
+            return Calendar.current.isDate(date, inSameDayAs: todayProvider())
+        case (.scheduledMonth(let year, let month), .scheduled(let date)):
+            let components = Calendar.current.dateComponents([.year, .month], from: date)
+            return components.year == year && components.month == month
+        case (.longTerm, .longTerm):
+            return true
+        default:
+            return false
         }
+    }
+
+    func restoreHistorySelection(_ state: TodoSelectionState?, itemId: UUID?) {
+        if let state {
+            state.apply(to: selectionManager)
+        } else if let itemId, store.todoItemsCache[itemId] != nil {
+            selectionManager.restoreFocus(to: itemId)
+        }
+    }
+
+    func clearSelection() {
+        selectionManager.clearSelection()
     }
 
     func commandAvailability(_ command: TodoListCommand) -> TodoListCommandAvailability {
