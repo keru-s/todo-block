@@ -142,15 +142,16 @@ final class TodoListActionModule {
         let affectsToday: Bool?
         switch command {
         case .undo:
-            affectsToday = store.undoManager.nextUndoAffectsToday(store: store)
+            affectsToday = store.undoManager.nextUndoAffectsToday()
         case .redo:
-            affectsToday = store.undoManager.nextRedoAffectsToday(store: store)
+            affectsToday = store.undoManager.nextRedoAffectsToday()
         default:
             return .available
         }
-        return affectsToday == false
-            ? .unavailable(.openMainWindowForHistory)
-            : .available
+        guard affectsToday == true else {
+            return .unavailable(.openMainWindowForHistory)
+        }
+        return .available
     }
 
     @discardableResult

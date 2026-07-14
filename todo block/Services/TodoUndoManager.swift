@@ -262,8 +262,8 @@ final class TodoUndoManager {
 
     private var invocationResult = InvocationResult.invalid
     private var historyRevision = 0
-    private var undoHistory: [TodoOperation] = []
-    private var redoHistory: [TodoOperation] = []
+    private var undoTodayImpacts: [Bool] = []
+    private var redoTodayImpacts: [Bool] = []
 
     /// 是否有可撤销的操作
     var canUndo: Bool {
@@ -281,12 +281,12 @@ final class TodoUndoManager {
         nsUndoManager.undoActionName
     }
 
-    func nextUndoAffectsToday(store: TodoStore) -> Bool? {
-        undoHistory.last.map { affectsToday($0, store: store) }
+    func nextUndoAffectsToday() -> Bool? {
+        undoTodayImpacts.last
     }
 
-    func nextRedoAffectsToday(store: TodoStore) -> Bool? {
-        redoHistory.last.map { affectsToday($0, store: store) }
+    func nextRedoAffectsToday() -> Bool? {
+        redoTodayImpacts.last
     }
 
     init() {
@@ -320,7 +320,7 @@ final class TodoUndoManager {
         target: TodoOperationValueTarget,
         store: TodoStore
     ) {
-        recordHistoryRegistration(operation)
+        recordHistoryRegistration(operation, store: store)
         registerStandalone {
             nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
                 guard let self else { return }
@@ -344,21 +344,22 @@ final class TodoUndoManager {
         }
     }
 
-    private func recordHistoryRegistration(_ operation: TodoOperation) {
+    private func recordHistoryRegistration(_ operation: TodoOperation, store: TodoStore) {
+        let affectsToday = affectsToday(operation, store: store)
         if nsUndoManager.isUndoing {
-            redoHistory.append(operation)
-            trimHistory(&redoHistory)
+            redoTodayImpacts.append(affectsToday)
+            trimHistory(&redoTodayImpacts)
         } else if nsUndoManager.isRedoing {
-            undoHistory.append(operation)
-            trimHistory(&undoHistory)
+            undoTodayImpacts.append(affectsToday)
+            trimHistory(&undoTodayImpacts)
         } else {
-            undoHistory.append(operation)
-            trimHistory(&undoHistory)
-            redoHistory.removeAll()
+            undoTodayImpacts.append(affectsToday)
+            trimHistory(&undoTodayImpacts)
+            redoTodayImpacts.removeAll()
         }
     }
 
-    private func trimHistory(_ history: inout [TodoOperation]) {
+    private func trimHistory(_ history: inout [Bool]) {
         if history.count > maxUndoSteps {
             history.removeFirst(history.count - maxUndoSteps)
         }
@@ -518,8 +519,8 @@ final class TodoUndoManager {
     @discardableResult
     func undo() -> Bool {
         while nsUndoManager.canUndo {
-            if undoHistory.isEmpty == false {
-                undoHistory.removeLast()
+            if undoTodayImpacts.isEmpty == false {
+                undoTodayImpacts.removeLast()
             }
             invocationResult = .invalid
             nsUndoManager.undo()
@@ -538,8 +539,8 @@ final class TodoUndoManager {
     @discardableResult
     func redo() -> Bool {
         while nsUndoManager.canRedo {
-            if redoHistory.isEmpty == false {
-                redoHistory.removeLast()
+            if redoTodayImpacts.isEmpty == false {
+                redoTodayImpacts.removeLast()
             }
             invocationResult = .invalid
             nsUndoManager.redo()
@@ -557,8 +558,8 @@ final class TodoUndoManager {
     /// 清空撤销栈
     func clear() {
         nsUndoManager.removeAllActions()
-        undoHistory.removeAll()
-        redoHistory.removeAll()
+        undoTodayImpacts.removeAll()
+        redoTodayImpacts.removeAll()
         historyRevision += 1
     }
 }
