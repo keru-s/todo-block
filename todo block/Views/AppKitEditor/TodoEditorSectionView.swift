@@ -25,6 +25,8 @@ final class TodoEditorSectionView: NSView {
     var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
     var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
     var onSelectionDragEnded: (() -> Void)?
+    var onSelectionDragCancelled: (() -> Void)?
+    var onBackgroundClick: (() -> Void)?
 
     init(snapshot: TodoEditorSectionSnapshot, actions: TodoEditorActions) {
         self.actions = actions
@@ -36,6 +38,10 @@ final class TodoEditorSectionView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onBackgroundClick?()
     }
 
     private func configureViewHierarchy() {
@@ -252,6 +258,9 @@ final class TodoEditorSectionView: NSView {
         }
         rowView.onSelectionDragEnded = { [weak self] in
             self?.onSelectionDragEnded?()
+        }
+        rowView.onSelectionDragCancelled = { [weak self] in
+            self?.onSelectionDragCancelled?()
         }
     }
 

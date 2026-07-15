@@ -44,6 +44,7 @@ final class SelectionManager {
     // Shift多选时的锚点
     var lastSelectedId: UUID?
     private var dragAnchorId: UUID?
+    private var dragSelectionBefore: TodoSelectionState?
     private(set) var isDragSelecting: Bool = false
 
     // 光标位置
@@ -108,6 +109,9 @@ final class SelectionManager {
 
     /// 长按开始：以当前 item 为锚点开始连续多选
     func beginDragSelection(item: TodoItem, allItems: [TodoItem], cursorPosition: Int? = nil) {
+        if dragSelectionBefore == nil {
+            dragSelectionBefore = TodoSelectionState(selectionManager: self)
+        }
         preferredHorizontalOffset = nil
         verticalMoveDirection = nil
 
@@ -121,6 +125,7 @@ final class SelectionManager {
         lastSelectedId = item.id
         focusedItemId = item.id
         selectedItemIds = [item.id]
+        textSelectionLength = 0
     }
 
     /// 长按拖拽更新：按锚点与当前命中项形成连续范围
@@ -140,6 +145,25 @@ final class SelectionManager {
     func endDragSelection() {
         isDragSelecting = false
         dragAnchorId = nil
+        dragSelectionBefore = nil
+    }
+
+    func captureDragSelectionBefore() {
+        guard isDragSelecting == false, dragSelectionBefore == nil else { return }
+        dragSelectionBefore = TodoSelectionState(selectionManager: self)
+    }
+
+    func discardPreparedDragSelection() {
+        guard isDragSelecting == false else { return }
+        dragSelectionBefore = nil
+    }
+
+    func cancelDragSelection() {
+        guard let dragSelectionBefore else { return }
+        dragSelectionBefore.apply(to: self)
+        isDragSelecting = false
+        dragAnchorId = nil
+        self.dragSelectionBefore = nil
     }
 
     /// 清除所有选择
@@ -147,6 +171,15 @@ final class SelectionManager {
         if selectedItemIds.count > 1 {
             selectedItemIds.removeAll()
         }
+    }
+
+    func clearAllSelection() {
+        selectedItemIds.removeAll()
+        focusedItemId = nil
+        lastSelectedId = nil
+        textSelectionLength = 0
+        preferredHorizontalOffset = nil
+        verticalMoveDirection = nil
     }
 
     // MARK: - 焦点移动

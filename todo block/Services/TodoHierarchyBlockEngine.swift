@@ -83,6 +83,62 @@ enum TodoHierarchyBlockEngine {
         }
     }
 
+    static func movedSnapshots(
+        _ snapshots: [TodoItemSnapshot],
+        sourceItems: [TodoItem],
+        sourceIndices: [Int],
+        destination: TodoDropDestination,
+        afterItem: TodoItem?,
+        targetItems: [TodoItem],
+        indentDelta: Int
+    ) -> [TodoItemSnapshot] {
+        guard snapshots.count == sourceIndices.count,
+              sourceIndices.allSatisfy({ sourceItems.indices.contains($0) })
+        else { return [] }
+
+        let normalizedDestination = destination.normalized
+        let normalizedIndentLevels = normalizedIndentLevels(in: sourceItems)
+        let baseSortOrder: Double
+        let stepSize: Double
+
+        if let afterItem,
+           let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id })
+        {
+            if afterIndex + 1 < targetItems.count {
+                let gap = targetItems[afterIndex + 1].sortOrder - afterItem.sortOrder
+                stepSize = gap / Double(snapshots.count + 1)
+                baseSortOrder = afterItem.sortOrder + stepSize
+            } else {
+                baseSortOrder = afterItem.sortOrder + 1000
+                stepSize = 0.001
+            }
+        } else if let firstItem = targetItems.first {
+            baseSortOrder = firstItem.sortOrder - 1000
+            stepSize = 0.001
+        } else {
+            baseSortOrder = 1000
+            stepSize = 0.001
+        }
+
+        return zip(snapshots, sourceIndices).enumerated().map { offset, pair in
+            let (snapshot, sourceIndex) = pair
+            let movedDate: Date = if case .scheduled(let date) = normalizedDestination {
+                date
+            } else {
+                snapshot.dayDate
+            }
+            return snapshot.replacing(
+                indentLevel: min(
+                    TodoItem.maxIndentLevel,
+                    max(0, normalizedIndentLevels[sourceIndex] + indentDelta)
+                ),
+                sortOrder: baseSortOrder + Double(offset) * stepSize,
+                containerKindRaw: normalizedDestination.containerKind.rawValue,
+                dayDate: movedDate
+            )
+        }
+    }
+
     static func precedingBlockStart(
         before block: TodoHierarchyBlock,
         in items: [TodoItem]

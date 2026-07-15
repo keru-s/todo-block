@@ -20,8 +20,8 @@ final class TodoEditorRowView: NSView {
     private var isApplyingSnapshot = false
     private var isComposingText = false
     private var latestSnapshot: TodoEditorItemSnapshot?
-    private var selectionMouseDownTime: Date?
     private var didStartDragSelection = false
+    private var textSelectionAnchor: Int?
     private var prefersRowFirstResponder = false
     private var lastStyledCompleted: Bool?
     private var focusUpdateVersion = 0
@@ -32,6 +32,7 @@ final class TodoEditorRowView: NSView {
     var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
     var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
     var onSelectionDragEnded: (() -> Void)?
+    var onSelectionDragCancelled: (() -> Void)?
 
     init(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions) {
         self.actions = actions
@@ -85,7 +86,36 @@ final class TodoEditorRowView: NSView {
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
             prefersRowFirstResponder = false
+            actions.captureDragSelectionBefore()
             actions.selectItem(itemId, shiftPressed, cursorPosition)
+        }
+        titleTextView.onMouseInteractionEnded = { [weak self] didCrossItemSelection in
+            guard let self, didCrossItemSelection == false else { return }
+            actions.discardPreparedDragSelection()
+        }
+        titleTextView.onEscapePressed = { [weak self] in
+            self?.handleEscape() ?? false
+        }
+        titleTextView.shouldBeginCrossItemSelection = { [weak self] location in
+            self?.hasExitedTextSelectionRegion(at: location) ?? false
+        }
+        titleTextView.onCrossItemSelectionBegan = { [weak self] location, cursorPosition in
+            guard let self, let itemId else { return }
+            prefersRowFirstResponder = true
+            window?.makeFirstResponder(self)
+            onSelectionDragBegan?(itemId, location)
+        }
+        titleTextView.onCrossItemSelectionChanged = { [weak self] location in
+            guard let self, let itemId else { return }
+            onSelectionDragChanged?(itemId, location)
+        }
+        titleTextView.onCrossItemSelectionEnded = { [weak self] in
+            self?.onSelectionDragEnded?()
+        }
+        titleTextView.onCrossItemSelectionCancelled = { [weak self] in
+            guard let self else { return }
+            prefersRowFirstResponder = false
+            onSelectionDragCancelled?()
         }
         titleTextView.onUserInteraction = { [weak self] in
             self?.actions.claimCurrentList()
@@ -260,11 +290,18 @@ final class TodoEditorRowView: NSView {
     override func mouseDown(with event: NSEvent) {
         if let itemId {
             actions.claimCurrentList()
-            selectionMouseDownTime = Date()
             didStartDragSelection = false
-            prefersRowFirstResponder = true
-            actions.selectItem(itemId, event.modifierFlags.contains(.shift), nil)
-            window?.makeFirstResponder(self)
+            let position = titleCharacterIndex(at: event.locationInWindow)
+            textSelectionAnchor = position
+            prefersRowFirstResponder = false
+            actions.captureDragSelectionBefore()
+            actions.selectItem(itemId, event.modifierFlags.contains(.shift), position)
+            titleTextView.focus(
+                cursorPosition: position,
+                selectionLength: 0,
+                preferredHorizontalOffset: nil,
+                verticalMoveDirection: nil
+            )
         }
         super.mouseDown(with: event)
     }
@@ -275,28 +312,42 @@ final class TodoEditorRowView: NSView {
             return
         }
 
-        if didStartDragSelection == false {
-            let elapsed = abs(selectionMouseDownTime?.timeIntervalSinceNow ?? 0)
-            guard elapsed >= 0.15 else { return }
+        if didStartDragSelection == false,
+           hasExitedTextSelectionRegion(at: event.locationInWindow) {
             didStartDragSelection = true
             onSelectionDragBegan?(itemId, event.locationInWindow)
         }
-
-        onSelectionDragChanged?(itemId, event.locationInWindow)
+        if didStartDragSelection {
+            onSelectionDragChanged?(itemId, event.locationInWindow)
+        } else if let textSelectionAnchor {
+            let position = titleCharacterIndex(at: event.locationInWindow)
+            titleTextView.setSelectedRange(
+                NSRange(
+                    location: min(textSelectionAnchor, position),
+                    length: abs(textSelectionAnchor - position)
+                )
+            )
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
         if didStartDragSelection {
             onSelectionDragEnded?()
+        } else {
+            actions.discardPreparedDragSelection()
         }
-        selectionMouseDownTime = nil
         didStartDragSelection = false
+        textSelectionAnchor = nil
         super.mouseUp(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
         guard let itemId else {
             super.keyDown(with: event)
+            return
+        }
+
+        if event.keyCode == 53, handleEscape() {
             return
         }
 
@@ -321,6 +372,24 @@ final class TodoEditorRowView: NSView {
         super.keyDown(with: event)
     }
 
+    private func cancelSelectionDragIfNeeded() -> Bool {
+        guard didStartDragSelection else { return false }
+        didStartDragSelection = false
+        textSelectionAnchor = nil
+        prefersRowFirstResponder = false
+        onSelectionDragCancelled?()
+        return true
+    }
+
+    private func handleEscape() -> Bool {
+        if cancelSelectionDragIfNeeded() {
+            return true
+        }
+        guard actions.hasMultipleSelection() else { return false }
+        actions.clearSelection()
+        return true
+    }
+
     private func applyTextStyle(isCompleted: Bool) {
         let range = NSRange(location: 0, length: (titleTextView.string as NSString).length)
         let wasFirstResponder = window?.firstResponder === titleTextView
@@ -342,6 +411,54 @@ final class TodoEditorRowView: NSView {
             )
         }
         titleTextView.insertionPointColor = isCompleted ? .secondaryLabelColor : .labelColor
+    }
+
+    private func hasExitedTextSelectionRegion(at windowLocation: NSPoint) -> Bool {
+        let rowFrame = convert(bounds, to: nil)
+        let titleFrame = visibleTitleFrameInWindow()
+        let font = titleTextView.font ?? .preferredFont(forTextStyle: .body)
+        let protection = ("字" as NSString).size(withAttributes: [.font: font]).width * 3
+        return TodoEditorCrossItemDragBoundary.hasExitedTextSelectionRegion(
+            at: windowLocation,
+            rowFrame: rowFrame,
+            titleFrame: titleFrame,
+            horizontalProtection: protection
+        )
+    }
+
+    private func visibleTitleFrameInWindow() -> NSRect {
+        guard let layoutManager = titleTextView.layoutManager,
+              let textContainer = titleTextView.textContainer
+        else {
+            return titleTextView.convert(titleTextView.bounds, to: nil)
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let characterRange = NSRange(
+            location: 0,
+            length: (titleTextView.string as NSString).length
+        )
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: characterRange,
+            actualCharacterRange: nil
+        )
+        let usedRect = glyphRange.length > 0
+            ? layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            : .zero
+        let containerOrigin = titleTextView.textContainerOrigin
+        let titleFrame = NSRect(
+            x: containerOrigin.x + usedRect.minX,
+            y: containerOrigin.y + usedRect.minY,
+            width: max(1, usedRect.width),
+            height: max(1, usedRect.height)
+        )
+        return titleTextView.convert(titleFrame, to: nil)
+    }
+
+    private func titleCharacterIndex(at windowLocation: NSPoint) -> Int {
+        let point = titleTextView.convert(windowLocation, from: nil)
+        let textLength = (titleTextView.string as NSString).length
+        return min(max(0, titleTextView.characterIndexForInsertion(at: point)), textLength)
     }
 }
 

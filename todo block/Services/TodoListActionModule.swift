@@ -368,7 +368,15 @@ final class TodoListActionModule {
             return result
         }
         prepareForExternalAction()
-        store.toggleComplete(item)
+        if selectionManager.selectedItemIds.contains(item.id) {
+            store.setCompletion(
+                of: selectionManager.selectedItemIds,
+                in: store.destination(for: item),
+                isCompleted: item.isCompleted == false
+            )
+        } else {
+            store.toggleComplete(item)
+        }
         return .performed
     }
 
@@ -430,6 +438,12 @@ final class TodoListActionModule {
             toggleCompleted: { [self] itemId in
                 self.toggleCompleted(itemId: itemId)
             },
+            isItemSelected: { [self] itemId in
+                selectionManager.selectedItemIds.contains(itemId)
+            },
+            hasMultipleSelection: { [self] in
+                selectionManager.selectedItemIds.count > 1
+            },
             selectItem: { [self] itemId, shiftPressed, cursorPosition in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
                 prepareForExternalAction()
@@ -439,6 +453,16 @@ final class TodoListActionModule {
                     shiftPressed: shiftPressed,
                     cursorPosition: cursorPosition
                 )
+            },
+            clearSelection: { [self] in
+                prepareForExternalAction()
+                selectionManager.clearAllSelection()
+            },
+            captureDragSelectionBefore: { [self] in
+                selectionManager.captureDragSelectionBefore()
+            },
+            discardPreparedDragSelection: { [self] in
+                selectionManager.discardPreparedDragSelection()
             },
             beginDragSelection: { [self] itemId, cursorPosition in
                 guard let item = self.store.todoItemsCache[itemId] else { return }
@@ -458,6 +482,9 @@ final class TodoListActionModule {
             },
             endDragSelection: { [self] in
                 self.selectionManager.endDragSelection()
+            },
+            cancelDragSelection: { [self] in
+                self.selectionManager.cancelDragSelection()
             },
             addItem: { [self] destination in
                 self.prepareForExternalAction()
@@ -494,6 +521,18 @@ final class TodoListActionModule {
             },
             moveDraggedItem: { [self] itemId, destination, toIndex, indentLevel in
                 prepareForExternalAction()
+                if TodoSelectionDragMoveEngine.performMove(
+                       TodoSelectionDragMoveRequest(
+                           draggedId: itemId,
+                           destination: destination,
+                           insertionIndex: toIndex,
+                           indentLevel: indentLevel
+                       ),
+                       store: store,
+                       selectionManager: selectionManager
+                   ) {
+                    return
+                }
                 _ = TodoReorderMoveEngine.performMove(
                     draggedId: itemId,
                     toIndex: toIndex,

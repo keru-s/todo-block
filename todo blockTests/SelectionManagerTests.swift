@@ -100,6 +100,42 @@ final class SelectionManagerTests: XCTestCase {
 
         XCTAssertEqual(selectionManager.selectedItemIds, Set([items[0].id]))
     }
+
+    @MainActor
+    func testCancelDragSelectionRestoresStateCapturedBeforeTheClick() {
+        selectionManager.selectedItemIds = [items[0].id, items[1].id]
+        selectionManager.focusedItemId = items[1].id
+        selectionManager.lastSelectedId = items[1].id
+        selectionManager.cursorPosition = 4
+        selectionManager.textSelectionLength = 2
+
+        selectionManager.captureDragSelectionBefore()
+        selectionManager.handleSelect(item: items[3], allItems: items, shiftPressed: false)
+        selectionManager.beginDragSelection(item: items[3], allItems: items)
+        selectionManager.updateDragSelection(to: items[4], allItems: items)
+        selectionManager.cancelDragSelection()
+
+        XCTAssertEqual(selectionManager.selectedItemIds, [items[0].id, items[1].id])
+        XCTAssertEqual(selectionManager.focusedItemId, items[1].id)
+        XCTAssertEqual(selectionManager.lastSelectedId, items[1].id)
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
+        XCTAssertEqual(selectionManager.textSelectionLength, 2)
+    }
+
+    @MainActor
+    func testDiscardPreparedDragSelectionDoesNotRestoreAnOrdinaryClick() {
+        selectionManager.handleSelect(item: items[0], allItems: items, shiftPressed: false)
+        selectionManager.captureDragSelectionBefore()
+        selectionManager.handleSelect(item: items[2], allItems: items, shiftPressed: false)
+        selectionManager.discardPreparedDragSelection()
+
+        selectionManager.beginDragSelection(item: items[2], allItems: items)
+        selectionManager.updateDragSelection(to: items[3], allItems: items)
+        selectionManager.cancelDragSelection()
+
+        XCTAssertEqual(selectionManager.selectedItemIds, [items[2].id])
+        XCTAssertEqual(selectionManager.focusedItemId, items[2].id)
+    }
     
     @MainActor
     func testClearSelection() {

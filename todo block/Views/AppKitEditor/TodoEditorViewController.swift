@@ -8,6 +8,7 @@ import AppKit
 @MainActor
 final class TodoEditorViewController: NSViewController {
     private let scrollView = NSScrollView()
+    private let clipView = TodoEditorClipView()
     private let documentView = TodoEditorDocumentView()
     private let stackView = NSStackView()
     private let emptyLabel = NSTextField(labelWithString: "")
@@ -23,12 +24,23 @@ final class TodoEditorViewController: NSViewController {
     private var activeDrop: TodoEditorResolvedDrop?
     private var lastRevealRequestId: UUID?
     private var dragSelectionSectionId: UUID?
+    private var lastSelectionDragWindowLocation: NSPoint?
+    private var selectionAutoscrollTask: Task<Void, Never>?
+    private var windowObserverTokens: [NSObjectProtocol] = []
     private let dragSession = TodoEditorDragSession.shared
 
     override func loadView() {
         view = NSView()
         configureViewHierarchy()
         configureEmptyLabel()
+        installWindowObservers()
+    }
+
+    deinit {
+        selectionAutoscrollTask?.cancel()
+        for token in windowObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     func update(
@@ -60,8 +72,16 @@ final class TodoEditorViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        scrollView.contentView = clipView
+
+        clipView.onBackgroundClick = { [weak self] in
+            self?.handleBackgroundClick()
+        }
 
         documentView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.onBackgroundClick = { [weak self] in
+            self?.handleBackgroundClick()
+        }
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.orientation = .vertical
@@ -144,7 +164,9 @@ final class TodoEditorViewController: NSViewController {
     private func handleDragBegan(itemId: UUID, windowLocation: NSPoint) {
         draggingItemId = itemId
         dragSession.begin(itemId: itemId, screenLocation: screenLocation(from: windowLocation))
-        actions.selectItem(itemId, false, nil)
+        if actions.isItemSelected(itemId) == false {
+            actions.selectItem(itemId, false, nil)
+        }
         updateDrop(windowLocation: windowLocation)
     }
 
@@ -184,10 +206,17 @@ final class TodoEditorViewController: NSViewController {
     private func handleSelectionDragBegan(itemId: UUID, windowLocation: NSPoint) {
         dragSelectionSectionId = sectionSnapshot(containing: itemId)?.id
         actions.beginDragSelection(itemId, nil)
+        startSelectionAutoscroll()
         handleSelectionDragChanged(itemId: itemId, windowLocation: windowLocation)
     }
 
     private func handleSelectionDragChanged(itemId: UUID, windowLocation: NSPoint) {
+        lastSelectionDragWindowLocation = windowLocation
+        autoscrollSelectionIfNeeded(at: windowLocation)
+        updateSelectionDragTarget(at: windowLocation)
+    }
+
+    private func updateSelectionDragTarget(at windowLocation: NSPoint) {
         let point = documentView.convert(windowLocation, from: nil)
         guard
             let sectionId = dragSelectionSectionId,
@@ -198,8 +227,115 @@ final class TodoEditorViewController: NSViewController {
         actions.updateDragSelection(targetId)
     }
 
+    @discardableResult
+    private func autoscrollSelectionIfNeeded(at windowLocation: NSPoint) -> Bool {
+        let clipView = scrollView.contentView
+        let location = clipView.convert(windowLocation, from: nil)
+        let edgeInset: CGFloat = 24
+        let delta: CGFloat
+        if location.y < clipView.bounds.minY + edgeInset {
+            delta = -8
+        } else if location.y > clipView.bounds.maxY - edgeInset {
+            delta = 8
+        } else {
+            return false
+        }
+        let documentMaximumY = max(0, documentView.bounds.height - clipView.bounds.height)
+        let sectionScrollBounds: (minY: CGFloat, maxY: CGFloat) = {
+            guard let sectionId = dragSelectionSectionId,
+                  let sectionView = sectionViewsById[sectionId]
+            else {
+                return (0, documentMaximumY)
+            }
+            let sectionFrame = sectionView.convert(sectionView.bounds, to: documentView)
+            let minY = min(max(0, sectionFrame.minY), documentMaximumY)
+            let maxY = min(
+                documentMaximumY,
+                max(minY, sectionFrame.maxY - clipView.bounds.height)
+            )
+            return (minY, maxY)
+        }()
+        let origin = NSPoint(
+            x: clipView.bounds.origin.x,
+            y: min(
+                max(
+                    sectionScrollBounds.minY,
+                    clipView.bounds.origin.y + delta
+                ),
+                sectionScrollBounds.maxY
+            )
+        )
+        guard origin.y != clipView.bounds.origin.y else { return false }
+        clipView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(clipView)
+        return true
+    }
+
     private func handleSelectionDragEnded() {
+        stopSelectionAutoscroll()
         dragSelectionSectionId = nil
+        lastSelectionDragWindowLocation = nil
+        actions.endDragSelection()
+    }
+
+    private func handleSelectionDragCancelled() {
+        stopSelectionAutoscroll()
+        dragSelectionSectionId = nil
+        lastSelectionDragWindowLocation = nil
+        actions.cancelDragSelection()
+    }
+
+    private func startSelectionAutoscroll() {
+        stopSelectionAutoscroll()
+        selectionAutoscrollTask = Task { @MainActor [weak self] in
+            while Task.isCancelled == false {
+                do {
+                    try await Task.sleep(for: .milliseconds(50))
+                } catch {
+                    return
+                }
+                guard let self,
+                      let location = lastSelectionDragWindowLocation,
+                      dragSelectionSectionId != nil
+                else { return }
+                if autoscrollSelectionIfNeeded(at: location) {
+                    updateSelectionDragTarget(at: location)
+                }
+            }
+        }
+    }
+
+    private func stopSelectionAutoscroll() {
+        selectionAutoscrollTask?.cancel()
+        selectionAutoscrollTask = nil
+    }
+
+    private func handleBackgroundClick() {
+        view.window?.makeFirstResponder(nil)
+        actions.clearSelection()
+    }
+
+    private func installWindowObservers() {
+        let center = NotificationCenter.default
+        for name in [NSWindow.didResignKeyNotification, NSWindow.didResignMainNotification] {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let window = notification.object as? NSWindow,
+                          window === self.view.window
+                    else { return }
+                    self.finishSelectionWhenWindowResigns()
+                }
+            }
+            windowObserverTokens.append(token)
+        }
+    }
+
+    private func finishSelectionWhenWindowResigns() {
+        guard dragSelectionSectionId != nil else { return }
+        stopSelectionAutoscroll()
+        dragSelectionSectionId = nil
+        lastSelectionDragWindowLocation = nil
         actions.endDragSelection()
     }
 
@@ -332,6 +468,12 @@ final class TodoEditorViewController: NSViewController {
         sectionView.onSelectionDragEnded = { [weak self] in
             self?.handleSelectionDragEnded()
         }
+        sectionView.onSelectionDragCancelled = { [weak self] in
+            self?.handleSelectionDragCancelled()
+        }
+        sectionView.onBackgroundClick = { [weak self] in
+            self?.handleBackgroundClick()
+        }
     }
 
     private func moveArrangedSubview(_ subview: NSView, to index: Int) {
@@ -391,5 +533,19 @@ enum TodoEditorDropResolver {
 }
 
 private final class TodoEditorDocumentView: NSView {
+    var onBackgroundClick: (() -> Void)?
+
     override var isFlipped: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        onBackgroundClick?()
+    }
+}
+
+private final class TodoEditorClipView: NSClipView {
+    var onBackgroundClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onBackgroundClick?()
+    }
 }

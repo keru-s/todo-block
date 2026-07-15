@@ -55,6 +55,90 @@ final class TodoReorderEngineTests: XCTestCase {
         XCTAssertEqual(child.indentLevel, 1)
     }
 
+    func testDraggingSelectedSiblingChildrenMovesThemTogether() {
+        let store = TodoStore.shared
+        let selectionManager = SelectionManager()
+        let dayDate = date(year: 2026, month: 2, day: 22)
+
+        let parent = store.createItem(title: "parent", dayDate: dayDate, indentLevel: 0)
+        let firstChild = store.createItem(
+            title: "first child",
+            dayDate: dayDate,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let secondChild = store.createItem(
+            title: "second child",
+            dayDate: dayDate,
+            afterItem: firstChild,
+            indentLevel: 1
+        )
+        let tail = store.createItem(
+            title: "tail",
+            dayDate: dayDate,
+            afterItem: secondChild,
+            indentLevel: 0
+        )
+        selectionManager.selectedItemIds = [firstChild.id, secondChild.id]
+        selectionManager.focusedItemId = firstChild.id
+        selectionManager.lastSelectedId = secondChild.id
+
+        let moved = TodoSelectionDragMoveEngine.performMove(
+            TodoSelectionDragMoveRequest(
+                draggedId: firstChild.id,
+                destination: .scheduled(date: dayDate),
+                insertionIndex: 4,
+                indentLevel: 0
+            ),
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertTrue(moved)
+        XCTAssertEqual(
+            store.items(for: dayDate).map(\.id),
+            [parent.id, tail.id, firstChild.id, secondChild.id]
+        )
+        XCTAssertEqual(firstChild.indentLevel, 0)
+        XCTAssertEqual(secondChild.indentLevel, 0)
+        XCTAssertEqual(selectionManager.selectedItemIds, [firstChild.id, secondChild.id])
+    }
+
+    func testSelectionDragMoveDefersSingleSelectedParentToRegularMove() {
+        let store = TodoStore.shared
+        let selectionManager = SelectionManager()
+        let dayDate = date(year: 2026, month: 2, day: 22)
+
+        let parent = store.createItem(title: "parent", dayDate: dayDate, indentLevel: 0)
+        let child = store.createItem(
+            title: "child",
+            dayDate: dayDate,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let tail = store.createItem(
+            title: "tail",
+            dayDate: dayDate,
+            afterItem: child,
+            indentLevel: 0
+        )
+        selectionManager.selectedItemIds = [parent.id]
+
+        let moved = TodoSelectionDragMoveEngine.performMove(
+            TodoSelectionDragMoveRequest(
+                draggedId: parent.id,
+                destination: .scheduled(date: dayDate),
+                insertionIndex: 3,
+                indentLevel: 0
+            ),
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertFalse(moved)
+        XCTAssertEqual(store.items(for: dayDate).map(\.id), [parent.id, child.id, tail.id])
+    }
+
     func testPerformMoveClampsIndentAgainstPreviousItem() {
         let store = TodoStore.shared
         let dayDate = date(year: 2026, month: 2, day: 22)

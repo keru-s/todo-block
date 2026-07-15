@@ -25,10 +25,16 @@ struct TodoEditorActions {
     var textSelectionChanged: (UUID, TodoTextSelection) -> Void = { _, _ in }
     var inputSessionEnded: () -> Void = {}
     var toggleCompleted: (UUID) -> Void = { _ in }
+    var isItemSelected: (UUID) -> Bool = { _ in false }
+    var hasMultipleSelection: () -> Bool = { false }
     var selectItem: (UUID, Bool, Int?) -> Void = { _, _, _ in }
+    var clearSelection: () -> Void = {}
+    var captureDragSelectionBefore: () -> Void = {}
+    var discardPreparedDragSelection: () -> Void = {}
     var beginDragSelection: (UUID, Int?) -> Void = { _, _ in }
     var updateDragSelection: (UUID) -> Void = { _ in }
     var endDragSelection: () -> Void = {}
+    var cancelDragSelection: () -> Void = {}
     var addItem: (TodoDropDestination) -> Void = { _ in }
     var enterPressed: (UUID, EnterAction) -> Void = { _, _ in }
     var deletePressed: (UUID) -> Void = { _ in }

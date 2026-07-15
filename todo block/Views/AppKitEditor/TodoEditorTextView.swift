@@ -14,6 +14,13 @@ final class TodoEditorTextView: NSTextView {
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
     var onInputSessionEnded: (() -> Void)?
+    var shouldBeginCrossItemSelection: ((NSPoint) -> Bool)?
+    var onCrossItemSelectionBegan: ((NSPoint, Int) -> Void)?
+    var onCrossItemSelectionChanged: ((NSPoint) -> Void)?
+    var onCrossItemSelectionEnded: (() -> Void)?
+    var onCrossItemSelectionCancelled: (() -> Void)?
+    var onMouseInteractionEnded: ((Bool) -> Void)?
+    var onEscapePressed: (() -> Bool)?
     var deletesOnBackspace: Bool = false
     private var isApplyingHandledCommandText = false
     private var lastReportedText = ""
@@ -104,13 +111,105 @@ final class TodoEditorTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         endCurrentInputSession()
         onUserInteraction?()
-        super.mouseDown(with: event)
-        onMouseFocus?(event.modifierFlags.contains(.shift), selectedRange().location)
+        guard let window else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let anchor = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        onMouseFocus?(event.modifierFlags.contains(.shift), anchor)
+
+        if event.clickCount > 1 {
+            super.mouseDown(with: event)
+            onMouseInteractionEnded?(false)
+            return
+        }
+
+        setSelectedRange(NSRange(location: anchor, length: 0))
+        var isCrossItemSelecting = false
+        var windowDidResign = false
+        let notificationCenter = NotificationCenter.default
+        let windowObserverTokens = [
+            notificationCenter.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: window,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    windowDidResign = true
+                }
+            },
+            notificationCenter.addObserver(
+                forName: NSWindow.didResignMainNotification,
+                object: window,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    windowDidResign = true
+                }
+            }
+        ]
+        defer {
+            for token in windowObserverTokens {
+                notificationCenter.removeObserver(token)
+            }
+        }
+
+        while windowDidResign == false {
+            guard let nextEvent = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp, .keyDown],
+                until: Date.now.addingTimeInterval(0.05),
+                inMode: .default,
+                dequeue: true
+            ) else {
+                continue
+            }
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                if isCrossItemSelecting == false,
+                   shouldBeginCrossItemSelection?(nextEvent.locationInWindow) == true {
+                    isCrossItemSelecting = true
+                    setSelectedRange(NSRange(location: anchor, length: 0))
+                    onCrossItemSelectionBegan?(nextEvent.locationInWindow, anchor)
+                }
+                if isCrossItemSelecting {
+                    onCrossItemSelectionChanged?(nextEvent.locationInWindow)
+                } else {
+                    let position = characterIndexForInsertion(
+                        at: convert(nextEvent.locationInWindow, from: nil)
+                    )
+                    setSelectedRange(
+                        NSRange(location: min(anchor, position), length: abs(anchor - position))
+                    )
+                }
+            case .leftMouseUp:
+                if isCrossItemSelecting {
+                    onCrossItemSelectionEnded?()
+                }
+                onMouseInteractionEnded?(isCrossItemSelecting)
+                return
+            case .keyDown where isCrossItemSelecting && nextEvent.keyCode == 53:
+                onCrossItemSelectionCancelled?()
+                return
+            default:
+                break
+            }
+        }
+
+        if windowDidResign {
+            if isCrossItemSelecting {
+                onCrossItemSelectionEnded?()
+            }
+            onMouseInteractionEnded?(isCrossItemSelecting)
+        }
     }
 
     override func keyDown(with event: NSEvent) {
         endCurrentInputSession()
         onUserInteraction?()
+        if event.keyCode == 53, onEscapePressed?() == true {
+            return
+        }
         super.keyDown(with: event)
     }
 

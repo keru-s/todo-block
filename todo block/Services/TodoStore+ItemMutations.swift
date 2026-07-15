@@ -340,6 +340,37 @@ extension TodoStore {
         )
     }
 
+    func setCompletion(
+        of itemIds: Set<UUID>,
+        in destination: TodoDropDestination,
+        isCompleted: Bool
+    ) {
+        let allItems = items(in: destination)
+        let rootIds = TodoHierarchyBlockEngine.blockRootIds(
+            selectedFrom: itemIds,
+            in: allItems
+        )
+        let coveredIds = TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
+            rootedAt: Set(rootIds),
+            in: allItems
+        )
+        let changes = allItems.compactMap { candidate -> TodoCompletionChange? in
+            guard coveredIds.contains(candidate.id), candidate.isCompleted != isCompleted else {
+                return nil
+            }
+            return TodoCompletionChange(
+                itemId: candidate.id,
+                before: candidate.isCompleted,
+                after: isCompleted
+            )
+        }
+        guard changes.isEmpty == false else { return }
+        undoManager.perform(
+            TodoOperation(actionName: "勾选", completionChanges: changes),
+            store: self
+        )
+    }
+
     func indentItem(_ item: TodoItem, selectionManager: SelectionManager? = nil) {
         changeIndent(of: item, requestedDelta: 1, selectionManager: selectionManager)
     }
@@ -448,56 +479,16 @@ extension TodoStore {
 
         let targetItems = items(in: normalizedDestination).filter { movingIds.contains($0.id) == false }
 
-        // 计算 baseSortOrder + stepSize：必须保证 itemsToMove 落点全在
-        // (afterItem, nextItem) 这个 gap 内，否则带 child 移动时 child 会越过
-        // nextItem 排到后面，看起来像"父项移走了 child 没跟上"。
-        // 固定 0.001 步进在历史密集插入产生的小 gap（如 0.001）下会触发。
-        let baseSortOrder: Double
-        let stepSize: Double
-        if let afterItem,
-            let afterIndex = targetItems.firstIndex(where: { $0.id == afterItem.id })
-        {
-            if afterIndex + 1 < targetItems.count {
-                let nextItem = targetItems[afterIndex + 1]
-                let gap = nextItem.sortOrder - afterItem.sortOrder
-                // 把 gap 平均分给 (itemsToMove.count + 1) 个间隔，
-                // baseSortOrder 占第 1 格，余下 N 个 child 各占 1 格，
-                // 最后一个 child 离 nextItem 还有 1 格缓冲。
-                let slots = Double(itemsToMove.count + 1)
-                stepSize = gap / slots
-                baseSortOrder = afterItem.sortOrder + stepSize
-            } else {
-                baseSortOrder = afterItem.sortOrder + 1000
-                stepSize = 0.001
-            }
-        } else if let firstItem = targetItems.first {
-            baseSortOrder = firstItem.sortOrder - 1000
-            stepSize = 0.001
-        } else {
-            baseSortOrder = 1000
-            stepSize = 0.001
-        }
-
-        let movedSnapshots = snapshots.enumerated().map { offset, snapshot in
-            let sourceIndex = movingBlock.range.lowerBound + offset
-            let movedDate: Date = if case .scheduled(let date) = normalizedDestination {
-                date
-            } else {
-                snapshot.dayDate
-            }
-            return snapshot.replacing(
-                indentLevel: max(
-                0,
-                    min(
-                        TodoItem.maxIndentLevel,
-                        normalizedIndentLevels[sourceIndex] + indentDelta
-                    )
-                ),
-                sortOrder: baseSortOrder + Double(offset) * stepSize,
-                containerKindRaw: normalizedDestination.containerKind.rawValue,
-                dayDate: movedDate
-            )
-        }
+        let movedSnapshots = TodoHierarchyBlockEngine.movedSnapshots(
+            snapshots,
+            sourceItems: sourceItems,
+            sourceIndices: Array(movingBlock.range),
+            destination: normalizedDestination,
+            afterItem: afterItem,
+            targetItems: targetItems,
+            indentDelta: indentDelta
+        )
+        guard movedSnapshots.count == snapshots.count else { return false }
 
         let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
             let before = TodoSelectionState(selectionManager: manager)

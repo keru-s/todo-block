@@ -39,6 +39,28 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         XCTAssertTrue(child.isCompleted)
     }
 
+    func testToggleCompletedActionAppliesTappedStateToTheWholeSelection() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let first = store.createItem(title: "first", dayDate: day)
+        let second = store.createItem(title: "second", dayDate: day, afterItem: first)
+        let actions = makeModule(store: store).editorActions
+        selectionManager.selectedItemIds = [first.id, second.id]
+        selectionManager.focusedItemId = first.id
+
+        actions.toggleCompleted(first.id)
+
+        XCTAssertTrue(first.isCompleted)
+        XCTAssertTrue(second.isCompleted)
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, second.id])
+
+        actions.toggleCompleted(first.id)
+
+        XCTAssertFalse(first.isCompleted)
+        XCTAssertFalse(second.isCompleted)
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, second.id])
+    }
+
     func testKeyboardMoveActionMovesBlockAndRestoresFocus() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
