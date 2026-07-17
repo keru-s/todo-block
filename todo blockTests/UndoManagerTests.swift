@@ -219,51 +219,6 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertEqual(item.indentLevel, 1)
     }
 
-    func testUndoMoveRestoresIndentBeforeAutomaticNormalization() {
-        let store = TodoStore.shared
-        let date = Date()
-        let root = store.createItem(title: "root", dayDate: date, indentLevel: 0)
-        let moving = store.createItem(
-            title: "moving",
-            dayDate: date,
-            afterItem: root,
-            indentLevel: 3
-        )
-        let descendant = store.createItem(
-            title: "descendant",
-            dayDate: date,
-            afterItem: moving,
-            indentLevel: 4
-        )
-        _ = store.createItem(
-            title: "sibling",
-            dayDate: date,
-            afterItem: descendant,
-            indentLevel: 1
-        )
-        store.undoManager.clear()
-
-        XCTAssertTrue(
-            TodoKeyboardReorderEngine.move(
-                itemId: moving.id,
-                direction: .down,
-                items: store.items(for: date),
-                destination: .scheduled(date: date),
-                store: store
-            )
-        )
-        XCTAssertEqual(moving.indentLevel, 1)
-        XCTAssertEqual(descendant.indentLevel, 2)
-
-        XCTAssertTrue(store.undo())
-        XCTAssertEqual(
-            store.items(for: date).map(\.title),
-            ["root", "moving", "descendant", "sibling"]
-        )
-        XCTAssertEqual(moving.indentLevel, 3)
-        XCTAssertEqual(descendant.indentLevel, 4)
-    }
-
     func testInvalidIndentDoesNotAddHistory() {
         let store = TodoStore.shared
         let item = store.createItem(

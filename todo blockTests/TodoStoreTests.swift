@@ -9,7 +9,7 @@ import XCTest
 import SwiftData
 @testable import todo_block
 
-/// 注意：本套件和 UndoManagerTests / TodoKeyboardReorderEngineTests 都依赖
+/// 注意：本套件和 UndoManagerTests / TodoParentChildGroupMoveModuleTests 都依赖
 /// `TodoStore.shared` 这一全局单例，靠 setUp 里 reset+initialize 隔离用例。
 /// 此前提是 xcodebuild test 在 macOS 平台默认**串行**执行 test class — 不要在
 /// scheme 里启用 parallel-testable（`-parallel-testing-enabled YES`），否则
@@ -1136,59 +1136,6 @@ final class TodoStoreTests: XCTestCase {
         )
         XCTAssertEqual(child1.indentLevel, 1)
         XCTAssertEqual(child2.indentLevel, 1)
-    }
-
-    /// 走 TodoReorderMoveEngine（UI 拖放实际路径），二级 parent 带三级 child 向下移动。
-    func testReorderEngineMovesLevel2ParentWithLevel3Child() {
-        let store = TodoStore.shared
-        let day = date(year: 2026, month: 5, day: 24)
-
-        let top = store.createItem(title: "top", dayDate: day)  // indent 0
-        let parent = store.createItem(title: "parent", dayDate: day, afterItem: top, indentLevel: 1)
-        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
-        let after = store.createItem(title: "after", dayDate: day, afterItem: child, indentLevel: 1)
-
-        // 模拟 UI：将 parent (indent 1) 拖到 after (indent 1) 下方
-        let items = store.items(for: day)
-        let afterIndex = items.firstIndex(where: { $0.id == after.id })!
-        TodoReorderMoveEngine.performMove(
-            draggedId: parent.id,
-            toIndex: afterIndex + 1,  // 插入 after 之后
-            indentLevel: 1,
-            items: items,
-            destination: .scheduled(date: day),
-            store: store
-        )
-
-        XCTAssertEqual(
-            store.items(for: day).map(\.title),
-            ["top", "after", "parent", "child"]
-        )
-    }
-
-    /// 走 TodoKeyboardReorderEngine（快捷键 Cmd+↑↓ 实际路径），二级 parent 向下，三级 child 必须跟随。
-    func testKeyboardReorderMovesLevel2ParentWithLevel3ChildDown() {
-        let store = TodoStore.shared
-        let day = date(year: 2026, month: 5, day: 24)
-
-        let top = store.createItem(title: "top", dayDate: day)
-        let parent = store.createItem(title: "parent", dayDate: day, afterItem: top, indentLevel: 1)
-        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
-        _ = store.createItem(title: "after", dayDate: day, afterItem: child, indentLevel: 1)
-
-        let moved = TodoKeyboardReorderEngine.move(
-            itemId: parent.id,
-            direction: .down,
-            items: store.items(for: day),
-            destination: .scheduled(date: day),
-            store: store
-        )
-
-        XCTAssertTrue(moved)
-        XCTAssertEqual(
-            store.items(for: day).map(\.title),
-            ["top", "after", "parent", "child"]
-        )
     }
 
     /// 跨日移动带 child 的 parent，child.dayDate 必须跟随。

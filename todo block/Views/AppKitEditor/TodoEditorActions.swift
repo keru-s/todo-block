@@ -41,7 +41,7 @@ struct TodoEditorActions {
     var indent: (UUID) -> Void = { _ in }
     var outdent: (UUID) -> Void = { _ in }
     var moveFocus: (UUID, TodoEditorFocusMoveDirection, Int, CGFloat?) -> Void = { _, _, _, _ in }
-    var moveItemByKeyboard: (UUID, TodoKeyboardReorderDirection) -> Void = { _, _ in }
+    var moveItemByKeyboard: (UUID, TodoParentChildGroupMoveDirection) -> Void = { _, _ in }
     var moveDraggedItem: (UUID, TodoDropDestination, Int, Int) -> Void = { _, _, _, _ in }
     var moveDraggedItemToSidebar: (UUID, SidebarDestination) -> Void = { _, _ in }
     var sectionDateChanged: (UUID, Date) -> Void = { _, _ in }

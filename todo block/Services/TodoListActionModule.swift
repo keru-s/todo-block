@@ -42,6 +42,7 @@ final class TodoListActionModule {
     private let activeTextViewProvider: @MainActor () -> TodoEditorTextView?
     private let todayProvider: () -> Date
     private let allowsSidebarMoves: Bool
+    private let parentChildGroupMoveModule: TodoParentChildGroupMoveModule
     private var commandScope: TodoClipboardScope?
 
     var editorActions: TodoEditorActions { makeEditorActions() }
@@ -71,6 +72,10 @@ final class TodoListActionModule {
         self.todayProvider = todayProvider
         self.activeTextViewProvider = activeTextViewProvider
         self.sectionById = sectionById ?? { store.daySectionsCache[$0] }
+        self.parentChildGroupMoveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
     }
 
     func updateCommandScope(_ scope: TodoClipboardScope) {
@@ -147,22 +152,16 @@ final class TodoListActionModule {
             if activeTextView?.isComposingText == true {
                 return .unavailable(nil)
             }
-            return TodoSelectionReorderEngine.canMoveSelection(
-                direction: .up,
-                store: store,
-                selectionManager: selectionManager
+            return parentChildGroupMoveModule.availability(
+                for: .moveSelectedGroups(direction: .up)
             )
-                ? .available : .unavailable(nil)
         case .moveDown:
             if activeTextView?.isComposingText == true {
                 return .unavailable(nil)
             }
-            return TodoSelectionReorderEngine.canMoveSelection(
-                direction: .down,
-                store: store,
-                selectionManager: selectionManager
+            return parentChildGroupMoveModule.availability(
+                for: .moveSelectedGroups(direction: .down)
             )
-                ? .available : .unavailable(nil)
         case .undo:
             if activeTextView?.hasUncommittedTextInput == true {
                 return .available
@@ -227,7 +226,7 @@ final class TodoListActionModule {
                 return .noChange
             }
             guard let focusedItemId = selectionManager.focusedItemId else { return .noChange }
-            return moveItemByKeyboard(itemId: focusedItemId, direction: direction)
+            return performKeyboardMove(itemId: focusedItemId, direction: direction)
         }
         if command == .moveUp || command == .moveDown {
             prepareForExternalAction()
@@ -302,17 +301,13 @@ final class TodoListActionModule {
             selectionManager.textSelectionLength = 0
             return .performed
         case .moveUp:
-            return TodoSelectionReorderEngine.moveSelection(
-                direction: .up,
-                store: store,
-                selectionManager: selectionManager
-            ) ? .performed : .noChange
+            return parentChildGroupMoveModule.execute(
+                .moveSelectedGroups(direction: .up)
+            )
         case .moveDown:
-            return TodoSelectionReorderEngine.moveSelection(
-                direction: .down,
-                store: store,
-                selectionManager: selectionManager
-            ) ? .performed : .noChange
+            return parentChildGroupMoveModule.execute(
+                .moveSelectedGroups(direction: .down)
+            )
         case .undo:
             prepareForExternalAction()
             return store.undo() ? .performed : .noChange
@@ -324,7 +319,7 @@ final class TodoListActionModule {
 
     private func keyboardMoveDirection(
         for command: TodoListCommand
-    ) -> TodoKeyboardReorderDirection? {
+    ) -> TodoParentChildGroupMoveDirection? {
         switch command {
         case .moveUp:
             .up
@@ -521,29 +516,12 @@ final class TodoListActionModule {
             },
             moveDraggedItem: { [self] itemId, destination, toIndex, indentLevel in
                 prepareForExternalAction()
-                if TodoSelectionDragMoveEngine.performMove(
-                       TodoSelectionDragMoveRequest(
-                           draggedId: itemId,
-                           destination: destination,
-                           insertionIndex: toIndex,
-                           indentLevel: indentLevel
-                       ),
-                       store: store,
-                       selectionManager: selectionManager
-                   ) {
-                    return
-                }
-                _ = TodoReorderMoveEngine.performMove(
-                    draggedId: itemId,
-                    toIndex: toIndex,
-                    indentLevel: indentLevel,
-                    items: store.items(in: destination),
-                    destination: destination,
-                    store: store,
-                    selectionManager: selectionManager,
-                    selectionAfter: TodoSelectionState(
-                        focusing: itemId,
-                        cursorPosition: selectionManager.cursorPosition
+                _ = parentChildGroupMoveModule.execute(
+                    .place(
+                        draggedItemId: itemId,
+                        destination: destination,
+                        insertionIndex: toIndex,
+                        indentLevel: indentLevel
                     )
                 )
             },
@@ -661,23 +639,17 @@ final class TodoListActionModule {
 
     func keyboardMoveAvailability(
         itemId: UUID,
-        direction: TodoKeyboardReorderDirection
+        direction: TodoParentChildGroupMoveDirection
     ) -> TodoListCommandAvailability {
-        guard let item = store.todoItemsCache[itemId] else {
-            return .unavailable(.itemNoLongerAvailable)
-        }
-        let items = store.items(in: store.destination(for: item))
-        return TodoKeyboardReorderEngine.canMove(
-            itemId: itemId,
-            direction: direction,
-            items: items
-        ) ? .available : .unavailable(nil)
+        parentChildGroupMoveModule.availability(
+            for: .step(itemId: itemId, direction: direction)
+        )
     }
 
     @discardableResult
     func moveItemByKeyboard(
         itemId: UUID,
-        direction: TodoKeyboardReorderDirection
+        direction: TodoParentChildGroupMoveDirection
     ) -> TodoListActionResult {
         let result = moveItemByKeyboardWithoutFeedback(itemId: itemId, direction: direction)
         feedbackPresenter.consume(result)
@@ -686,71 +658,31 @@ final class TodoListActionModule {
 
     private func moveItemByKeyboardWithoutFeedback(
         itemId: UUID,
-        direction: TodoKeyboardReorderDirection
+        direction: TodoParentChildGroupMoveDirection
+    ) -> TodoListActionResult {
+        performKeyboardMove(itemId: itemId, direction: direction)
+    }
+
+    private func performKeyboardMove(
+        itemId: UUID,
+        direction: TodoParentChildGroupMoveDirection
     ) -> TodoListActionResult {
         prepareForExternalAction()
-
-        switch keyboardMoveAvailability(itemId: itemId, direction: direction) {
-        case .unavailable(nil):
-            return .noChange
-        case .unavailable(let rejection?):
-            return .rejected(rejection)
-        case .available:
-            break
-        }
-
-        guard let item = store.todoItemsCache[itemId] else {
-            return .rejected(.itemNoLongerAvailable)
-        }
-        let destination = store.destination(for: item)
-        let didMove = TodoKeyboardReorderEngine.move(
-            itemId: itemId,
-            direction: direction,
-            items: store.items(in: destination),
-            destination: destination,
-            store: store,
-            selectionManager: selectionManager,
-            selectionAfter: TodoSelectionState(
-                focusing: itemId,
-                cursorPosition: selectionManager.cursorPosition
-            )
+        return parentChildGroupMoveModule.execute(
+            .step(itemId: itemId, direction: direction)
         )
-        return didMove ? .performed : .noChange
     }
 
     private func moveDraggedItemToSidebar(
         itemId: UUID,
         destination: SidebarDestination
     ) {
-        guard let item = store.todoItemsCache[itemId] else { return }
         prepareForExternalAction()
-
-        switch destination {
-        case .longTerm:
-            store.moveItemWithChildren(
-                item,
-                to: .longTerm(isUrgent: false),
-                afterItem: nil,
-                newIndentLevel: 0,
-                selectionManager: selectionManager,
-                selectionAfter: TodoSelectionState(
-                    focusing: itemId,
-                    cursorPosition: selectionManager.cursorPosition
-                )
+        _ = parentChildGroupMoveModule.execute(
+            .placeInSidebar(
+                draggedItemId: itemId,
+                destination: destination
             )
-        case .month(let year, let month):
-            let target = store.tailItemForScheduledMonth(year: year, month: month)
-            store.moveItemWithChildren(
-                item,
-                to: .scheduled(date: target.date),
-                afterItem: nil,
-                newIndentLevel: 0,
-                selectionManager: selectionManager,
-                selectionAfter: TodoSelectionState(
-                    focusing: itemId,
-                    cursorPosition: selectionManager.cursorPosition
-                )
-            )
-        }
+        )
     }
 }

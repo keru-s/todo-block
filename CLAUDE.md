@@ -102,7 +102,7 @@ The task editor lives in `Views/AppKitEditor/` and is embedded through `TodoEdit
 ### Drag & drop
 
 - List-internal drag starts from `TodoEditorDragHandleView`; row-body left drag is reserved for long-press multi-select.
-- Drop resolution is AppKit-based: row frames are converted inside `TodoEditorViewController`, and the final move still goes through `TodoReorderMoveEngine.performMove`.
+- Drop resolution is AppKit-based: row frames are converted inside `TodoEditorViewController`, and the final move goes through `TodoParentChildGroupMoveModule`.
 - Cross-page/sidebar drag uses `TodoEditorDragSession.shared`. Sidebar targets report AppKit screen-space frames through `SidebarDropFrameReader`; editor drag events are converted to screen coordinates before hit-testing.
 - Dragging to the sidebar long-term entry moves the whole parent/child block to long-term important at root indent. Dragging to a month uses that month's latest scheduled date, or the clamped fallback date when the month is empty.
 

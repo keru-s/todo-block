@@ -183,8 +183,8 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         XCTAssertEqual(child.containerKind, .longTermImportant)
         XCTAssertEqual(parent.indentLevel, 0)
         XCTAssertEqual(child.indentLevel, 1)
-        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
-        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.focusedItemId, child.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, child.id])
         XCTAssertEqual(selectionManager.cursorPosition, 2)
         XCTAssertTrue(store.items(for: day).isEmpty)
 
@@ -194,8 +194,8 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         XCTAssertEqual(selectionManager.cursorPosition, 2)
 
         XCTAssertTrue(store.redo())
-        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
-        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.focusedItemId, child.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id, child.id])
         XCTAssertEqual(selectionManager.cursorPosition, 2)
     }
 

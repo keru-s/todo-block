@@ -656,7 +656,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
     }
 
     private func moveKeyEvent(
-        direction: TodoKeyboardReorderDirection
+        direction: TodoParentChildGroupMoveDirection
     ) throws -> NSEvent {
         let keyCode: UInt16
         let characters: String

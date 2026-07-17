@@ -127,9 +127,8 @@
 
 - `TodoStore`
 - `SelectionManager`
-- `TodoReorderMoveEngine`
+- `TodoParentChildGroupMoveModule`
 - `TodoDropLocationEngine`
-- `TodoKeyboardReorderEngine`
 - `TodoReorderCommandManager`
 - `TodoClipboardManager`
 - `TodoUndoManager`
@@ -482,8 +481,7 @@ TodoEditorRowState
 
 ### 必须继续通过的测试
 
-- `TodoKeyboardReorderEngineTests`
-- `TodoReorderEngineTests`
+- `TodoParentChildGroupMoveModuleTests`
 - `TodoEditorActionFactoryTests`
 - `SelectionManagerTests`
 - `TodoStoreTests`
