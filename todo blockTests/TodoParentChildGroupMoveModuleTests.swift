@@ -182,6 +182,292 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertEqual(descendant.indentLevel, 4)
     }
 
+    func testStepMoveDownMakesChildGroupTheFirstChildOfFollowingShallowerParent() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 17)
+        let root = store.createItem(title: "root", dayDate: day)
+        let moving = store.createItem(
+            title: "moving",
+            dayDate: day,
+            afterItem: root,
+            indentLevel: 1
+        )
+        let movingChild = store.createItem(
+            title: "moving child",
+            dayDate: day,
+            afterItem: moving,
+            indentLevel: 2
+        )
+        let targetParent = store.createItem(
+            title: "target parent",
+            dayDate: day,
+            afterItem: movingChild
+        )
+        let existingChild = store.createItem(
+            title: "existing child",
+            dayDate: day,
+            afterItem: targetParent,
+            indentLevel: 1
+        )
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: existingChild)
+        selectionManager.focusedItemId = tail.id
+        selectionManager.selectedItemIds = [moving.id, tail.id]
+        selectionManager.lastSelectedId = tail.id
+        selectionManager.cursorPosition = 6
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(
+            moveModule.execute(.step(itemId: moving.id, direction: .down)),
+            .performed
+        )
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [root.id, targetParent.id, moving.id, movingChild.id, existingChild.id, tail.id]
+        )
+        XCTAssertEqual(
+            [
+                root.indentLevel,
+                targetParent.indentLevel,
+                moving.indentLevel,
+                movingChild.indentLevel,
+                existingChild.indentLevel,
+                tail.indentLevel
+            ],
+            [0, 0, 1, 2, 1, 0]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.lastSelectedId, moving.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 6)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [root.id, moving.id, movingChild.id, targetParent.id, existingChild.id, tail.id]
+        )
+        XCTAssertEqual([moving.indentLevel, movingChild.indentLevel], [1, 2])
+        XCTAssertEqual(selectionManager.focusedItemId, tail.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id, tail.id])
+        XCTAssertEqual(selectionManager.lastSelectedId, tail.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 6)
+    }
+
+    func testStepMoveDownMovesRootGroupPastFollowingCompleteRootGroup() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 17)
+        let moving = store.createItem(title: "moving", dayDate: day)
+        let movingChild = store.createItem(
+            title: "moving child",
+            dayDate: day,
+            afterItem: moving,
+            indentLevel: 1
+        )
+        let following = store.createItem(title: "following", dayDate: day, afterItem: movingChild)
+        let followingChild = store.createItem(
+            title: "following child",
+            dayDate: day,
+            afterItem: following,
+            indentLevel: 1
+        )
+        let tail = store.createItem(title: "tail", dayDate: day, afterItem: followingChild)
+        selectionManager.focusedItemId = tail.id
+        selectionManager.selectedItemIds = [moving.id, tail.id]
+        selectionManager.lastSelectedId = tail.id
+        selectionManager.cursorPosition = 3
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(
+            moveModule.execute(.step(itemId: moving.id, direction: .down)),
+            .performed
+        )
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [following.id, followingChild.id, moving.id, movingChild.id, tail.id]
+        )
+        XCTAssertEqual(
+            [
+                following.indentLevel,
+                followingChild.indentLevel,
+                moving.indentLevel,
+                movingChild.indentLevel,
+                tail.indentLevel
+            ],
+            [0, 1, 0, 1, 0]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [moving.id, movingChild.id, following.id, followingChild.id, tail.id]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, tail.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id, tail.id])
+        XCTAssertEqual(selectionManager.lastSelectedId, tail.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 3)
+    }
+
+    func testStepMoveUpMovesSameLevelChildGroupBeforeItsSibling() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 17)
+        let parent = store.createItem(title: "parent", dayDate: day)
+        let firstChild = store.createItem(
+            title: "first child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let firstGrandchild = store.createItem(
+            title: "first grandchild",
+            dayDate: day,
+            afterItem: firstChild,
+            indentLevel: 2
+        )
+        let moving = store.createItem(
+            title: "moving",
+            dayDate: day,
+            afterItem: firstGrandchild,
+            indentLevel: 1
+        )
+        let movingChild = store.createItem(
+            title: "moving child",
+            dayDate: day,
+            afterItem: moving,
+            indentLevel: 2
+        )
+        selectionManager.focusedItemId = moving.id
+        selectionManager.selectedItemIds = [moving.id]
+        selectionManager.lastSelectedId = moving.id
+        selectionManager.cursorPosition = 1
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(
+            moveModule.execute(.step(itemId: moving.id, direction: .up)),
+            .performed
+        )
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [parent.id, moving.id, movingChild.id, firstChild.id, firstGrandchild.id]
+        )
+        XCTAssertEqual(
+            [
+                parent.indentLevel,
+                moving.indentLevel,
+                movingChild.indentLevel,
+                firstChild.indentLevel,
+                firstGrandchild.indentLevel
+            ],
+            [0, 1, 2, 1, 2]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 1)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [parent.id, firstChild.id, firstGrandchild.id, moving.id, movingChild.id]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.lastSelectedId, moving.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 1)
+    }
+
+    func testStepMoveRepeatedlyMovesWholeGroupOneSiblingBlockAtATimeInBothDirections() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 17)
+        let first = store.createItem(title: "first", dayDate: day)
+        let firstChild = store.createItem(
+            title: "first child",
+            dayDate: day,
+            afterItem: first,
+            indentLevel: 1
+        )
+        let middle = store.createItem(title: "middle", dayDate: day, afterItem: firstChild)
+        let middleChild = store.createItem(
+            title: "middle child",
+            dayDate: day,
+            afterItem: middle,
+            indentLevel: 1
+        )
+        let moving = store.createItem(title: "moving", dayDate: day, afterItem: middleChild)
+        let movingChild = store.createItem(
+            title: "moving child",
+            dayDate: day,
+            afterItem: moving,
+            indentLevel: 1
+        )
+        selectionManager.focusedItemId = moving.id
+        selectionManager.selectedItemIds = [moving.id]
+        selectionManager.lastSelectedId = moving.id
+        selectionManager.cursorPosition = 4
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(moveModule.execute(.step(itemId: moving.id, direction: .up)), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, firstChild.id, moving.id, movingChild.id, middle.id, middleChild.id]
+        )
+        XCTAssertEqual([moving.indentLevel, movingChild.indentLevel], [0, 1])
+
+        XCTAssertEqual(moveModule.execute(.step(itemId: moving.id, direction: .up)), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [moving.id, movingChild.id, first.id, firstChild.id, middle.id, middleChild.id]
+        )
+        XCTAssertEqual([moving.indentLevel, movingChild.indentLevel], [0, 1])
+
+        XCTAssertEqual(moveModule.execute(.step(itemId: moving.id, direction: .down)), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, firstChild.id, moving.id, movingChild.id, middle.id, middleChild.id]
+        )
+        XCTAssertEqual(moveModule.execute(.step(itemId: moving.id, direction: .down)), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, firstChild.id, middle.id, middleChild.id, moving.id, movingChild.id]
+        )
+        XCTAssertEqual([moving.indentLevel, movingChild.indentLevel], [0, 1])
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.lastSelectedId, moving.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, firstChild.id, moving.id, movingChild.id, middle.id, middleChild.id]
+        )
+        XCTAssertEqual(selectionManager.focusedItemId, moving.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [moving.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [first.id, firstChild.id, middle.id, middleChild.id, moving.id, movingChild.id]
+        )
+        XCTAssertEqual([moving.indentLevel, movingChild.indentLevel], [0, 1])
+    }
+
     func testPlaceMovesSelectedGroupsInSourceOrderAsOneUndoStep() {
         let store = TodoStore.shared
         let day = Date.now
