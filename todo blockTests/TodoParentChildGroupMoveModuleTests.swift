@@ -132,6 +132,46 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testMoveSelectedGroupsRejectsStaleSelectionWithoutChangingUserState() {
+        let store = TodoStore.shared
+        let day = Date.now
+        let first = store.createItem(title: "first", dayDate: day)
+        let second = store.createItem(title: "second", dayDate: day, afterItem: first)
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(moveModule.execute(.step(itemId: first.id, direction: .down)), .performed)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo, "预置的操作应保留为可恢复记录")
+
+        let staleItemId = UUID()
+        selectionManager.focusedItemId = first.id
+        selectionManager.selectedItemIds = [first.id, staleItemId]
+        selectionManager.lastSelectedId = staleItemId
+        selectionManager.cursorPosition = 2
+        let intent = TodoParentChildGroupMoveIntent.moveSelectedGroups(direction: .down)
+
+        XCTAssertEqual(
+            moveModule.availability(for: intent),
+            .unavailable(.itemNoLongerAvailable)
+        )
+        XCTAssertFalse(store.canUndo, "查询不能创建操作单元")
+        XCTAssertTrue(store.canRedo, "查询不能清空已有的恢复记录")
+        XCTAssertEqual(moveModule.execute(intent), .rejected(.itemNoLongerAvailable))
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, second.id])
+        XCTAssertEqual(selectionManager.focusedItemId, first.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, staleItemId])
+        XCTAssertEqual(selectionManager.lastSelectedId, staleItemId)
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
+        XCTAssertFalse(store.canUndo, "拒绝的动作不能创建操作单元")
+        XCTAssertTrue(store.canRedo, "拒绝的动作不能清空已有的恢复记录")
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [second.id, first.id])
+    }
+
     func testStepMoveNormalizesMovedNestedGroupAndUndoRestoresOriginalIndents() {
         let store = TodoStore.shared
         let day = Date.now

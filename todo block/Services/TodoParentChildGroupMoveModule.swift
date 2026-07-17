@@ -40,6 +40,9 @@ final class TodoParentChildGroupMoveModule {
                 ? .unavailable(nil)
                 : .available
         case .moveSelectedGroups(let direction):
+            guard hasStaleSelectionForGroupMove == false else {
+                return .unavailable(.itemNoLongerAvailable)
+            }
             return plannedSelectedGroupStateChanges(direction: direction) == nil
                 ? .unavailable(nil)
                 : .available
@@ -139,6 +142,9 @@ final class TodoParentChildGroupMoveModule {
     private func executeSelectedGroupMove(
         direction: TodoParentChildGroupMoveDirection
     ) -> TodoListActionResult {
+        guard hasStaleSelectionForGroupMove == false else {
+            return .rejected(.itemNoLongerAvailable)
+        }
         guard let stateChanges = plannedSelectedGroupStateChanges(direction: direction) else {
             return .noChange
         }
@@ -443,10 +449,7 @@ final class TodoParentChildGroupMoveModule {
     private func plannedSelectedGroupStateChanges(
         direction: TodoParentChildGroupMoveDirection
     ) -> [TodoItemStateChange]? {
-        var selectedIds = selectionManager.selectedItemIds
-        if selectedIds.isEmpty, let focusedItemId = selectionManager.focusedItemId {
-            selectedIds = [focusedItemId]
-        }
+        let selectedIds = selectedItemIdsForGroupMove()
         let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
         guard selectedItems.isEmpty == false, selectedItems.count == selectedIds.count else {
             return nil
@@ -476,6 +479,19 @@ final class TodoParentChildGroupMoveModule {
         }
 
         return stateChanges.isEmpty ? nil : stateChanges
+    }
+
+    private func selectedItemIdsForGroupMove() -> Set<UUID> {
+        if selectionManager.selectedItemIds.isEmpty,
+           let focusedItemId = selectionManager.focusedItemId
+        {
+            return [focusedItemId]
+        }
+        return selectionManager.selectedItemIds
+    }
+
+    private var hasStaleSelectionForGroupMove: Bool {
+        selectedItemIdsForGroupMove().contains { store.todoItemsCache[$0] == nil }
     }
 
     private func plannedStateChanges(
