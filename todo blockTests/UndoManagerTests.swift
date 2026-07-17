@@ -304,55 +304,6 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertTrue(item.isCompleted)
     }
 
-    func testUndoRedoCrossContainerMove() {
-        let store = TodoStore.shared
-        let sourceDate = fixedDate(year: 2026, month: 1, day: 5)
-
-        let item = store.createItem(title: "cross container", dayDate: sourceDate)
-        store.undoManager.clear()
-
-        store.moveItemWithChildren(
-            item,
-            to: .longTerm(isUrgent: false),
-            afterItem: nil,
-            newIndentLevel: 0
-        )
-        XCTAssertEqual(item.containerKind, .longTermImportant)
-
-        store.undo()
-        XCTAssertEqual(item.containerKind, .scheduled)
-        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: sourceDate))
-
-        store.redo()
-        XCTAssertEqual(item.containerKind, .longTermImportant)
-    }
-
-    func testUndoRedoCrossMonthMove() {
-        let store = TodoStore.shared
-        let sourceDate = fixedDate(year: 2026, month: 1, day: 10)
-        let targetDate = fixedDate(year: 2026, month: 2, day: 22)
-
-        let item = store.createItem(title: "cross month", dayDate: sourceDate)
-        _ = store.createItem(title: "anchor", dayDate: targetDate)
-        store.undoManager.clear()
-
-        let target = store.tailItemForScheduledMonth(year: 2026, month: 2)
-        store.moveItemWithChildren(
-            item,
-            to: .scheduled(date: target.date),
-            afterItem: target.tailItem,
-            newIndentLevel: 0
-        )
-        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate))
-
-        store.undo()
-        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: sourceDate))
-        XCTAssertEqual(item.containerKind, .scheduled)
-
-        store.redo()
-        XCTAssertTrue(Calendar.current.isDate(item.dayDate, inSameDayAs: targetDate))
-    }
-
     // MARK: - 回归测试：撤销链路 × SwiftData 持久化边界
 
     /// #1: 在 deleteItem 的 debounce 窗口内立即撤销，restoreItem 应先 flush pending delete，
@@ -480,64 +431,6 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertTrue(
             store.sections(year: 2026, month: 3).contains { Calendar.current.isDate($0.date, inSameDayAs: date) },
             "撤销恢复 item 时应顺带重建 section"
-        )
-    }
-
-    /// 把某日唯一的 item 移到别的 scheduled 日期，源 section 应被回收，目标 section 应存在。
-    func testMoveLastItemToOtherDayCleansSourceSection() {
-        let store = TodoStore.shared
-        let sourceDate = fixedDate(year: 2026, month: 4, day: 1)
-        let targetDate = fixedDate(year: 2026, month: 4, day: 2)
-
-        let item = store.createItem(title: "to move", dayDate: sourceDate)
-        let anchor = store.createItem(title: "anchor", dayDate: targetDate)
-        store.undoManager.clear()
-
-        store.moveItemWithChildren(
-            item,
-            to: .scheduled(date: targetDate),
-            afterItem: anchor,
-            newIndentLevel: 0
-        )
-
-        XCTAssertFalse(
-            store.sections(year: 2026, month: 4).contains { Calendar.current.isDate($0.date, inSameDayAs: sourceDate) },
-            "源日 item 被移走后源 section 应被清理"
-        )
-        XCTAssertTrue(
-            store.sections(year: 2026, month: 4).contains { Calendar.current.isDate($0.date, inSameDayAs: targetDate) },
-            "目标 section 应保留"
-        )
-    }
-
-    /// 移动后撤销，源 section 应通过 move undo 闭包内的 getOrCreateSection 重建。
-    func testMoveLastItemUndoRestoresSourceSection() {
-        let store = TodoStore.shared
-        let sourceDate = fixedDate(year: 2026, month: 4, day: 5)
-        let targetDate = fixedDate(year: 2026, month: 4, day: 6)
-
-        let item = store.createItem(title: "to move", dayDate: sourceDate)
-        let anchor = store.createItem(title: "anchor", dayDate: targetDate)
-        store.undoManager.clear()
-
-        store.moveItemWithChildren(
-            item,
-            to: .scheduled(date: targetDate),
-            afterItem: anchor,
-            newIndentLevel: 0
-        )
-        XCTAssertFalse(
-            store.sections(year: 2026, month: 4).contains { Calendar.current.isDate($0.date, inSameDayAs: sourceDate) }
-        )
-
-        store.undo()
-        XCTAssertTrue(
-            Calendar.current.isDate(item.dayDate, inSameDayAs: sourceDate),
-            "撤销后 item 应回到源日"
-        )
-        XCTAssertTrue(
-            store.sections(year: 2026, month: 4).contains { Calendar.current.isDate($0.date, inSameDayAs: sourceDate) },
-            "撤销时源 section 应被重建"
         )
     }
 
