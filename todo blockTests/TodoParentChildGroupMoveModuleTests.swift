@@ -222,6 +222,36 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo, "多组拖拽只能产生一个操作单元")
     }
 
+    func testPlaceMovesNoncontiguousSelectedGroupsAfterTheFirstSelectedGroup() {
+        let store = TodoStore.shared
+        let day = Date.now
+        let first = store.createItem(title: "first", dayDate: day)
+        let middle = store.createItem(title: "middle", dayDate: day, afterItem: first)
+        let last = store.createItem(title: "last", dayDate: day, afterItem: middle)
+        selectionManager.selectedItemIds = [first.id, last.id]
+        selectionManager.focusedItemId = first.id
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+        let intent = TodoParentChildGroupMoveIntent.place(
+            draggedItemId: first.id,
+            destination: .scheduled(date: day),
+            insertionIndex: 1,
+            indentLevel: 0
+        )
+
+        XCTAssertEqual(moveModule.availability(for: intent), .available)
+        XCTAssertEqual(moveModule.execute(intent), .performed)
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, last.id, middle.id])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, middle.id, last.id])
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, last.id, middle.id])
+    }
+
     func testPlaceFallsBackToSingleGroupWhenSelectionSpansAnotherList() {
         let store = TodoStore.shared
         let sourceDay = Date.now
@@ -258,21 +288,27 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertEqual(selectionManager.cursorPosition, 2)
     }
 
-    func testPlaceLeavesEverySelectedGroupUntouchedWhenTheDropIsInsideTheirSourceRange() {
+    func testPlaceLeavesEverySelectedGroupUntouchedWhenTheDropIsInsideAMovingParentChildGroup() {
         let store = TodoStore.shared
         let day = Date.now
-        let first = store.createItem(title: "first", dayDate: day)
-        let middle = store.createItem(title: "middle", dayDate: day, afterItem: first)
-        let last = store.createItem(title: "last", dayDate: day, afterItem: middle)
-        selectionManager.selectedItemIds = [first.id, last.id]
-        selectionManager.focusedItemId = first.id
+        let parent = store.createItem(title: "parent", dayDate: day)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
+        let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
+        selectionManager.selectedItemIds = [parent.id, independent.id]
+        selectionManager.focusedItemId = parent.id
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
             selectionManager: selectionManager
         )
         let intent = TodoParentChildGroupMoveIntent.place(
-            draggedItemId: first.id,
+            draggedItemId: parent.id,
             destination: .scheduled(date: day),
             insertionIndex: 1,
             indentLevel: 0
@@ -281,7 +317,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertEqual(moveModule.availability(for: intent), .unavailable(nil))
         XCTAssertFalse(store.canUndo, "查询不能创建操作单元")
         XCTAssertEqual(moveModule.execute(intent), .noChange)
-        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, middle.id, last.id])
+        XCTAssertEqual(store.items(for: day).map(\.id), [parent.id, child.id, middle.id, independent.id])
         XCTAssertFalse(store.canUndo)
     }
 
@@ -358,6 +394,48 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             [parent.id, existingChild.id, movingParent.id, movingChild.id]
         )
         XCTAssertEqual([movingParent.indentLevel, movingChild.indentLevel], [1, 2])
+    }
+
+    func testPlaceCanIndentMultipleSelectedGroupsWithoutChangingTheirPosition() {
+        let store = TodoStore.shared
+        let day = Date.now
+        let parent = store.createItem(title: "parent", dayDate: day)
+        let firstMovingGroup = store.createItem(
+            title: "first moving group",
+            dayDate: day,
+            afterItem: parent
+        )
+        let secondMovingGroup = store.createItem(
+            title: "second moving group",
+            dayDate: day,
+            afterItem: firstMovingGroup
+        )
+        selectionManager.selectedItemIds = [firstMovingGroup.id, secondMovingGroup.id]
+        selectionManager.focusedItemId = firstMovingGroup.id
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+        let intent = TodoParentChildGroupMoveIntent.place(
+            draggedItemId: firstMovingGroup.id,
+            destination: .scheduled(date: day),
+            insertionIndex: 1,
+            indentLevel: 1
+        )
+
+        XCTAssertEqual(moveModule.availability(for: intent), .available)
+        XCTAssertEqual(moveModule.execute(intent), .performed)
+        XCTAssertEqual(
+            store.items(for: day).map(\.id),
+            [parent.id, firstMovingGroup.id, secondMovingGroup.id]
+        )
+        XCTAssertEqual([firstMovingGroup.indentLevel, secondMovingGroup.indentLevel], [1, 1])
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual([firstMovingGroup.indentLevel, secondMovingGroup.indentLevel], [0, 0])
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual([firstMovingGroup.indentLevel, secondMovingGroup.indentLevel], [1, 1])
     }
 
     func testPlaceInSidebarResolvesMonthAndMovesSelectedGroupsInOneOperation() {

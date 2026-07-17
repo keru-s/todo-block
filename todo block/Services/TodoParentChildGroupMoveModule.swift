@@ -282,13 +282,22 @@ final class TodoParentChildGroupMoveModule {
         let normalizedDestination = destination.normalized
         let destinationItems = store.items(in: normalizedDestination)
         let normalizedInsertionIndex = min(max(insertionIndex, 0), destinationItems.count)
-        if sourceDestination == normalizedDestination,
-           let firstIndex = sourceItems.indices.first(where: { movingItemIds.contains(sourceItems[$0].id) }),
-           let lastIndex = sourceItems.indices.last(where: { movingItemIds.contains(sourceItems[$0].id) }),
-           normalizedInsertionIndex > firstIndex,
-           normalizedInsertionIndex <= lastIndex
-        {
-            return .eligible(nil)
+        if sourceDestination == normalizedDestination {
+            let dropsInsideMovingGroup = rootIds.contains { rootId in
+                guard let rootIndex = sourceItems.firstIndex(where: { $0.id == rootId }),
+                      let block = TodoHierarchyBlockEngine.block(
+                          startingAt: rootIndex,
+                          in: sourceItems
+                      )
+                else {
+                    return false
+                }
+                return normalizedInsertionIndex > block.range.lowerBound
+                    && normalizedInsertionIndex < block.range.upperBound
+            }
+            if dropsInsideMovingGroup {
+                return .eligible(nil)
+            }
         }
 
         guard let draggedIndex = sourceItems.firstIndex(where: { $0.id == draggedItem.id }) else {
