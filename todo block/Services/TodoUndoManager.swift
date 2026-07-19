@@ -145,6 +145,7 @@ struct TodoOperation {
             && itemStateChanges.isEmpty
     }
 
+    @MainActor
     func operationUnit(
         sourceTarget: TodoOperationValueTarget,
         store: TodoStore

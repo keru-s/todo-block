@@ -10,6 +10,7 @@ import XCTest
 
 @MainActor
 final class TodoOperationUnitTests: XCTestCase {
+    private var container: ModelContainer?
     private var store: TodoStore { .shared }
 
     override func setUp() async throws {
@@ -19,6 +20,7 @@ final class TodoOperationUnitTests: XCTestCase {
             DaySection.self,
             configurations: configuration
         )
+        self.container = container
         TodoStore.shared.reset()
         TodoStore.shared.initialize(with: container.mainContext)
     }
@@ -338,6 +340,141 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertEqual([unitAfterUndo, unitAfterRedo], [legacyAfterUndo, legacyAfterRedo])
     }
 
+    func testReferenceModelTracksIdentityOrderHierarchyAndEditingSelection() {
+        let date = fixedDate(day: 10)
+        let selectionManager = SelectionManager()
+        let first = store.createItem(title: "根", dayDate: date)
+        store.undoManager.clear()
+        selectionManager.restoreFocus(to: first.id)
+        selectionManager.activateHistoryContext()
+
+        let created = TodoItemSnapshot(
+            title: "子项",
+            indentLevel: 1,
+            sortOrder: first.sortOrder + 1000,
+            containerKindRaw: TodoContainerKind.scheduled.rawValue,
+            dayDate: date
+        )
+        let firstBefore = TodoItemSnapshot(from: first)
+        let firstAfter = firstBefore.replacing(title: "根（已完成）", isCompleted: true)
+        let initialState = TodoUserStateReference.State(
+            items: [
+                .init(id: first.id, title: "根", isCompleted: false, indentLevel: 0, sortOrder: first.sortOrder)
+            ],
+            selection: .init(
+                focusedItemId: first.id,
+                selectedItemIds: [first.id],
+                cursorPosition: 0,
+                textSelectionLength: 0
+            )
+        )
+        let createdState = TodoUserStateReference.State(
+            items: [
+                .init(
+                    id: first.id,
+                    title: "根（已完成）",
+                    isCompleted: true,
+                    indentLevel: 0,
+                    sortOrder: first.sortOrder
+                ),
+                .init(id: created.id, title: "子项", isCompleted: false, indentLevel: 1, sortOrder: created.sortOrder)
+            ],
+            selection: .init(
+                focusedItemId: created.id,
+                selectedItemIds: [created.id],
+                cursorPosition: 2,
+                textSelectionLength: 1
+            )
+        )
+        var reference = TodoUserStateReference(initialState: initialState)
+        let firstSelection = TodoSelectionState(selectionManager: selectionManager)
+        let createdSelection = TodoSelectionState(
+            focusedItemId: created.id,
+            selectedItemIds: [created.id],
+            lastSelectedId: created.id,
+            cursorPosition: 2,
+            textSelectionLength: 1
+        )
+
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "创建子项并完成父项",
+                    itemTransitions: [
+                        TodoItemTransition(before: firstBefore, after: firstAfter),
+                        TodoItemTransition(before: nil, after: created)
+                    ],
+                    selectionTransitions: [
+                        TodoSelectionTransition(
+                            historyContext: selectionManager.historyContext,
+                            before: firstSelection,
+                            after: createdSelection
+                        )
+                    ]
+                ),
+                store: store
+            )
+        )
+        reference.apply(createdState)
+        assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
+
+        XCTAssertTrue(store.undo())
+        reference.undo()
+        assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
+
+        XCTAssertTrue(store.redo())
+        reference.redo()
+        assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
+
+        let deletedState = TodoUserStateReference.State(
+            items: [createdState.items[0]],
+            selection: initialState.selection
+        )
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "删除子项",
+                    itemTransitions: [TodoItemTransition(before: created, after: nil)],
+                    selectionTransitions: [
+                        TodoSelectionTransition(
+                            historyContext: selectionManager.historyContext,
+                            before: createdSelection,
+                            after: firstSelection
+                        )
+                    ]
+                ),
+                store: store
+            )
+        )
+        reference.apply(deletedState)
+        assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
+
+        XCTAssertTrue(store.undo())
+        reference.undo()
+        assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
+    }
+
+    private func assertActualState(
+        matches reference: TodoUserStateReference.State,
+        date: Date,
+        selectionManager: SelectionManager
+    ) {
+        let actualItems = store.items(for: date).map {
+            TodoUserStateReference.Item(
+                id: $0.id,
+                title: $0.title,
+                isCompleted: $0.isCompleted,
+                indentLevel: $0.indentLevel,
+                sortOrder: $0.sortOrder
+            )
+        }
+        XCTAssertEqual(actualItems, reference.items)
+        XCTAssertEqual(selectionManager.focusedItemId, reference.selection.focusedItemId)
+        XCTAssertEqual(selectionManager.selectedItemIds, reference.selection.selectedItemIds)
+        XCTAssertEqual(selectionManager.cursorPosition, reference.selection.cursorPosition)
+        XCTAssertEqual(selectionManager.textSelectionLength, reference.selection.textSelectionLength)
+    }
+
     private func fixedDate(day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: day)) ?? .now
     }
@@ -368,5 +505,53 @@ private struct TitleHistoryReference {
         guard let next = redoTitles.popLast() else { return }
         undoTitles.append(currentTitle)
         currentTitle = next
+    }
+}
+
+private struct TodoUserStateReference {
+    struct Item: Equatable {
+        let id: UUID
+        let title: String
+        let isCompleted: Bool
+        let indentLevel: Int
+        let sortOrder: Double
+    }
+
+    struct Selection: Equatable {
+        let focusedItemId: UUID?
+        let selectedItemIds: Set<UUID>
+        let cursorPosition: Int
+        let textSelectionLength: Int
+    }
+
+    struct State: Equatable {
+        let items: [Item]
+        let selection: Selection
+    }
+
+    private(set) var currentState: State
+    private var undoStates: [State] = []
+    private var redoStates: [State] = []
+
+    init(initialState: State) {
+        currentState = initialState
+    }
+
+    mutating func apply(_ state: State) {
+        undoStates.append(currentState)
+        currentState = state
+        redoStates.removeAll()
+    }
+
+    mutating func undo() {
+        guard let state = undoStates.popLast() else { return }
+        redoStates.append(currentState)
+        currentState = state
+    }
+
+    mutating func redo() {
+        guard let state = redoStates.popLast() else { return }
+        undoStates.append(currentState)
+        currentState = state
     }
 }
