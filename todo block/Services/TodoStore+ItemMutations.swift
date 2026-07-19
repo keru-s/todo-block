@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import OSLog
 import SwiftData
 
 extension TodoStore {
@@ -227,12 +228,26 @@ extension TodoStore {
         return undoManager.perform(operation, store: self)
     }
 
-    /// 一次恢复整组待办；写入前只落盘一次待删除状态，避免批量恢复中途部分提交。
+    /// 一次恢复整组待办。写盘失败不会阻止已经完成的撤销；后续重试只保存最终状态。
     @discardableResult
     func restoreItems(from snapshots: [TodoItemSnapshot]) -> Bool {
         guard snapshots.isEmpty == false else { return true }
-        // 让 pending 的 delete 先落盘，避免与下方 insert 撞 @Attribute(.unique) UUID
-        guard flushPendingChangesSync() else { return false }
+        // 正常情况下先落盘 pending delete，避免与下方 insert 撞 @Attribute(.unique) UUID。
+        // 若写盘已失败，先记住用户眼前的完整结果，再回到上次确认状态并重建该结果，
+        // 避免同一上下文中同时保留待删除对象和同身份的新对象。
+        let pendingSnapshots = todoItemsCache.values.map(TodoItemSnapshot.init(from:))
+        if flushPendingChangesSync() == false {
+            let restoredIds = Set(snapshots.map(\.id))
+            let deletedItemIds = Set(
+                modelContext?.deletedModelsArray.compactMap { ($0 as? TodoItem)?.id } ?? []
+            )
+            if restoredIds.isDisjoint(with: deletedItemIds) == false {
+                return restoreItemsAfterFailedSave(
+                    existingSnapshots: pendingSnapshots,
+                    restoredSnapshots: snapshots
+                )
+            }
+        }
         guard snapshots.allSatisfy({ todoItemsCache[$0.id] == nil }) else { return false }
 
         for snapshot in snapshots {
@@ -245,7 +260,7 @@ extension TodoStore {
                 containerKindRaw: snapshot.containerKindRaw,
                 dayDate: snapshot.dayDate,
                 createdAt: snapshot.createdAt,
-                updatedAt: Date()
+                updatedAt: .now
             )
 
             if restoredItem.containerKind == .scheduled {
@@ -255,6 +270,128 @@ extension TodoStore {
             todoItemsCache[restoredItem.id] = restoredItem
             modelContext?.insert(restoredItem)
         }
+        refreshTrigger += 1
+        scheduleSave()
+        return true
+    }
+
+    private func restoreItemsAfterFailedSave(
+        existingSnapshots: [TodoItemSnapshot],
+        restoredSnapshots: [TodoItemSnapshot]
+    ) -> Bool {
+        guard let modelContext else { return false }
+
+        var desiredSnapshots: [UUID: TodoItemSnapshot] = [:]
+        for snapshot in existingSnapshots + restoredSnapshots {
+            desiredSnapshots[snapshot.id] = snapshot
+        }
+
+        let insertedItemIds = Set(
+            modelContext.insertedModelsArray.compactMap { ($0 as? TodoItem)?.id }
+        )
+        let insertedSectionIds = Set(
+            modelContext.insertedModelsArray.compactMap { ($0 as? DaySection)?.id }
+        )
+
+        var persistedItems: [UUID: TodoItem]
+        var persistedSections: [DaySection]
+        do {
+            persistedItems = Dictionary(
+                uniqueKeysWithValues: try modelContext.fetch(FetchDescriptor<TodoItem>()).map {
+                    ($0.id, $0)
+                }
+            )
+            persistedSections = try modelContext.fetch(FetchDescriptor<DaySection>())
+        } catch {
+            Self.logger.error(
+                "restoreItemsAfterFailedSave preparation failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
+
+        // 尚未落盘的对象会被 rollback 移除，不能在之后复用；它们会根据上方快照重新插入。
+        for itemId in insertedItemIds {
+            persistedItems.removeValue(forKey: itemId)
+        }
+        persistedSections.removeAll { insertedSectionIds.contains($0.id) }
+
+        // Fetch 会忽略待删除对象；把它们也带入重建清单，rollback 后复用原对象，
+        // 从而既不会重复插入同一 UUID，也不会为同一天重复创建 DaySection。
+        for item in modelContext.deletedModelsArray.compactMap({ $0 as? TodoItem })
+        where insertedItemIds.contains(item.id) == false {
+            persistedItems[item.id] = item
+        }
+        persistedSections.append(
+            contentsOf: modelContext.deletedModelsArray.compactMap { section in
+                guard let section = section as? DaySection,
+                      insertedSectionIds.contains(section.id) == false
+                else {
+                    return nil
+                }
+                return section
+            }
+        )
+
+        // 先确认可以拿到重建所需的已确认对象，再回到已确认状态。这样读取失败时，
+        // 用户眼前的内存修改完全不受影响；rollback 后也不再有任何可能失败的读取步骤。
+        modelContext.rollback()
+
+        var rebuiltItems: [UUID: TodoItem] = [:]
+        for snapshot in desiredSnapshots.values {
+            let item: TodoItem
+            if let persistedItem = persistedItems[snapshot.id] {
+                persistedItem.title = snapshot.title
+                persistedItem.isCompleted = snapshot.isCompleted
+                persistedItem.indentLevel = snapshot.indentLevel
+                persistedItem.sortOrder = snapshot.sortOrder
+                persistedItem.containerKindRaw = snapshot.containerKindRaw
+                persistedItem.dayDate = snapshot.dayDate
+                persistedItem.updatedAt = .now
+                item = persistedItem
+            } else {
+                item = TodoItem(
+                    id: snapshot.id,
+                    title: snapshot.title,
+                    isCompleted: snapshot.isCompleted,
+                    indentLevel: snapshot.indentLevel,
+                    sortOrder: snapshot.sortOrder,
+                    containerKindRaw: snapshot.containerKindRaw,
+                    dayDate: snapshot.dayDate,
+                    createdAt: snapshot.createdAt,
+                    updatedAt: .now
+                )
+                modelContext.insert(item)
+            }
+            rebuiltItems[item.id] = item
+        }
+
+        for item in persistedItems.values where desiredSnapshots[item.id] == nil {
+            modelContext.delete(item)
+        }
+
+        let scheduledDates = Set(rebuiltItems.values.compactMap { item -> Date? in
+            guard item.containerKind == .scheduled else { return nil }
+            return Calendar.current.startOfDay(for: item.dayDate)
+        })
+        var rebuiltSections: [UUID: DaySection] = [:]
+        var sectionDates = Set<Date>()
+        for section in persistedSections {
+            let date = Calendar.current.startOfDay(for: section.date)
+            if scheduledDates.contains(date) {
+                rebuiltSections[section.id] = section
+                sectionDates.insert(date)
+            } else {
+                modelContext.delete(section)
+            }
+        }
+        for date in scheduledDates where sectionDates.contains(date) == false {
+            let section = DaySection(date: date, sortOrder: Double(Date().timeIntervalSince1970))
+            rebuiltSections[section.id] = section
+            modelContext.insert(section)
+        }
+
+        todoItemsCache = rebuiltItems
+        daySectionsCache = rebuiltSections
         refreshTrigger += 1
         scheduleSave()
         return true

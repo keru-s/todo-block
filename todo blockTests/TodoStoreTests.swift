@@ -5,8 +5,9 @@
 //  Created by Claude on 2026/1/17.
 //
 
-import XCTest
+import AppKit
 import SwiftData
+import XCTest
 @testable import todo_block
 
 /// 注意：本套件和 UndoManagerTests / TodoParentChildGroupMoveModuleTests 都依赖
@@ -18,6 +19,15 @@ import SwiftData
 final class TodoStoreTests: XCTestCase {
 
     var descriptor: ModelContainer!
+
+    private enum SimulatedSaveFailure: Error {
+        case unavailable
+    }
+
+    @MainActor
+    private final class SimulatedSaveGate {
+        var shouldFail = true
+    }
 
     override func setUp() async throws {
         // Use in-memory container for testing
@@ -792,8 +802,10 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertTrue(descriptor.mainContext.hasChanges, "前置：创建后应有 pending 变更")
 
-        // 等待 > 0.3s debounce + 一点 buffer
-        try await Task.sleep(for: .milliseconds(500))
+        // 等待 debounce 完成。
+        try await waitUntil {
+            self.descriptor.mainContext.hasChanges == false && store.saveStatus == .saved
+        }
 
         XCTAssertFalse(
             descriptor.mainContext.hasChanges,
@@ -813,6 +825,257 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(didSave)
         XCTAssertFalse(descriptor.mainContext.hasChanges, "flush 后不应再有 pending 变更")
         XCTAssertNil(store.lastSaveError)
+    }
+
+    func testQueuedSavesCoalesceWithoutShowingAnUnsavedWarning() async throws {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "initial", dayDate: .now)
+        XCTAssertTrue(store.flushPendingChangesSync())
+
+        var saveCount = 0
+        store.saveAction = { context in
+            saveCount += 1
+            try context.save()
+        }
+
+        item.title = "first"
+        store.scheduleSave()
+        item.title = "second"
+        store.scheduleSave()
+        item.title = "third"
+        store.scheduleSave()
+
+        XCTAssertEqual(store.saveStatus, .queued)
+        XCTAssertFalse(store.hasUnsavedChanges)
+
+        try await waitUntil { saveCount == 1 && store.saveStatus == .saved }
+
+        XCTAssertEqual(saveCount, 1)
+        XCTAssertEqual(store.saveStatus, .saved)
+        XCTAssertFalse(store.hasUnsavedChanges)
+    }
+
+    func testSaveFailureKeepsCompletedChangesAndHistoryUntilRetrySucceeds() async throws {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "keep", dayDate: .now)
+        XCTAssertTrue(store.flushPendingChangesSync())
+        store.undoManager.clear()
+
+        let gate = SimulatedSaveGate()
+        store.saveAction = { context in
+            if gate.shouldFail {
+                throw SimulatedSaveFailure.unavailable
+            }
+            try context.save()
+        }
+        store.saveRetryInterval = .seconds(10)
+
+        store.deleteItem(item)
+        try await waitUntil { store.saveStatus == .unsaved }
+
+        XCTAssertEqual(store.saveStatus, .unsaved)
+        XCTAssertTrue(store.hasUnsavedChanges)
+        XCTAssertNil(store.todoItemsCache[item.id])
+        XCTAssertTrue(store.canUndo)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.todoItemsCache[item.id]?.title, "keep")
+
+        gate.shouldFail = false
+        try await waitUntil { store.saveStatus == .saved }
+
+        XCTAssertEqual(store.saveStatus, .saved)
+        XCTAssertFalse(store.hasUnsavedChanges)
+        XCTAssertEqual(store.todoItemsCache[item.id]?.title, "keep")
+        XCTAssertFalse(descriptor.mainContext.hasChanges)
+        let saved = try descriptor.mainContext.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(saved.filter { $0.id == item.id }.count, 1)
+        XCTAssertTrue(store.canRedo)
+        XCTAssertTrue(store.redo())
+        XCTAssertTrue(store.canUndo)
+    }
+
+    func testSaveFailureThenUndoRebuildsTheDaySectionOnlyOnce() async throws {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 9, day: 18)
+        let item = store.createItem(title: "restore section", dayDate: day)
+        XCTAssertTrue(store.flushPendingChangesSync())
+        store.undoManager.clear()
+
+        let gate = SimulatedSaveGate()
+        store.saveAction = { context in
+            if gate.shouldFail {
+                throw SimulatedSaveFailure.unavailable
+            }
+            try context.save()
+        }
+        store.saveRetryInterval = .seconds(10)
+
+        store.deleteItem(item)
+        try await waitUntil { store.saveStatus == .unsaved }
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [item.id])
+        XCTAssertEqual(
+            store.sections(year: 2026, month: 9)
+                .filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+                .count,
+            1
+        )
+
+        gate.shouldFail = false
+        try await waitUntil { store.saveStatus == .saved }
+
+        let savedSections = try descriptor.mainContext.fetch(FetchDescriptor<DaySection>())
+        XCTAssertEqual(
+            savedSections.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }.count,
+            1
+        )
+        let savedItems = try descriptor.mainContext.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(savedItems.filter { $0.id == item.id }.count, 1)
+    }
+
+    func testSaveFailureThenUndoKeepsOtherUnpersistedItems() async throws {
+        let store = TodoStore.shared
+        let savedItem = store.createItem(title: "already saved", dayDate: date(year: 2026, month: 9, day: 19))
+        XCTAssertTrue(store.flushPendingChangesSync())
+        store.undoManager.clear()
+
+        let gate = SimulatedSaveGate()
+        store.saveAction = { context in
+            if gate.shouldFail {
+                throw SimulatedSaveFailure.unavailable
+            }
+            try context.save()
+        }
+        store.saveRetryInterval = .seconds(10)
+
+        let unsavedItem = store.createItem(
+            title: "still pending",
+            dayDate: date(year: 2026, month: 9, day: 20)
+        )
+        try await waitUntil { store.saveStatus == .unsaved }
+
+        store.deleteItem(savedItem)
+        XCTAssertTrue(store.undo())
+
+        XCTAssertEqual(store.todoItemsCache[savedItem.id]?.title, "already saved")
+        XCTAssertEqual(store.todoItemsCache[unsavedItem.id]?.title, "still pending")
+
+        gate.shouldFail = false
+        try await waitUntil { store.saveStatus == .saved }
+
+        let savedItems = try descriptor.mainContext.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(savedItems.filter { $0.id == savedItem.id }.count, 1)
+        XCTAssertEqual(savedItems.filter { $0.id == unsavedItem.id }.count, 1)
+    }
+
+    func testSaveFailureThenUndoRestoresAnItemThatWasNeverSaved() async throws {
+        let store = TodoStore.shared
+        let gate = SimulatedSaveGate()
+        store.saveAction = { context in
+            if gate.shouldFail {
+                throw SimulatedSaveFailure.unavailable
+            }
+            try context.save()
+        }
+        store.saveRetryInterval = .seconds(10)
+
+        let item = store.createItem(
+            title: "never saved",
+            dayDate: date(year: 2026, month: 9, day: 21)
+        )
+        try await waitUntil { store.saveStatus == .unsaved }
+
+        store.deleteItem(item)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.todoItemsCache[item.id]?.title, "never saved")
+
+        gate.shouldFail = false
+        try await waitUntil { store.saveStatus == .saved }
+
+        let savedItems = try descriptor.mainContext.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(savedItems.filter { $0.id == item.id }.count, 1)
+    }
+
+    func testFailedSaveAutomaticallyRetriesTheLatestState() async throws {
+        let store = TodoStore.shared
+        let gate = SimulatedSaveGate()
+        var saveCount = 0
+        store.saveAction = { context in
+            saveCount += 1
+            if gate.shouldFail {
+                throw SimulatedSaveFailure.unavailable
+            }
+            try context.save()
+        }
+        store.saveRetryInterval = .milliseconds(50)
+
+        let item = store.createItem(title: "latest", dayDate: .now)
+        try await waitUntil { store.saveStatus == .unsaved && saveCount >= 2 }
+
+        XCTAssertEqual(store.saveStatus, .unsaved)
+        XCTAssertGreaterThanOrEqual(saveCount, 2)
+
+        gate.shouldFail = false
+        try await waitUntil { store.saveStatus == .saved }
+
+        XCTAssertEqual(store.saveStatus, .saved)
+        XCTAssertEqual(store.todoItemsCache[item.id]?.title, "latest")
+        XCTAssertFalse(descriptor.mainContext.hasChanges)
+    }
+
+    func testTerminationIsBlockedUntilPendingChangesCanBeSaved() {
+        let store = TodoStore.shared
+        store.saveRetryInterval = .seconds(10)
+        store.saveAction = { _ in
+            throw SimulatedSaveFailure.unavailable
+        }
+        _ = store.createItem(title: "do not lose", dayDate: .now)
+
+        XCTAssertFalse(store.prepareForTermination())
+        XCTAssertEqual(store.saveStatus, .unsaved)
+        XCTAssertTrue(store.hasUnsavedChanges)
+
+        store.saveAction = { context in
+            try context.save()
+        }
+
+        XCTAssertTrue(store.prepareForTermination())
+        XCTAssertEqual(store.saveStatus, .saved)
+        XCTAssertFalse(store.hasUnsavedChanges)
+    }
+
+    func testApplicationTerminationCancelsExitAndShowsNoticeWhenSaveFails() {
+        let store = TodoStore.shared
+        store.saveAction = { _ in
+            throw SimulatedSaveFailure.unavailable
+        }
+        _ = store.createItem(title: "do not exit", dayDate: .now)
+
+        var didShowNotice = false
+        let delegate = TodoBlockApplicationDelegate()
+        delegate.unsavedChangesAlertPresenter = {
+            didShowNotice = true
+        }
+
+        let reply = delegate.applicationShouldTerminate(NSApplication.shared)
+
+        XCTAssertEqual(reply, .terminateCancel)
+        XCTAssertTrue(didShowNotice)
+        XCTAssertTrue(store.hasUnsavedChanges)
+    }
+
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        for _ in 0..<100 {
+            if condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("等待保存状态变化超时")
     }
 
     // MARK: - Section maintenance (Phase 1.B，保护 P0-2 拆分)
