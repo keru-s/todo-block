@@ -85,14 +85,32 @@ final class TodoStore {
     @discardableResult
     func undo() -> Bool {
         flushPendingTextEdit()
-        return undoManager.undo()
+        return undoManager.undo(displayScope: .all, store: self) != nil
+    }
+
+    /// 由当前入口执行撤销；结果只描述发生了什么，展示由外层自行决定。
+    @discardableResult
+    func undo(
+        displayScope: TodoHistoryDisplayScope
+    ) -> TodoHistoryExecutionResult? {
+        flushPendingTextEdit()
+        return undoManager.undo(displayScope: displayScope, store: self)
     }
 
     /// 执行重做操作
     @discardableResult
     func redo() -> Bool {
         flushPendingTextEdit()
-        return undoManager.redo()
+        return undoManager.redo(displayScope: .all, store: self) != nil
+    }
+
+    /// 由当前入口执行恢复；结果只描述发生了什么，展示由外层自行决定。
+    @discardableResult
+    func redo(
+        displayScope: TodoHistoryDisplayScope
+    ) -> TodoHistoryExecutionResult? {
+        flushPendingTextEdit()
+        return undoManager.redo(displayScope: displayScope, store: self)
     }
 
     /// 是否有可撤销的操作
@@ -155,6 +173,7 @@ final class TodoStore {
 
     private func clearCachesAndState(clearUndo: Bool) {
         textEditSession.reset()
+        SelectionManager.clearDeferredHistoryStates()
         todoItemsCache.removeAll()
         daySectionsCache.removeAll()
         if clearUndo {

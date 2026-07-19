@@ -167,7 +167,11 @@ private extension MenuBarView {
               visibleHistoryRevealRequest?.id == request.id
         else { return }
         handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(request.selectionState, itemId: request.itemId)
+        actionModule.restoreHistorySelection(
+            request.selectionState,
+            itemId: request.itemId,
+            sourceHistoryContext: request.sourceHistoryContext
+        )
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {

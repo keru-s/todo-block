@@ -86,23 +86,13 @@ final class TodoListActionModule {
         selectionManager.activateHistoryContext()
     }
 
-    func canDisplayHistoryResult(at destination: TodoDropDestination) -> Bool {
-        guard let commandScope else { return false }
-        switch (commandScope, destination.normalized) {
-        case (.today, .scheduled(let date)):
-            return Calendar.current.isDate(date, inSameDayAs: todayProvider())
-        case (.scheduledMonth(let year, let month), .scheduled(let date)):
-            let components = Calendar.current.dateComponents([.year, .month], from: date)
-            return components.year == year && components.month == month
-        case (.longTerm, .longTerm):
-            return true
-        default:
-            return false
-        }
-    }
-
-    func restoreHistorySelection(_ state: TodoSelectionState?, itemId: UUID?) {
-        if let state {
+    func restoreHistorySelection(
+        _ state: TodoSelectionState?,
+        itemId: UUID?,
+        sourceHistoryContext: TodoSelectionHistoryContext? = nil
+    ) {
+        if let state,
+           sourceHistoryContext == nil || sourceHistoryContext == selectionManager.historyContext {
             state.apply(to: selectionManager)
         } else if let itemId, store.todoItemsCache[itemId] != nil {
             selectionManager.restoreFocus(to: itemId)
@@ -180,18 +170,20 @@ final class TodoListActionModule {
     private func historyAvailability(
         for command: TodoListCommand
     ) -> TodoListCommandAvailability {
-        guard commandScope == .today else { return .available }
-        let affectsToday: Bool?
+        let canExecute: Bool
         switch command {
         case .undo:
-            affectsToday = store.undoManager.nextUndoAffectsToday(on: todayProvider())
+            canExecute = store.textEditSession.hasPendingSegment
+                || store.undoManager.canUndo(displayScope: historyDisplayScope)
         case .redo:
-            affectsToday = store.undoManager.nextRedoAffectsToday(on: todayProvider())
+            canExecute = store.undoManager.canRedo(displayScope: historyDisplayScope)
         default:
             return .available
         }
-        guard affectsToday == true else {
-            return .unavailable(.openMainWindowForHistory)
+        guard canExecute else {
+            return commandScope == .today
+                ? .unavailable(.openMainWindowForHistory)
+                : .unavailable(nil)
         }
         return .available
     }
@@ -310,10 +302,22 @@ final class TodoListActionModule {
             )
         case .undo:
             prepareForExternalAction()
-            return store.undo() ? .performed : .noChange
+            guard let execution = store.undo(displayScope: historyDisplayScope) else {
+                return historyExecutionFailure(for: .undo)
+            }
+            if let result = execution.presentationResult {
+                TodoHistoryPresentationCoordinator.shared.present(result)
+            }
+            return .performed
         case .redo:
             prepareForExternalAction()
-            return store.redo() ? .performed : .noChange
+            guard let execution = store.redo(displayScope: historyDisplayScope) else {
+                return historyExecutionFailure(for: .redo)
+            }
+            if let result = execution.presentationResult {
+                TodoHistoryPresentationCoordinator.shared.present(result)
+            }
+            return .performed
         }
     }
 
@@ -335,6 +339,24 @@ final class TodoListActionModule {
             focusedItemId: selectionManager.focusedItemId,
             selectedItemIds: selectionManager.selectedItemIds
         )
+    }
+
+    private var historyDisplayScope: TodoHistoryDisplayScope {
+        commandScope == .today
+            ? .today(on: todayProvider())
+            : .all
+    }
+
+    private func historyExecutionFailure(
+        for command: TodoListCommand
+    ) -> TodoListActionResult {
+        guard commandScope == .today else { return .noChange }
+        switch command {
+        case .undo, .redo:
+            return .rejected(.openMainWindowForHistory)
+        default:
+            return .noChange
+        }
     }
 
     private var exportedMarkdown: String? {

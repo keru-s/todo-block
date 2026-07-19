@@ -6,6 +6,7 @@ struct TodoHistoryRevealRequest: Equatable {
     let resultDestination: TodoDropDestination
     let itemId: UUID?
     let selectionState: TodoSelectionState?
+    let sourceHistoryContext: TodoSelectionHistoryContext?
 }
 
 @MainActor
@@ -14,36 +15,26 @@ final class TodoHistoryPresentationCoordinator {
     static let shared = TodoHistoryPresentationCoordinator()
 
     private(set) var revealRequest: TodoHistoryRevealRequest?
-    private var openMainWindow: (() -> Void)?
 
     private init() {}
 
-    func install(openMainWindow: @escaping () -> Void) {
-        self.openMainWindow = openMainWindow
-    }
-
-    func reveal(
-        destination: TodoDropDestination,
-        itemId: UUID?,
-        selectionState: TodoSelectionState? = nil
+    /// 接收已经执行完成的历史结果。这里只发布可观察的数据，绝不决定窗口、导航或滚动。
+    func present(
+        _ result: TodoHistoryApplicationResult
     ) {
-        let sidebarDestination = Self.sidebarDestination(for: destination)
+        let sidebarDestination = Self.sidebarDestination(for: result.destination)
         revealRequest = TodoHistoryRevealRequest(
             id: UUID(),
             destination: sidebarDestination,
-            resultDestination: destination.normalized,
-            itemId: itemId,
-            selectionState: selectionState
+            resultDestination: result.destination.normalized,
+            itemId: result.itemId,
+            selectionState: result.sourceSelectionState,
+            sourceHistoryContext: result.sourceHistoryContext
         )
-        if ActiveListCommandCoordinator.shared
-            .canCurrentListDisplayHistoryResult(at: destination) == false {
-            openMainWindow?()
-        }
     }
 
     func resetForTesting() {
         revealRequest = nil
-        openMainWindow = nil
     }
 
     private static func sidebarDestination(

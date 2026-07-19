@@ -97,7 +97,7 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testUnitWithUnavailableSelectionOwnerIsRejectedAsAWhole() {
+    func testUnitWithUnavailableSelectionOwnerStillAppliesItsItemChange() {
         let date = fixedDate(day: 6)
         let item = store.createItem(title: "原内容", dayDate: date)
         store.undoManager.clear()
@@ -105,9 +105,9 @@ final class TodoOperationUnitTests: XCTestCase {
         let unavailableContext = TodoSelectionHistoryContext.ephemeral(UUID())
 
         let unit = TodoOperationUnit(
-            actionName: "缺少选择归属",
+            actionName: "已关闭列表的编辑",
             itemTransitions: [
-                TodoItemTransition(before: before, after: before.replacing(title: "不应写入"))
+                TodoItemTransition(before: before, after: before.replacing(title: "已写入"))
             ],
             selectionTransitions: [
                 TodoSelectionTransition(
@@ -118,9 +118,9 @@ final class TodoOperationUnitTests: XCTestCase {
             ]
         )
 
-        XCTAssertFalse(store.undoManager.perform(unit, store: store))
-        XCTAssertEqual(item.title, "原内容")
-        XCTAssertFalse(store.canUndo)
+        XCTAssertTrue(store.undoManager.perform(unit, store: store))
+        XCTAssertEqual(item.title, "已写入")
+        XCTAssertTrue(store.canUndo)
     }
 
     func testNoChangeAndRejectedUnitKeepRedoButNewEffectiveUnitClearsIt() {

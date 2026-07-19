@@ -113,7 +113,11 @@ struct LongTermListView: View {
               request.destination == .longTerm
         else { return }
         handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(request.selectionState, itemId: request.itemId)
+        actionModule.restoreHistorySelection(
+            request.selectionState,
+            itemId: request.itemId,
+            sourceHistoryContext: request.sourceHistoryContext
+        )
     }
 
     private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
