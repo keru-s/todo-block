@@ -61,28 +61,22 @@ extension TodoStore {
             containerKindRaw: containerKind.rawValue,
             dayDate: normalizedDate
         )
-        let selectionChanges: [TodoSelectionChange]
+        let selectionTransitions: [TodoSelectionTransition]
         if let selectionManager {
-            selectionChanges = [
-                TodoSelectionChange(
+            selectionTransitions = [
+                TodoSelectionTransition(
                     selectionManager: selectionManager,
                     before: TodoSelectionState(selectionManager: selectionManager),
                     after: TodoSelectionState(focusing: snapshot.id)
                 )
             ]
         } else {
-            selectionChanges = []
+            selectionTransitions = []
         }
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: "新建",
-            itemExistenceChanges: [
-                TodoItemExistenceChange(
-                    snapshot: snapshot,
-                    beforeExists: false,
-                    afterExists: true
-                )
-            ],
-            selectionChanges: selectionChanges
+            itemTransitions: [TodoItemTransition(before: nil, after: snapshot)],
+            selectionTransitions: selectionTransitions
         )
         guard
             undoManager.perform(operation, store: self),
@@ -150,31 +144,22 @@ extension TodoStore {
             containerKindRaw: item.containerKindRaw,
             dayDate: item.dayDate
         )
-        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+        let selectionTransitions: [TodoSelectionTransition] = selectionManager.map { manager in
             [
-                TodoSelectionChange(
+                TodoSelectionTransition(
                     selectionManager: manager,
                     before: TodoSelectionState(selectionManager: manager),
                     after: TodoSelectionState(focusing: childSnapshot.id)
                 )
             ]
         } ?? []
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: "拆分",
-            itemExistenceChanges: [
-                TodoItemExistenceChange(
-                    snapshot: childSnapshot,
-                    beforeExists: false,
-                    afterExists: true
-                )
+            itemTransitions: [
+                TodoItemTransition(before: nil, after: childSnapshot),
+                TodoItemTransition(before: before, after: before.replacing(title: newCurrentTitle))
             ],
-            itemStateChanges: [
-                TodoItemStateChange(
-                    before: before,
-                    after: before.replacing(title: newCurrentTitle)
-                )
-            ],
-            selectionChanges: selectionChanges
+            selectionTransitions: selectionTransitions
         )
         guard undoManager.perform(operation, store: self) else { return nil }
         return todoItemsCache[childSnapshot.id]
@@ -209,7 +194,7 @@ extension TodoStore {
     @discardableResult
     func deleteItemsAsBatch(
         _ items: [TodoItem],
-        selectionChange: TodoSelectionChange? = nil
+        selectionTransition: TodoSelectionTransition? = nil
     ) -> Bool {
         guard items.isEmpty == false else { return false }
         guard items.allSatisfy({ todoItemsCache[$0.id] != nil }) else { return false }
@@ -234,16 +219,10 @@ extension TodoStore {
         guard expandedItems.isEmpty == false else { return false }
 
         let snapshots = expandedItems.map { TodoItemSnapshot(from: $0) }
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: snapshots.count == 1 ? "删除" : "批量删除",
-            itemExistenceChanges: snapshots.map {
-                TodoItemExistenceChange(
-                    snapshot: $0,
-                    beforeExists: true,
-                    afterExists: false
-                )
-            },
-            selectionChanges: selectionChange.map { [$0] } ?? []
+            itemTransitions: snapshots.map { TodoItemTransition(before: $0, after: nil) },
+            selectionTransitions: selectionTransition.map { [$0] } ?? []
         )
         return undoManager.perform(operation, store: self)
     }
@@ -325,17 +304,14 @@ extension TodoStore {
             let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: allItems)
         else { return }
 
-        let changes = block.range.compactMap { index -> TodoCompletionChange? in
+        let transitions = block.range.compactMap { index -> TodoItemTransition? in
             let blockItem = allItems[index]
             guard blockItem.isCompleted != newState else { return nil }
-            return TodoCompletionChange(
-                itemId: blockItem.id,
-                before: blockItem.isCompleted,
-                after: newState
-            )
+            let before = TodoItemSnapshot(from: blockItem)
+            return TodoItemTransition(before: before, after: before.replacing(isCompleted: newState))
         }
         undoManager.perform(
-            TodoOperation(actionName: "勾选", completionChanges: changes),
+            TodoOperationUnit(actionName: "勾选", itemTransitions: transitions),
             store: self
         )
     }
@@ -354,19 +330,16 @@ extension TodoStore {
             rootedAt: Set(rootIds),
             in: allItems
         )
-        let changes = allItems.compactMap { candidate -> TodoCompletionChange? in
+        let transitions = allItems.compactMap { candidate -> TodoItemTransition? in
             guard coveredIds.contains(candidate.id), candidate.isCompleted != isCompleted else {
                 return nil
             }
-            return TodoCompletionChange(
-                itemId: candidate.id,
-                before: candidate.isCompleted,
-                after: isCompleted
-            )
+            let before = TodoItemSnapshot(from: candidate)
+            return TodoItemTransition(before: before, after: before.replacing(isCompleted: isCompleted))
         }
-        guard changes.isEmpty == false else { return }
+        guard transitions.isEmpty == false else { return }
         undoManager.perform(
-            TodoOperation(actionName: "勾选", completionChanges: changes),
+            TodoOperationUnit(actionName: "勾选", itemTransitions: transitions),
             store: self
         )
     }
@@ -407,17 +380,17 @@ extension TodoStore {
         let newSnapshots = oldSnapshots.enumerated().map { offset, snapshot in
             snapshot.replacing(indentLevel: blockIndentLevels[offset] + appliedDelta)
         }
-        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
+        let selectionTransitions: [TodoSelectionTransition] = selectionManager.map { manager in
             let state = TodoSelectionState(selectionManager: manager)
-            return [TodoSelectionChange(selectionManager: manager, before: state, after: state)]
+            return [TodoSelectionTransition(selectionManager: manager, before: state, after: state)]
         } ?? []
         undoManager.perform(
-            TodoOperation(
+            TodoOperationUnit(
                 actionName: appliedDelta > 0 ? "缩进" : "反缩进",
-                itemStateChanges: zip(oldSnapshots, newSnapshots).map {
-                    TodoItemStateChange(before: $0.0, after: $0.1)
+                itemTransitions: zip(oldSnapshots, newSnapshots).map {
+                    TodoItemTransition(before: $0.0, after: $0.1)
                 },
-                selectionChanges: selectionChanges
+                selectionTransitions: selectionTransitions
             ),
             store: self
         )

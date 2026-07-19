@@ -304,6 +304,71 @@ final class UndoManagerTests: XCTestCase {
         XCTAssertTrue(item.isCompleted)
     }
 
+    func testBasicDateChangeUndoRedoKeepsCompleteScheduledItemState() {
+        let store = TodoStore.shared
+        let sourceDate = fixedDate(year: 2026, month: 7, day: 19)
+        let destinationDate = fixedDate(year: 2026, month: 7, day: 22)
+        let item = store.createItem(
+            title: "保留全部状态",
+            isCompleted: true,
+            dayDate: sourceDate,
+            indentLevel: 1
+        )
+        let before = TodoItemSnapshot(from: item)
+        store.undoManager.clear()
+
+        guard let section = store.sections(year: 2026, month: 7).first(where: {
+            Calendar.current.isDate($0.date, inSameDayAs: sourceDate)
+        }) else {
+            return XCTFail("前置：源日期应有分组")
+        }
+
+        store.updateSectionDate(section, to: destinationDate)
+
+        guard let changed = store.todoItemsCache[item.id] else {
+            return XCTFail("改日期后待办必须仍存在")
+        }
+        XCTAssertEqual(changed.dayDate, destinationDate)
+        XCTAssertEqual(changed.id, before.id)
+        XCTAssertEqual(changed.title, before.title)
+        XCTAssertEqual(changed.isCompleted, before.isCompleted)
+        XCTAssertEqual(changed.indentLevel, before.indentLevel)
+        XCTAssertEqual(changed.sortOrder, before.sortOrder)
+        XCTAssertEqual(changed.containerKindRaw, before.containerKindRaw)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(TodoItemSnapshot(from: item).matchesUserState(of: before))
+
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(item.dayDate, destinationDate)
+        XCTAssertEqual(item.id, before.id)
+        XCTAssertEqual(item.title, before.title)
+        XCTAssertEqual(item.isCompleted, before.isCompleted)
+        XCTAssertEqual(item.indentLevel, before.indentLevel)
+        XCTAssertEqual(item.sortOrder, before.sortOrder)
+        XCTAssertEqual(item.containerKindRaw, before.containerKindRaw)
+    }
+
+    func testNoChangeBasicMutationKeepsRedoPath() {
+        let store = TodoStore.shared
+        let date = fixedDate(year: 2026, month: 7, day: 19)
+        let item = store.createItem(title: "不变", dayDate: date)
+        store.undoManager.clear()
+
+        store.toggleComplete(item)
+        XCTAssertTrue(store.undo())
+        XCTAssertTrue(store.canRedo)
+
+        guard let section = store.sections(year: 2026, month: 7).first(where: {
+            Calendar.current.isDate($0.date, inSameDayAs: date)
+        }) else {
+            return XCTFail("前置：日期分组应存在")
+        }
+        store.updateSectionDate(section, to: date)
+
+        XCTAssertTrue(store.canRedo)
+    }
+
     // MARK: - 回归测试：撤销链路 × SwiftData 持久化边界
 
     /// #1: 在 deleteItem 的 debounce 窗口内立即撤销，restoreItem 应先 flush pending delete，

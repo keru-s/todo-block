@@ -100,14 +100,11 @@ extension TodoStore {
         guard newDateStart != oldDate else { return }
         let oldSnapshots = items(for: oldDate).map { TodoItemSnapshot(from: $0) }
         guard oldSnapshots.isEmpty == false else { return }
-        let changes = oldSnapshots.map { snapshot in
-            TodoItemStateChange(
-                before: snapshot,
-                after: snapshot.replacing(dayDate: newDateStart)
-            )
+        let transitions = oldSnapshots.map { snapshot in
+            TodoItemTransition(before: snapshot, after: snapshot.replacing(dayDate: newDateStart))
         }
         undoManager.perform(
-            TodoOperation(actionName: "更改日期", itemStateChanges: changes),
+            TodoOperationUnit(actionName: "更改日期", itemTransitions: transitions),
             store: self
         )
     }

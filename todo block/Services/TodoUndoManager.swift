@@ -268,6 +268,19 @@ struct TodoSelectionTransition {
         self.after = after
     }
 
+    init(
+        selectionManager: SelectionManager,
+        before: TodoSelectionState,
+        after: TodoSelectionState
+    ) {
+        selectionManager.activateHistoryContext()
+        self.init(
+            historyContext: selectionManager.historyContext,
+            before: before,
+            after: after
+        )
+    }
+
     init(_ legacyChange: TodoSelectionChange) {
         self.init(
             historyContext: legacyChange.historyContext,

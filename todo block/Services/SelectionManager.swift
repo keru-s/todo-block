@@ -377,12 +377,12 @@ final class SelectionManager {
             }
         }
 
-        let selectionChange = TodoSelectionChange(
+        let selectionTransition = TodoSelectionTransition(
             selectionManager: self,
             before: selectionBefore,
             after: TodoSelectionState(focusing: nextFocusId)
         )
-        return store.deleteItemsAsBatch(itemsToDelete, selectionChange: selectionChange)
+        return store.deleteItemsAsBatch(itemsToDelete, selectionTransition: selectionTransition)
     }
 }
 
