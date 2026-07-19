@@ -273,73 +273,6 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testLegacyOperationUsesTheSameStructuredHistory() {
-        let date = fixedDate(day: 5)
-        let item = store.createItem(title: "旧入口", dayDate: date)
-        store.undoManager.clear()
-        let before = TodoItemSnapshot(from: item)
-
-        XCTAssertTrue(
-            store.undoManager.perform(
-                TodoOperation(
-                    actionName: "旧入口修改",
-                    itemStateChanges: [
-                        TodoItemStateChange(before: before, after: before.replacing(title: "新状态"))
-                    ]
-                ),
-                store: store
-            )
-        )
-        XCTAssertEqual(item.title, "新状态")
-        XCTAssertEqual(store.undoManager.undoActionName, "旧入口修改")
-        XCTAssertTrue(store.undo())
-        XCTAssertEqual(item.title, "旧入口")
-    }
-
-    func testLegacyAndOperationUnitEntriesHaveEquivalentUndoRedoBehavior() {
-        let date = fixedDate(day: 9)
-        let unitItem = store.createItem(title: "原内容", dayDate: date)
-        let legacyItem = store.createItem(title: "原内容", dayDate: date)
-        store.undoManager.clear()
-
-        let unitBefore = TodoItemSnapshot(from: unitItem)
-        XCTAssertTrue(
-            store.undoManager.perform(
-                TodoOperationUnit(
-                    actionName: "新入口修改",
-                    itemTransitions: [
-                        TodoItemTransition(before: unitBefore, after: unitBefore.replacing(title: "修改后"))
-                    ]
-                ),
-                store: store
-            )
-        )
-        XCTAssertTrue(store.undo())
-        let unitAfterUndo = unitItem.title
-        XCTAssertTrue(store.redo())
-        let unitAfterRedo = unitItem.title
-
-        store.undoManager.clear()
-        let legacyBefore = TodoItemSnapshot(from: legacyItem)
-        XCTAssertTrue(
-            store.undoManager.perform(
-                TodoOperation(
-                    actionName: "旧入口修改",
-                    itemStateChanges: [
-                        TodoItemStateChange(before: legacyBefore, after: legacyBefore.replacing(title: "修改后"))
-                    ]
-                ),
-                store: store
-            )
-        )
-        XCTAssertTrue(store.undo())
-        let legacyAfterUndo = legacyItem.title
-        XCTAssertTrue(store.redo())
-        let legacyAfterRedo = legacyItem.title
-
-        XCTAssertEqual([unitAfterUndo, unitAfterRedo], [legacyAfterUndo, legacyAfterRedo])
-    }
-
     func testReferenceModelTracksIdentityOrderHierarchyAndEditingSelection() {
         let date = fixedDate(day: 10)
         let selectionManager = SelectionManager()
@@ -454,6 +387,107 @@ final class TodoOperationUnitTests: XCTestCase {
         assertActualState(matches: reference.currentState, date: date, selectionManager: selectionManager)
     }
 
+    func testDeterministicRandomMixedSequenceMatchesIndependentUserStateReference() {
+        let date = fixedDate(day: 11)
+        let selectionManager = SelectionManager(historyContext: .mainWindow)
+        let root = store.createItem(title: "根", dayDate: date)
+        let rootSnapshot = TodoItemSnapshot(from: root)
+        let childSnapshot = TodoItemSnapshot(
+            id: UUID(),
+            title: "子项",
+            indentLevel: 1,
+            sortOrder: root.sortOrder + 1_000,
+            containerKindRaw: TodoContainerKind.scheduled.rawValue,
+            dayDate: date
+        )
+        store.undoManager.clear()
+        selectionManager.restoreFocus(to: root.id)
+        selectionManager.activateHistoryContext()
+
+        var reference = RandomHistoryReference(
+            initialState: .init(
+                items: [
+                    .init(
+                        id: root.id,
+                        title: "根",
+                        isCompleted: false,
+                        indentLevel: 0,
+                        sortOrder: root.sortOrder
+                    )
+                ],
+                selection: .init(focusing: root.id, cursorPosition: 0)
+            )
+        )
+        var random = DeterministicRandom(seed: 0xC0FFEE)
+
+        for step in 0..<120 {
+            switch random.next() % 7 {
+            case 0:
+                var next = reference.currentState
+                next.updateItem(root.id) { item in
+                    item.title = "根 \(step)"
+                }
+                next.selection = .init(focusing: root.id, cursorPosition: next.item(root.id)?.title.count ?? 0)
+                apply(next, to: &reference, selectionManager: selectionManager, rootSnapshot: rootSnapshot, childSnapshot: childSnapshot)
+            case 1:
+                var next = reference.currentState
+                next.updateItem(root.id) { item in
+                    item.isCompleted.toggle()
+                }
+                next.selection = .init(focusing: root.id)
+                apply(next, to: &reference, selectionManager: selectionManager, rootSnapshot: rootSnapshot, childSnapshot: childSnapshot)
+            case 2:
+                var next = reference.currentState
+                if next.item(childSnapshot.id) == nil {
+                    next.items.append(
+                        .init(
+                            id: childSnapshot.id,
+                            title: "子项 \(step)",
+                            isCompleted: false,
+                            indentLevel: 1,
+                            sortOrder: childSnapshot.sortOrder
+                        )
+                    )
+                } else {
+                    next.updateItem(childSnapshot.id) { item in
+                        item.title = "子项 \(step)"
+                    }
+                }
+                next.selection = .init(focusing: childSnapshot.id, cursorPosition: 1)
+                apply(next, to: &reference, selectionManager: selectionManager, rootSnapshot: rootSnapshot, childSnapshot: childSnapshot)
+            case 3:
+                guard reference.currentState.item(childSnapshot.id) != nil else { continue }
+                var next = reference.currentState
+                next.updateItem(childSnapshot.id) { item in
+                    item.indentLevel = item.indentLevel == 1 ? 2 : 1
+                    item.sortOrder = item.indentLevel == 1
+                        ? childSnapshot.sortOrder
+                        : childSnapshot.sortOrder + 500
+                }
+                next.selection = .init(focusing: childSnapshot.id, cursorPosition: 2, textSelectionLength: 1)
+                apply(next, to: &reference, selectionManager: selectionManager, rootSnapshot: rootSnapshot, childSnapshot: childSnapshot)
+            case 4:
+                guard reference.currentState.item(childSnapshot.id) != nil else { continue }
+                var next = reference.currentState
+                next.items.removeAll { $0.id == childSnapshot.id }
+                next.selection = .init(focusing: root.id)
+                apply(next, to: &reference, selectionManager: selectionManager, rootSnapshot: rootSnapshot, childSnapshot: childSnapshot)
+            case 5:
+                guard reference.undo() else { continue }
+                XCTAssertTrue(store.undo(), "第 \(step) 步撤销应该成功")
+            default:
+                guard reference.redo() else { continue }
+                XCTAssertTrue(store.redo(), "第 \(step) 步恢复应该成功")
+            }
+
+            assertRandomActualState(
+                matches: reference.currentState,
+                date: date,
+                selectionManager: selectionManager
+            )
+        }
+    }
+
     private func assertActualState(
         matches reference: TodoUserStateReference.State,
         date: Date,
@@ -477,6 +511,162 @@ final class TodoOperationUnitTests: XCTestCase {
 
     private func fixedDate(day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: day)) ?? .now
+    }
+
+    private func apply(
+        _ next: RandomHistoryReference.State,
+        to reference: inout RandomHistoryReference,
+        selectionManager: SelectionManager,
+        rootSnapshot: TodoItemSnapshot,
+        childSnapshot: TodoItemSnapshot
+    ) {
+        let current = reference.currentState
+        let itemIds = Set(current.items.map(\.id)).union(next.items.map(\.id))
+        let snapshots = Dictionary(uniqueKeysWithValues: [rootSnapshot, childSnapshot].map { ($0.id, $0) })
+        let transitions = itemIds.compactMap { itemId -> TodoItemTransition? in
+            guard let template = snapshots[itemId] else { return nil }
+            let before = current.item(itemId).map { template.replacing(
+                title: $0.title,
+                isCompleted: $0.isCompleted,
+                indentLevel: $0.indentLevel,
+                sortOrder: $0.sortOrder
+            ) }
+            let after = next.item(itemId).map { template.replacing(
+                title: $0.title,
+                isCompleted: $0.isCompleted,
+                indentLevel: $0.indentLevel,
+                sortOrder: $0.sortOrder
+            ) }
+            return TodoItemTransition(before: before, after: after)
+        }
+
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "随机混合操作",
+                    itemTransitions: transitions,
+                    selectionTransitions: [
+                        TodoSelectionTransition(
+                            historyContext: selectionManager.historyContext,
+                            before: current.selection.todoSelectionState,
+                            after: next.selection.todoSelectionState
+                        )
+                    ]
+                ),
+                store: store
+            )
+        )
+        reference.apply(next)
+    }
+
+    private func assertRandomActualState(
+        matches reference: RandomHistoryReference.State,
+        date: Date,
+        selectionManager: SelectionManager
+    ) {
+        let actualItems = store.items(for: date).map {
+            RandomHistoryReference.Item(
+                id: $0.id,
+                title: $0.title,
+                isCompleted: $0.isCompleted,
+                indentLevel: $0.indentLevel,
+                sortOrder: $0.sortOrder
+            )
+        }
+        XCTAssertEqual(actualItems, reference.items.sorted { $0.sortOrder < $1.sortOrder })
+        XCTAssertEqual(TodoSelectionState(selectionManager: selectionManager), reference.selection.todoSelectionState)
+    }
+}
+
+private struct DeterministicRandom {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    mutating func next() -> UInt64 {
+        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return state
+    }
+}
+
+private struct RandomHistoryReference {
+    struct Item: Equatable {
+        let id: UUID
+        var title: String
+        var isCompleted: Bool
+        var indentLevel: Int
+        var sortOrder: Double
+    }
+
+    struct Selection: Equatable {
+        let focusedItemId: UUID?
+        let selectedItemIds: Set<UUID>
+        let lastSelectedId: UUID?
+        let cursorPosition: Int
+        let textSelectionLength: Int
+
+        init(focusing itemId: UUID?, cursorPosition: Int = 0, textSelectionLength: Int = 0) {
+            focusedItemId = itemId
+            selectedItemIds = itemId.map { [$0] } ?? []
+            lastSelectedId = itemId
+            self.cursorPosition = cursorPosition
+            self.textSelectionLength = textSelectionLength
+        }
+
+        var todoSelectionState: TodoSelectionState {
+            TodoSelectionState(
+                focusedItemId: focusedItemId,
+                selectedItemIds: selectedItemIds,
+                lastSelectedId: lastSelectedId,
+                cursorPosition: cursorPosition,
+                textSelectionLength: textSelectionLength
+            )
+        }
+    }
+
+    struct State: Equatable {
+        var items: [Item]
+        var selection: Selection
+
+        func item(_ id: UUID) -> Item? {
+            items.first { $0.id == id }
+        }
+
+        mutating func updateItem(_ id: UUID, update: (inout Item) -> Void) {
+            guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+            update(&items[index])
+        }
+    }
+
+    private(set) var currentState: State
+    private var undoStates: [State] = []
+    private var redoStates: [State] = []
+
+    init(initialState: State) {
+        currentState = initialState
+    }
+
+    mutating func apply(_ state: State) {
+        guard currentState != state else { return }
+        undoStates.append(currentState)
+        currentState = state
+        redoStates.removeAll()
+    }
+
+    mutating func undo() -> Bool {
+        guard let previous = undoStates.popLast() else { return false }
+        redoStates.append(currentState)
+        currentState = previous
+        return true
+    }
+
+    mutating func redo() -> Bool {
+        guard let next = redoStates.popLast() else { return false }
+        undoStates.append(currentState)
+        currentState = next
+        return true
     }
 }
 

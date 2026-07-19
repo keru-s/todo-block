@@ -170,7 +170,7 @@ final class UndoManagerTests: XCTestCase {
         store.undoManager.clear()
 
         store.toggleComplete(parent)
-        store.deleteItemWithoutUndo(child)
+        store.deleteItemForOperationApplication(child)
 
         XCTAssertFalse(store.undo())
         XCTAssertTrue(parent.isCompleted)
@@ -187,7 +187,7 @@ final class UndoManagerTests: XCTestCase {
 
         store.toggleComplete(first)
         store.toggleComplete(parent)
-        store.deleteItemWithoutUndo(child)
+        store.deleteItemForOperationApplication(child)
 
         XCTAssertTrue(store.undo())
         XCTAssertFalse(first.isCompleted)
@@ -247,8 +247,7 @@ final class UndoManagerTests: XCTestCase {
             _ = store.createItem(title: "Item \(i)", dayDate: date)
         }
 
-        // NSUndoManager 应该限制在 50 步
-        // 由于使用 NSUndoManager，我们检查 canUndo 是否正常工作
+        // 统一操作历史最多保留 50 步。
         XCTAssertTrue(store.canUndo)
 
         // 撤销所有可撤销的操作
@@ -410,7 +409,7 @@ final class UndoManagerTests: XCTestCase {
         let b = store.createItem(title: "B", dayDate: date)
 
         // 绕过 deleteItem 注册的 undo，让栈顶的“创建 B”记录失效。
-        store.deleteItemWithoutUndo(b)
+        store.deleteItemForOperationApplication(b)
         XCTAssertEqual(store.items(for: date).count, 1)
 
         XCTAssertTrue(store.undo(), "一次撤销应跳过失效记录并执行更早的有效记录")
@@ -431,7 +430,7 @@ final class UndoManagerTests: XCTestCase {
         guard let restored = store.todoItemsCache[item.id] else {
             return XCTFail("撤销删除后应恢复项目")
         }
-        store.deleteItemWithoutUndo(restored)
+        store.deleteItemForOperationApplication(restored)
 
         XCTAssertFalse(store.redo(), "失效的恢复记录应被丢弃，不能报告为已执行")
         XCTAssertFalse(store.canRedo)

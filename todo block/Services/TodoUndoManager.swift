@@ -35,54 +35,6 @@ enum TodoOperationAttention {
     case destination(TodoDropDestination)
 }
 
-// MARK: - 旧入口的临时描述
-
-/// 旧调用点在迁移期间仍使用这些描述。它们会在进入 `TodoUndoManager` 时一次性转换为
-/// `TodoOperationUnit`，不会形成第二套历史。
-struct TodoCompletionChange {
-    let itemId: UUID
-    let before: Bool
-    let after: Bool
-
-    func value(for target: TodoOperationValueTarget) -> Bool {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
-        }
-    }
-}
-
-struct TodoItemExistenceChange {
-    let snapshot: TodoItemSnapshot
-    let beforeExists: Bool
-    let afterExists: Bool
-
-    func exists(for target: TodoOperationValueTarget) -> Bool {
-        switch target {
-        case .before:
-            beforeExists
-        case .after:
-            afterExists
-        }
-    }
-}
-
-struct TodoItemStateChange {
-    let before: TodoItemSnapshot
-    let after: TodoItemSnapshot
-
-    func snapshot(for target: TodoOperationValueTarget) -> TodoItemSnapshot {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
-        }
-    }
-}
-
 struct TodoSelectionState: Equatable {
     let focusedItemId: UUID?
     let selectedItemIds: Set<UUID>
@@ -128,84 +80,6 @@ struct TodoSelectionState: Equatable {
         selectionManager.textSelectionLength = textSelectionLength
         selectionManager.preferredHorizontalOffset = nil
         selectionManager.verticalMoveDirection = nil
-    }
-}
-
-struct TodoSelectionChange {
-    let historyContext: TodoSelectionHistoryContext
-    let before: TodoSelectionState
-    let after: TodoSelectionState
-
-    init(
-        selectionManager: SelectionManager,
-        before: TodoSelectionState,
-        after: TodoSelectionState
-    ) {
-        selectionManager.activateHistoryContext()
-        historyContext = selectionManager.historyContext
-        self.before = before
-        self.after = after
-    }
-
-    func state(for target: TodoOperationValueTarget) -> TodoSelectionState {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
-        }
-    }
-}
-
-struct TodoOperation {
-    let actionName: String
-    var completionChanges: [TodoCompletionChange] = []
-    var itemExistenceChanges: [TodoItemExistenceChange] = []
-    var itemStateChanges: [TodoItemStateChange] = []
-    var selectionChanges: [TodoSelectionChange] = []
-    var attention: TodoOperationAttention? = nil
-
-    var isEmpty: Bool {
-        completionChanges.isEmpty
-            && itemExistenceChanges.isEmpty
-            && itemStateChanges.isEmpty
-    }
-
-    @MainActor
-    func operationUnit(
-        sourceTarget: TodoOperationValueTarget,
-        store: TodoStore
-    ) -> TodoOperationUnit? {
-        guard isEmpty == false else { return nil }
-
-        var transitions = itemExistenceChanges.map {
-            TodoItemTransition(
-                before: $0.exists(for: .before) ? $0.snapshot : nil,
-                after: $0.exists(for: .after) ? $0.snapshot : nil
-            )
-        }
-        transitions.append(contentsOf: itemStateChanges.map {
-            TodoItemTransition(before: $0.before, after: $0.after)
-        })
-
-        for change in completionChanges {
-            guard let currentItem = store.todoItemsCache[change.itemId] else { return nil }
-            let currentSnapshot = TodoItemSnapshot(from: currentItem)
-            guard currentSnapshot.isCompleted == change.value(for: sourceTarget) else { return nil }
-            transitions.append(
-                TodoItemTransition(
-                    before: currentSnapshot.replacing(isCompleted: change.before),
-                    after: currentSnapshot.replacing(isCompleted: change.after)
-                )
-            )
-        }
-
-        return TodoOperationUnit(
-            actionName: actionName,
-            itemTransitions: transitions,
-            selectionTransitions: selectionChanges.map(TodoSelectionTransition.init),
-            attention: attention
-        )
     }
 }
 
@@ -278,14 +152,6 @@ struct TodoSelectionTransition {
             historyContext: selectionManager.historyContext,
             before: before,
             after: after
-        )
-    }
-
-    init(_ legacyChange: TodoSelectionChange) {
-        self.init(
-            historyContext: legacyChange.historyContext,
-            before: legacyChange.before,
-            after: legacyChange.after
         )
     }
 
@@ -459,15 +325,6 @@ final class TodoUndoManager {
     }
 
     @discardableResult
-    func perform(_ operation: TodoOperation, store: TodoStore) -> Bool {
-        store.flushPendingTextEdit()
-        guard let unit = operation.operationUnit(sourceTarget: .before, store: store) else {
-            return false
-        }
-        return perform(unit, store: store)
-    }
-
-    @discardableResult
     func perform(_ unit: TodoOperationUnit, store: TodoStore) -> Bool {
         store.flushPendingTextEdit()
         guard unit.isEmpty == false, unit.isValid else { return false }
@@ -479,14 +336,6 @@ final class TodoUndoManager {
     }
 
     /// 仅用于连续文字输入这类已即时呈现的变化：当前状态必须已经等于 `after`。
-    @discardableResult
-    func recordApplied(_ operation: TodoOperation, store: TodoStore) -> Bool {
-        guard let unit = operation.operationUnit(sourceTarget: .after, store: store) else {
-            return false
-        }
-        return recordApplied(unit, store: store)
-    }
-
     @discardableResult
     func recordApplied(_ unit: TodoOperationUnit, store: TodoStore) -> Bool {
         guard unit.isEmpty == false, unit.isValid else { return false }
@@ -608,7 +457,7 @@ final class TodoUndoManager {
         guard store.applyExistingItemSnapshots(updateSnapshots) else { return false }
         for itemId in deleteIds {
             guard let item = store.todoItemsCache[itemId] else { return false }
-            store.deleteItemWithoutUndo(item)
+            store.deleteItemForOperationApplication(item)
         }
         unit.selectionTransitions.forEach { $0.apply(for: target) }
         return true

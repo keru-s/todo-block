@@ -89,13 +89,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(menuRegistration))
         store.undoManager.clear()
 
-        let operation = TodoOperation(
+        let before = TodoItemSnapshot(from: item)
+        let operation = TodoOperationUnit(
             actionName: "完成",
-            completionChanges: [
-                TodoCompletionChange(itemId: item.id, before: false, after: true)
+            itemTransitions: [
+                TodoItemTransition(before: before, after: before.replacing(isCompleted: true))
             ],
-            selectionChanges: [
-                TodoSelectionChange(
+            selectionTransitions: [
+                TodoSelectionTransition(
                     selectionManager: originalSelection,
                     before: TodoSelectionState(selectionManager: originalSelection),
                     after: TodoSelectionState(selectionManager: originalSelection)
@@ -143,13 +144,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
             mainSelection.selectedItemIds = [item.id]
             mainSelection.cursorPosition = 3
             mainSelection.textSelectionLength = 1
-            let operation = TodoOperation(
+            let before = TodoItemSnapshot(from: item)
+            let operation = TodoOperationUnit(
                 actionName: "完成",
-                completionChanges: [
-                    TodoCompletionChange(itemId: item.id, before: false, after: true)
+                itemTransitions: [
+                    TodoItemTransition(before: before, after: before.replacing(isCompleted: true))
                 ],
-                selectionChanges: [
-                    TodoSelectionChange(
+                selectionTransitions: [
+                    TodoSelectionTransition(
                         selectionManager: mainSelection,
                         before: TodoSelectionState(selectionManager: mainSelection),
                         after: TodoSelectionState(selectionManager: mainSelection)
@@ -223,14 +225,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let secondBefore = TodoItemSnapshot(from: second)
         store.undoManager.clear()
 
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: "交换日期",
-            itemStateChanges: [
-                TodoItemStateChange(
+            itemTransitions: [
+                TodoItemTransition(
                     before: firstBefore,
                     after: firstBefore.replacing(dayDate: future)
                 ),
-                TodoItemStateChange(
+                TodoItemTransition(
                     before: secondBefore,
                     after: secondBefore.replacing(dayDate: today)
                 ),

@@ -66,7 +66,7 @@ Skip the relaunch step when the diff is docs-only (`*.md`, comments-only changes
 
 - Initialization is idempotent. `initialize(with:)` short-circuits when the same `ModelContext` is passed again, only reloading from the DB. Tests and `#Preview`s rely on this.
 - Writes go to the cache immediately, then a 0.3 s debounced `saveTask` flushes to SwiftData. **`restoreItem` calls `flushPendingChangesSync()` first** to avoid colliding with a pending delete under the unique constraint.
-- `performSave` on failure calls `modelContext.rollback()` and exposes `lastSaveError` (observable). Logging goes through `os.Logger(subsystem: "com.insight.to-do-block", category: "persistence")`.
+- 保存失败不会撤回用户眼前的修改；应用保留最新状态、持续提示并自动重试。Logging goes through `os.Logger(subsystem: "com.insight.to-do-block", category: "persistence")`.
 - `refreshTrigger` is bumped only when *membership/order* of a derived collection changes. Field-level edits (`title`, `isCompleted`, `indentLevel`) drive UI through `@Bindable item` directly — don't bump it for those.
 - `daySectionsCache` is auto-pruned: every `deleteItem*` checks the parent section and removes it if empty (orphan cleanup).
 
@@ -80,7 +80,7 @@ No SwiftData relationships; items belong to a section by matching `dayDate`/`con
 
 ### Undo / Redo
 
-`TodoUndoManager` wraps a single `NSUndoManager` (50 steps). The app menu's Undo/Redo (`todo_blockApp.swift`) goes only through `ActiveListCommandCoordinator`; the claimed list module resolves pending text input and the shared operation history. All `register*` paths use `skipStaleUndo()` so that if a registered closure's target item is gone, the chain advances rather than dead-ending. Batch delete uses self-referential undo+redo registration — keep them symmetric.
+`TodoUndoManager` owns one structured operation history (50 steps), with no system undo stack or compatibility conversion path. The app menu's Undo/Redo (`todo_blockApp.swift`) goes only through `ActiveListCommandCoordinator`; the claimed list module resolves pending text input and the shared operation history. A stale operation is discarded as a whole and the history continues to the next complete operation; never partially apply a recorded operation.
 
 ### Menu-bar popover bridge
 

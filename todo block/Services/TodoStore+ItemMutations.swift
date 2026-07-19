@@ -177,8 +177,9 @@ extension TodoStore {
         deleteItemsAsBatch(block.range.map { destinationItems[$0] })
     }
 
-    /// 删除待办事项（不注册撤销，用于撤销操作内部调用）
-    func deleteItemWithoutUndo(_ item: TodoItem) {
+    /// 操作单元应用已完成完整前态检查后，删除记录好的待办。
+    /// 普通用户操作不得调用此方法，必须先形成操作单元。
+    func deleteItemForOperationApplication(_ item: TodoItem) {
         let scheduledDate: Date? = item.containerKind == .scheduled ? item.dayDate : nil
         todoItemsCache.removeValue(forKey: item.id)
         modelContext?.delete(item)
