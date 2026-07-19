@@ -395,30 +395,24 @@ final class TodoUndoManager {
     private let maxUndoSteps = 50
     private var undoHistory: [TodoOperationUnit] = []
     private var redoHistory: [TodoOperationUnit] = []
-    private var historyRevision = 0
 
     var canUndo: Bool {
-        _ = historyRevision
         return undoHistory.isEmpty == false
     }
 
     var canRedo: Bool {
-        _ = historyRevision
         return redoHistory.isEmpty == false
     }
 
     var undoActionName: String {
-        _ = historyRevision
         return undoHistory.last?.actionName ?? ""
     }
 
     func nextUndoAffectsToday(on date: Date) -> Bool? {
-        _ = historyRevision
         return undoHistory.last.map { affectsToday($0, on: date) }
     }
 
     func nextRedoAffectsToday(on date: Date) -> Bool? {
-        _ = historyRevision
         return redoHistory.last.map { affectsToday($0, on: date) }
     }
 
@@ -463,12 +457,10 @@ final class TodoUndoManager {
     @discardableResult
     func undo() -> Bool {
         while let unit = undoHistory.popLast() {
-            historyRevision += 1
             let store = TodoStore.shared
             guard canApply(unit, target: .before, store: store) else { continue }
             guard apply(unit, target: .before, store: store) else { continue }
             redoHistory.append(unit)
-            historyRevision += 1
             store.scheduleSave()
             revealResult(of: unit, target: .before, store: store)
             return true
@@ -479,12 +471,10 @@ final class TodoUndoManager {
     @discardableResult
     func redo() -> Bool {
         while let unit = redoHistory.popLast() {
-            historyRevision += 1
             let store = TodoStore.shared
             guard canApply(unit, target: .after, store: store) else { continue }
             guard apply(unit, target: .after, store: store) else { continue }
             undoHistory.append(unit)
-            historyRevision += 1
             store.scheduleSave()
             revealResult(of: unit, target: .after, store: store)
             return true
@@ -495,7 +485,6 @@ final class TodoUndoManager {
     func clear() {
         undoHistory.removeAll()
         redoHistory.removeAll()
-        historyRevision += 1
     }
 
     private func appendNewHistory(_ unit: TodoOperationUnit) {
@@ -504,7 +493,6 @@ final class TodoUndoManager {
             undoHistory.removeFirst(undoHistory.count - maxUndoSteps)
         }
         redoHistory.removeAll()
-        historyRevision += 1
     }
 
     private func canApply(
