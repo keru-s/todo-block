@@ -694,6 +694,38 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertEqual(selectionManager.cursorPosition, 4)
     }
 
+    func testUndoDiscardsStaleParentChildMoveWithoutPartiallyRestoringTheGroup() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 7, day: 19)
+        let first = store.createItem(title: "first", dayDate: day)
+        let parent = store.createItem(title: "parent", dayDate: day, afterItem: first)
+        let child = store.createItem(
+            title: "child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        let following = store.createItem(title: "following", dayDate: day, afterItem: child)
+        store.undoManager.clear()
+        let moveModule = TodoParentChildGroupMoveModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+
+        XCTAssertEqual(
+            moveModule.execute(.step(itemId: parent.id, direction: .down)),
+            .performed
+        )
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, following.id, parent.id, child.id])
+
+        child.title = "changed outside the operation"
+
+        XCTAssertFalse(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [first.id, following.id, parent.id, child.id])
+        XCTAssertEqual(child.title, "changed outside the operation")
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testPlaceKeepsParentAndChildrenAdjacentInTightlyPackedDestination() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 24)
