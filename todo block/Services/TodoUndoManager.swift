@@ -511,6 +511,11 @@ final class TodoUndoManager {
         target: TodoOperationValueTarget,
         store: TodoStore
     ) -> Bool {
+        guard unit.selectionTransitions.allSatisfy({
+            SelectionManager.activeManager(for: $0.historyContext) != nil
+        }) else {
+            return false
+        }
         let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
         return unit.itemTransitions.allSatisfy { transition in
             switch transition.snapshot(for: sourceTarget) {

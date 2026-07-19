@@ -10,19 +10,17 @@ import XCTest
 
 @MainActor
 final class TodoOperationUnitTests: XCTestCase {
-    private var container: ModelContainer!
-    private var store: TodoStore!
+    private var store: TodoStore { .shared }
 
     override func setUp() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(
+        let container = try ModelContainer(
             for: TodoItem.self,
             DaySection.self,
             configurations: configuration
         )
         TodoStore.shared.reset()
         TodoStore.shared.initialize(with: container.mainContext)
-        store = TodoStore.shared
     }
 
     func testOperationUnitAppliesAllStateAndSelectionThenReversesExactly() {
@@ -94,6 +92,32 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertFalse(store.undoManager.perform(unit, store: store))
         XCTAssertEqual(first.title, "第一项")
         XCTAssertEqual(second.title, "已经被其他动作修改")
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testUnitWithUnavailableSelectionOwnerIsRejectedAsAWhole() {
+        let date = fixedDate(day: 6)
+        let item = store.createItem(title: "原内容", dayDate: date)
+        store.undoManager.clear()
+        let before = TodoItemSnapshot(from: item)
+        let unavailableContext = TodoSelectionHistoryContext.ephemeral(UUID())
+
+        let unit = TodoOperationUnit(
+            actionName: "缺少选择归属",
+            itemTransitions: [
+                TodoItemTransition(before: before, after: before.replacing(title: "不应写入"))
+            ],
+            selectionTransitions: [
+                TodoSelectionTransition(
+                    historyContext: unavailableContext,
+                    before: TodoSelectionState(focusing: item.id),
+                    after: TodoSelectionState(focusing: item.id, cursorPosition: 3)
+                )
+            ]
+        )
+
+        XCTAssertFalse(store.undoManager.perform(unit, store: store))
+        XCTAssertEqual(item.title, "原内容")
         XCTAssertFalse(store.canUndo)
     }
 
@@ -181,6 +205,72 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertFalse(store.canRedo)
     }
 
+    func testStructuredHistoryKeepsOnlyTheMostRecentFiftyUnits() {
+        let date = fixedDate(day: 7)
+        let item = store.createItem(title: "0", dayDate: date)
+        store.undoManager.clear()
+
+        for step in 1...52 {
+            let before = TodoItemSnapshot(from: item)
+            XCTAssertTrue(
+                store.undoManager.perform(
+                    TodoOperationUnit(
+                        actionName: "改标题",
+                        itemTransitions: [
+                            TodoItemTransition(before: before, after: before.replacing(title: "\(step)"))
+                        ]
+                    ),
+                    store: store
+                )
+            )
+        }
+
+        var undoCount = 0
+        while store.undo() {
+            undoCount += 1
+        }
+        XCTAssertEqual(undoCount, 50)
+        XCTAssertEqual(item.title, "2")
+    }
+
+    func testStaleUnitIsDiscardedBeforeEarlierValidUnitUndoes() {
+        let date = fixedDate(day: 8)
+        let first = store.createItem(title: "第一项", dayDate: date)
+        let second = store.createItem(title: "第二项", dayDate: date)
+        store.undoManager.clear()
+
+        let firstBefore = TodoItemSnapshot(from: first)
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "第一项修改",
+                    itemTransitions: [
+                        TodoItemTransition(before: firstBefore, after: firstBefore.replacing(title: "第一项已改"))
+                    ]
+                ),
+                store: store
+            )
+        )
+        let secondBefore = TodoItemSnapshot(from: second)
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "第二项修改",
+                    itemTransitions: [
+                        TodoItemTransition(before: secondBefore, after: secondBefore.replacing(title: "第二项已改"))
+                    ]
+                ),
+                store: store
+            )
+        )
+        second.title = "外部变化"
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(first.title, "第一项")
+        XCTAssertEqual(second.title, "外部变化")
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testLegacyOperationUsesTheSameStructuredHistory() {
         let date = fixedDate(day: 5)
         let item = store.createItem(title: "旧入口", dayDate: date)
@@ -202,6 +292,50 @@ final class TodoOperationUnitTests: XCTestCase {
         XCTAssertEqual(store.undoManager.undoActionName, "旧入口修改")
         XCTAssertTrue(store.undo())
         XCTAssertEqual(item.title, "旧入口")
+    }
+
+    func testLegacyAndOperationUnitEntriesHaveEquivalentUndoRedoBehavior() {
+        let date = fixedDate(day: 9)
+        let unitItem = store.createItem(title: "原内容", dayDate: date)
+        let legacyItem = store.createItem(title: "原内容", dayDate: date)
+        store.undoManager.clear()
+
+        let unitBefore = TodoItemSnapshot(from: unitItem)
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperationUnit(
+                    actionName: "新入口修改",
+                    itemTransitions: [
+                        TodoItemTransition(before: unitBefore, after: unitBefore.replacing(title: "修改后"))
+                    ]
+                ),
+                store: store
+            )
+        )
+        XCTAssertTrue(store.undo())
+        let unitAfterUndo = unitItem.title
+        XCTAssertTrue(store.redo())
+        let unitAfterRedo = unitItem.title
+
+        store.undoManager.clear()
+        let legacyBefore = TodoItemSnapshot(from: legacyItem)
+        XCTAssertTrue(
+            store.undoManager.perform(
+                TodoOperation(
+                    actionName: "旧入口修改",
+                    itemStateChanges: [
+                        TodoItemStateChange(before: legacyBefore, after: legacyBefore.replacing(title: "修改后"))
+                    ]
+                ),
+                store: store
+            )
+        )
+        XCTAssertTrue(store.undo())
+        let legacyAfterUndo = legacyItem.title
+        XCTAssertTrue(store.redo())
+        let legacyAfterRedo = legacyItem.title
+
+        XCTAssertEqual([unitAfterUndo, unitAfterRedo], [legacyAfterUndo, legacyAfterRedo])
     }
 
     private func fixedDate(day: Int) -> Date {
