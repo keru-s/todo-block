@@ -62,10 +62,11 @@ extension TodoStore {
         }
         guard let focusedSnapshot = snapshots.last else { return nil }
         let createdIds = snapshots.map(\.id)
-        let selectionChanges: [TodoSelectionChange] = selectionManager.map { manager in
-            [
-                TodoSelectionChange(
-                    selectionManager: manager,
+        let selectionTransitions: [TodoSelectionTransition] = selectionManager.map { manager in
+            manager.activateHistoryContext()
+            return [
+                TodoSelectionTransition(
+                    historyContext: manager.historyContext,
                     before: TodoSelectionState(selectionManager: manager),
                     after: TodoSelectionState(
                         focusedItemId: focusedSnapshot.id,
@@ -76,16 +77,11 @@ extension TodoStore {
                 )
             ]
         } ?? []
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: "粘贴",
-            itemExistenceChanges: snapshots.map { snapshot in
-                TodoItemExistenceChange(
-                    snapshot: snapshot,
-                    beforeExists: false,
-                    afterExists: true
-                )
-            },
-            selectionChanges: selectionChanges
+            itemTransitions: snapshots.map { TodoItemTransition(before: nil, after: $0) },
+            selectionTransitions: selectionTransitions,
+            attention: .item(focusedSnapshot.id)
         )
         guard undoManager.perform(operation, store: self) else { return nil }
         return TodoClipboardImportResult(
