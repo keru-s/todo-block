@@ -42,8 +42,7 @@ extension TodoStore {
 
         let todayDate = Calendar.current.startOfDay(for: .now)
         var currentSortOrder = (items(for: todayDate).last?.sortOrder ?? 0) + 1000
-        var existenceChanges: [TodoItemExistenceChange] = []
-        var stateChanges: [TodoItemStateChange] = []
+        var transitions: [TodoItemTransition] = []
 
         for block in incompleteBlocks {
             let blockItems = Array(previousItems[block.range])
@@ -66,13 +65,7 @@ extension TodoStore {
                     containerKindRaw: TodoContainerKind.scheduled.rawValue,
                     dayDate: todayDate
                 )
-                existenceChanges.append(
-                    TodoItemExistenceChange(
-                        snapshot: copiedParent,
-                        beforeExists: false,
-                        afterExists: true
-                    )
-                )
+                transitions.append(TodoItemTransition(before: nil, after: copiedParent))
                 currentSortOrder += 1000
 
                 itemsToMove = descendants.filter { $0.isCompleted == false }
@@ -90,15 +83,15 @@ extension TodoStore {
                     containerKindRaw: TodoContainerKind.scheduled.rawValue,
                     dayDate: todayDate
                 )
-                stateChanges.append(TodoItemStateChange(before: before, after: after))
+                transitions.append(TodoItemTransition(before: before, after: after))
                 currentSortOrder += 1000
             }
         }
 
-        let operation = TodoOperation(
+        let operation = TodoOperationUnit(
             actionName: "继承昨日待办",
-            itemExistenceChanges: existenceChanges,
-            itemStateChanges: stateChanges
+            itemTransitions: transitions,
+            attention: .destination(.scheduled(date: todayDate))
         )
         guard undoManager.perform(operation, store: self) else { return nil }
 

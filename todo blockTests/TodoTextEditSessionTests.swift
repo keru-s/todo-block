@@ -140,6 +140,74 @@ final class TodoTextEditSessionTests: XCTestCase {
         XCTAssertEqual(selectionManager.textSelectionLength, 0)
     }
 
+    func testUndoRestoresOriginalListSelectionAlongsideText() {
+        let first = store.createItem(title: "first", dayDate: .now)
+        let edited = store.createItem(title: "second", dayDate: .now, afterItem: first)
+        selectionManager.focusedItemId = edited.id
+        selectionManager.selectedItemIds = [first.id, edited.id]
+        selectionManager.lastSelectedId = first.id
+        selectionManager.cursorPosition = 6
+        selectionManager.textSelectionLength = 0
+        store.undoManager.clear()
+
+        actions.titleChanged(
+            edited.id,
+            TodoTextEditEvent(
+                beforeText: "second",
+                afterText: "second!",
+                beforeSelection: TodoTextSelection(location: 6, length: 0),
+                afterSelection: TodoTextSelection(location: 7, length: 0),
+                kind: .insertion
+            )
+        )
+
+        XCTAssertEqual(selectionManager.selectedItemIds, [edited.id])
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(edited.title, "second")
+        XCTAssertEqual(selectionManager.selectedItemIds, [first.id, edited.id])
+        XCTAssertEqual(selectionManager.focusedItemId, edited.id)
+        XCTAssertEqual(selectionManager.lastSelectedId, first.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 6)
+        XCTAssertEqual(selectionManager.textSelectionLength, 0)
+    }
+
+    func testDictationRevisionsStayOneHistoryStepUntilInputEnds() {
+        let item = makeFocusedItem(title: "", cursor: 0)
+        let session = TodoTextInputSession.dictation(UUID())
+
+        actions.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "",
+                afterText: "明天",
+                beforeSelection: TodoTextSelection(location: 0, length: 0),
+                afterSelection: TodoTextSelection(location: 2, length: 0),
+                kind: .insertion,
+                inputSession: session
+            )
+        )
+        actions.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "明天",
+                afterText: "明天开会",
+                beforeSelection: TodoTextSelection(location: 2, length: 0),
+                afterSelection: TodoTextSelection(location: 4, length: 0),
+                kind: .insertion,
+                inputSession: session
+            )
+        )
+
+        XCTAssertEqual(item.title, "明天开会")
+        actions.inputSessionEnded()
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "")
+        XCTAssertFalse(store.undo())
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(item.title, "明天开会")
+        XCTAssertEqual(selectionManager.cursorPosition, 4)
+    }
+
     func testTextDeletionUndoRedoDoesNotRewritePasteboard() throws {
         let item = makeFocusedItem(title: "abc", cursor: 1, selectionLength: 1)
         actions.titleChanged(

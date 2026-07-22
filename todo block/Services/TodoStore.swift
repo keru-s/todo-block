@@ -9,6 +9,15 @@ import Foundation
 import OSLog
 import SwiftData
 
+enum TodoSaveStatus: Equatable {
+    /// 当前没有待写入的用户修改。
+    case saved
+    /// 正常合并保存等待中；这是安静的后台状态，不向用户显示警告。
+    case queued
+    /// 最近一次实际写入失败，用户看到的最新状态仍在内存中等待重试。
+    case unsaved
+}
+
 /// 单例数据存储，内存缓存 + 异步持久化
 /// 主窗口和菜单栏共享此实例，实现数据同步
 @MainActor
@@ -33,9 +42,15 @@ final class TodoStore {
     /// 拖拽指示线重置触发器：拖拽结束后统一清理所有列表的插入提示线
     var dropIndicatorResetTrigger: Int = 0
 
-    /// 最近一次持久化失败的错误。出错时 modelContext 已被 rollback，
-    /// UI 可订阅此属性做提示（本仓库暂未实现 banner）。
+    /// 最近一次持久化失败的错误。失败不会撤回已经应用的用户修改。
     var lastSaveError: Error?
+
+    /// 当前保存状态。只有 `.unsaved` 需要向用户持续提示。
+    var saveStatus: TodoSaveStatus = .saved
+
+    var hasUnsavedChanges: Bool {
+        saveStatus == .unsaved
+    }
 
     // MARK: - 撤销管理
 
@@ -53,6 +68,14 @@ final class TodoStore {
     @ObservationIgnored
     let saveDebounceInterval: TimeInterval = 0.3
 
+    /// 保存失败后的自动重试间隔。测试可缩短该间隔以稳定验证重试行为。
+    @ObservationIgnored
+    var saveRetryInterval: Duration = .seconds(2)
+
+    /// 本地可替换的写盘入口，生产环境默认直接使用 SwiftData。
+    @ObservationIgnored
+    var saveAction: (@MainActor (ModelContext) throws -> Void)?
+
     private init() {}
 
     // MARK: - 初始化
@@ -64,6 +87,8 @@ final class TodoStore {
         }
         saveTask?.cancel()
         self.modelContext = modelContext
+        lastSaveError = nil
+        saveStatus = .saved
         loadFromDatabase()
         cleanupAllOrphanSections()
     }
@@ -76,6 +101,10 @@ final class TodoStore {
         saveTask?.cancel()
         saveTask = nil
         modelContext = nil
+        lastSaveError = nil
+        saveStatus = .saved
+        saveAction = nil
+        saveRetryInterval = .seconds(2)
         clearCachesAndState(clearUndo: true)
     }
 
@@ -85,14 +114,32 @@ final class TodoStore {
     @discardableResult
     func undo() -> Bool {
         flushPendingTextEdit()
-        return undoManager.undo()
+        return undoManager.undo(displayScope: .all, store: self) != nil
+    }
+
+    /// 由当前入口执行撤销；结果只描述发生了什么，展示由外层自行决定。
+    @discardableResult
+    func undo(
+        displayScope: TodoHistoryDisplayScope
+    ) -> TodoHistoryExecutionResult? {
+        flushPendingTextEdit()
+        return undoManager.undo(displayScope: displayScope, store: self)
     }
 
     /// 执行重做操作
     @discardableResult
     func redo() -> Bool {
         flushPendingTextEdit()
-        return undoManager.redo()
+        return undoManager.redo(displayScope: .all, store: self) != nil
+    }
+
+    /// 由当前入口执行恢复；结果只描述发生了什么，展示由外层自行决定。
+    @discardableResult
+    func redo(
+        displayScope: TodoHistoryDisplayScope
+    ) -> TodoHistoryExecutionResult? {
+        flushPendingTextEdit()
+        return undoManager.redo(displayScope: displayScope, store: self)
     }
 
     /// 是否有可撤销的操作
@@ -155,6 +202,7 @@ final class TodoStore {
 
     private func clearCachesAndState(clearUndo: Bool) {
         textEditSession.reset()
+        SelectionManager.clearDeferredHistoryStates()
         todoItemsCache.removeAll()
         daySectionsCache.removeAll()
         if clearUndo {

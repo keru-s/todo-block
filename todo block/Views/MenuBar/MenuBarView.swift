@@ -77,6 +77,14 @@ struct MenuBarView: View {
             .padding(.top, 12)
             .padding(.bottom, 8)
 
+            if store.hasUnsavedChanges {
+                Label("待办尚未保存，正在自动重试", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
+
             Divider()
 
             TodoEditorRepresentable(
@@ -167,7 +175,11 @@ private extension MenuBarView {
               visibleHistoryRevealRequest?.id == request.id
         else { return }
         handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(request.selectionState, itemId: request.itemId)
+        actionModule.restoreHistorySelection(
+            request.selectionState,
+            itemId: request.itemId,
+            sourceHistoryContext: request.sourceHistoryContext
+        )
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {

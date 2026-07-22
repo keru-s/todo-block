@@ -11,6 +11,9 @@ import SwiftUI
 
 @main
 struct todo_blockApp: App {
+    @NSApplicationDelegateAdaptor(TodoBlockApplicationDelegate.self)
+    private var applicationDelegate
+
     var sharedModelContainer: ModelContainer = {
         do {
             return try TodoModelContainerFactory.makeContainer()
@@ -114,4 +117,28 @@ struct todo_blockApp: App {
         }
     }
 
+}
+
+@MainActor
+final class TodoBlockApplicationDelegate: NSObject, NSApplicationDelegate {
+    /// 单元测试可替换提示展示；生产环境使用下方原生警告框。
+    var unsavedChangesAlertPresenter: (() -> Void)?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard TodoStore.shared.prepareForTermination() == false else {
+            return .terminateNow
+        }
+
+        if let unsavedChangesAlertPresenter {
+            unsavedChangesAlertPresenter()
+            return .terminateCancel
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "待办尚未保存"
+        alert.informativeText = "应用暂时无法保存你的最新修改。它会继续自动重试；请保留应用打开，直到顶部提示消失后再退出。"
+        alert.addButton(withTitle: "继续使用")
+        alert.runModal()
+        return .terminateCancel
+    }
 }

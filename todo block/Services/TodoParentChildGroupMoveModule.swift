@@ -36,14 +36,14 @@ final class TodoParentChildGroupMoveModule {
             guard store.todoItemsCache[itemId] != nil else {
                 return .unavailable(.itemNoLongerAvailable)
             }
-            return plannedStepMoveStateChanges(itemId: itemId, direction: direction) == nil
+            return plannedStepMoveTransitions(itemId: itemId, direction: direction) == nil
                 ? .unavailable(nil)
                 : .available
         case .moveSelectedGroups(let direction):
             guard hasStaleSelectionForGroupMove == false else {
                 return .unavailable(.itemNoLongerAvailable)
             }
-            return plannedSelectedGroupStateChanges(direction: direction) == nil
+            return plannedSelectedGroupTransitions(direction: direction) == nil
                 ? .unavailable(nil)
                 : .available
         case .place(let draggedItemId, _, _, _),
@@ -66,6 +66,8 @@ final class TodoParentChildGroupMoveModule {
             break
         }
 
+        selectionManager.activateHistoryContext()
+
         switch intent {
         case .step(let itemId, let direction):
             return executeStepMove(itemId: itemId, direction: direction)
@@ -84,8 +86,34 @@ final class TodoParentChildGroupMoveModule {
     }
 
     private struct PlacementPlan {
-        let itemStateChanges: [TodoItemStateChange]
+        let itemTransitions: [TodoItemTransition]
         let selectionAfter: TodoSelectionState
+        let attention: TodoOperationAttention
+    }
+
+    /// 父子组移动只描述完整前后状态；统一操作单元负责检查、应用和登记历史。
+    private struct MovementPlan {
+        let itemTransitions: [TodoItemTransition]
+        let selectionBefore: TodoSelectionState
+        let selectionAfter: TodoSelectionState
+        let attention: TodoOperationAttention?
+
+        func operationUnit(
+            historyContext: TodoSelectionHistoryContext
+        ) -> TodoOperationUnit {
+            TodoOperationUnit(
+                actionName: "移动",
+                itemTransitions: itemTransitions,
+                selectionTransitions: [
+                    TodoSelectionTransition(
+                        historyContext: historyContext,
+                        before: selectionBefore,
+                        after: selectionAfter
+                    )
+                ],
+                attention: attention
+            )
+        }
     }
 
     private enum SelectedPlacementPlan {
@@ -100,39 +128,32 @@ final class TodoParentChildGroupMoveModule {
         guard let item = store.todoItemsCache[itemId] else {
             return .rejected(.itemNoLongerAvailable)
         }
-        guard let stateChanges = plannedStepMoveStateChanges(
+        guard let itemTransitions = plannedStepMoveTransitions(
             itemId: itemId,
             direction: direction
         ) else {
             return .noChange
         }
         let selectionBefore = TodoSelectionState(selectionManager: selectionManager)
-        let didMove = store.undoManager.perform(
-            TodoOperation(
-                actionName: "移动",
-                itemStateChanges: stateChanges,
-                selectionChanges: [
-                    TodoSelectionChange(
-                        selectionManager: selectionManager,
-                        before: selectionBefore,
-                        after: TodoSelectionState(
-                            focusing: item.id,
-                            cursorPosition: selectionManager.cursorPosition
-                        )
-                    )
-                ]
-            ),
-            store: store
+        return perform(
+            MovementPlan(
+                itemTransitions: itemTransitions,
+                selectionBefore: selectionBefore,
+                selectionAfter: TodoSelectionState(
+                    focusing: item.id,
+                    cursorPosition: selectionManager.cursorPosition
+                ),
+                attention: .item(item.id)
+            )
         )
-        return didMove ? .performed : .noChange
     }
 
-    private func plannedStepMoveStateChanges(
+    private func plannedStepMoveTransitions(
         itemId: UUID,
         direction: TodoParentChildGroupMoveDirection
-    ) -> [TodoItemStateChange]? {
+    ) -> [TodoItemTransition]? {
         guard let item = store.todoItemsCache[itemId] else { return nil }
-        return plannedStateChanges(
+        return plannedTransitions(
             direction: direction,
             rootIds: [itemId],
             items: store.items(in: store.destination(for: item))
@@ -145,25 +166,18 @@ final class TodoParentChildGroupMoveModule {
         guard hasStaleSelectionForGroupMove == false else {
             return .rejected(.itemNoLongerAvailable)
         }
-        guard let stateChanges = plannedSelectedGroupStateChanges(direction: direction) else {
+        guard let itemTransitions = plannedSelectedGroupTransitions(direction: direction) else {
             return .noChange
         }
         let selection = TodoSelectionState(selectionManager: selectionManager)
-        let didMove = store.undoManager.perform(
-            TodoOperation(
-                actionName: "移动",
-                itemStateChanges: stateChanges,
-                selectionChanges: [
-                    TodoSelectionChange(
-                        selectionManager: selectionManager,
-                        before: selection,
-                        after: selection
-                    )
-                ]
-            ),
-            store: store
+        return perform(
+            MovementPlan(
+                itemTransitions: itemTransitions,
+                selectionBefore: selection,
+                selectionAfter: selection,
+                attention: selection.focusedItemId.map(TodoOperationAttention.item)
+            )
         )
-        return didMove ? .performed : .noChange
     }
 
     private func executePlacement(
@@ -172,19 +186,19 @@ final class TodoParentChildGroupMoveModule {
         guard let plan = plannedPlacement(for: intent) else {
             return .noChange
         }
-        let selectionBefore = TodoSelectionState(selectionManager: selectionManager)
+        return perform(
+            MovementPlan(
+                itemTransitions: plan.itemTransitions,
+                selectionBefore: TodoSelectionState(selectionManager: selectionManager),
+                selectionAfter: plan.selectionAfter,
+                attention: plan.attention
+            )
+        )
+    }
+
+    private func perform(_ plan: MovementPlan) -> TodoListActionResult {
         let didMove = store.undoManager.perform(
-            TodoOperation(
-                actionName: "移动",
-                itemStateChanges: plan.itemStateChanges,
-                selectionChanges: [
-                    TodoSelectionChange(
-                        selectionManager: selectionManager,
-                        before: selectionBefore,
-                        after: plan.selectionAfter
-                    )
-                ]
-            ),
+            plan.operationUnit(historyContext: selectionManager.historyContext),
             store: store
         )
         return didMove ? .performed : .noChange
@@ -390,15 +404,18 @@ final class TodoParentChildGroupMoveModule {
         selectionAfter: TodoSelectionState
     ) -> PlacementPlan? {
         guard snapshots.count == movedSnapshots.count else { return nil }
-        let itemStateChanges: [TodoItemStateChange] = zip(snapshots, movedSnapshots).compactMap { pair -> TodoItemStateChange? in
+        let itemTransitions: [TodoItemTransition] = zip(snapshots, movedSnapshots).compactMap { pair -> TodoItemTransition? in
             let (before, after) = pair
             guard before.matchesUserState(of: after) == false else { return nil }
-            return TodoItemStateChange(before: before, after: after)
+            return TodoItemTransition(before: before, after: after)
         }
-        guard itemStateChanges.isEmpty == false else { return nil }
+        guard itemTransitions.isEmpty == false,
+              let firstMovedSnapshot = movedSnapshots.first
+        else { return nil }
         return PlacementPlan(
-            itemStateChanges: itemStateChanges,
-            selectionAfter: selectionAfter
+            itemTransitions: itemTransitions,
+            selectionAfter: selectionAfter,
+            attention: .item(firstMovedSnapshot.id)
         )
     }
 
@@ -446,9 +463,9 @@ final class TodoParentChildGroupMoveModule {
         )
     }
 
-    private func plannedSelectedGroupStateChanges(
+    private func plannedSelectedGroupTransitions(
         direction: TodoParentChildGroupMoveDirection
-    ) -> [TodoItemStateChange]? {
+    ) -> [TodoItemTransition]? {
         let selectedIds = selectedItemIdsForGroupMove()
         let selectedItems = selectedIds.compactMap { store.todoItemsCache[$0] }
         guard selectedItems.isEmpty == false, selectedItems.count == selectedIds.count else {
@@ -458,7 +475,7 @@ final class TodoParentChildGroupMoveModule {
         let selectedByDestination = Dictionary(grouping: selectedItems) {
             store.destination(for: $0).normalized
         }
-        var stateChanges: [TodoItemStateChange] = []
+        var itemTransitions: [TodoItemTransition] = []
 
         for (destination, destinationSelection) in selectedByDestination {
             let currentItems = store.items(in: destination)
@@ -467,7 +484,7 @@ final class TodoParentChildGroupMoveModule {
                 in: currentItems
             )
             guard rootIds.isEmpty == false,
-                  let destinationChanges = plannedStateChanges(
+                  let destinationTransitions = plannedTransitions(
                       direction: direction,
                       rootIds: rootIds,
                       items: currentItems
@@ -475,10 +492,10 @@ final class TodoParentChildGroupMoveModule {
             else {
                 return nil
             }
-            stateChanges.append(contentsOf: destinationChanges)
+            itemTransitions.append(contentsOf: destinationTransitions)
         }
 
-        return stateChanges.isEmpty ? nil : stateChanges
+        return itemTransitions.isEmpty ? nil : itemTransitions
     }
 
     private func selectedItemIdsForGroupMove() -> Set<UUID> {
@@ -494,11 +511,11 @@ final class TodoParentChildGroupMoveModule {
         selectedItemIdsForGroupMove().contains { store.todoItemsCache[$0] == nil }
     }
 
-    private func plannedStateChanges(
+    private func plannedTransitions(
         direction: TodoParentChildGroupMoveDirection,
         rootIds: [UUID],
         items: [TodoItem]
-    ) -> [TodoItemStateChange]? {
+    ) -> [TodoItemTransition]? {
         let beforeSnapshots = items.map(TodoItemSnapshot.init)
         var workingSnapshots = beforeSnapshots
         let moveOrder = direction == .up ? rootIds : Array(rootIds.reversed())
@@ -519,7 +536,7 @@ final class TodoParentChildGroupMoveModule {
             guard let after = afterById[before.id], before.matchesUserState(of: after) == false else {
                 return nil
             }
-            return TodoItemStateChange(before: before, after: after)
+            return TodoItemTransition(before: before, after: after)
         }
     }
 

@@ -7,19 +7,17 @@ import Foundation
 import OSLog
 import SwiftData
 
-/// SwiftData 持久化协调：debounce 异步落盘 + 同步 flush + 失败 rollback。
+/// SwiftData 持久化协调：debounce 异步落盘 + 同步 flush + 失败后保留内存状态并重试。
 /// 把 IO 与缓存/CRUD 拆开，便于：
-/// - 单独测试 debounce / rollback 路径（详见 Phase 1.A 单测）
+/// - 单独测试 debounce / 失败重试路径
 /// - 后续替换持久化策略时不影响 CRUD
 extension TodoStore {
     /// 调度一次延迟写盘。重复调用会 cancel 上一次未触发的 task，最终只发生一次实际 save。
     func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: .milliseconds(Int(saveDebounceInterval * 1000)))
-            guard Task.isCancelled == false else { return }
-            await performSave()
+        if saveStatus != .unsaved {
+            saveStatus = .queued
         }
+        scheduleSaveAttempt(after: .milliseconds(Int(saveDebounceInterval * 1000)))
     }
 
     /// 同步落盘当前所有 pending changes。用于必须打破 debounce 的关键路径，
@@ -28,37 +26,64 @@ extension TodoStore {
     func flushPendingChangesSync() -> Bool {
         saveTask?.cancel()
         saveTask = nil
-        guard let modelContext, modelContext.hasChanges else {
-            lastSaveError = nil
+        return saveCurrentChanges()
+    }
+
+    /// 在应用终止前尝试立即写盘。失败时由调用方取消退出，绝不静默丢失用户状态。
+    @discardableResult
+    func prepareForTermination() -> Bool {
+        flushPendingTextEdit()
+        return flushPendingChangesSync()
+    }
+
+    private func performSave() {
+        saveTask = nil
+        _ = saveCurrentChanges()
+    }
+
+    private func scheduleSaveAttempt(after delay: Duration) {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            guard Task.isCancelled == false else { return }
+            self?.performSave()
+        }
+    }
+
+    @discardableResult
+    private func saveCurrentChanges() -> Bool {
+        guard let modelContext else {
+            return saveStatus != .unsaved
+        }
+        guard modelContext.hasChanges else {
+            guard saveStatus != .unsaved else { return false }
+            markSaveSucceeded()
             return true
         }
         do {
-            try modelContext.save()
-            lastSaveError = nil
+            if let saveAction {
+                try saveAction(modelContext)
+            } else {
+                try modelContext.save()
+            }
+            markSaveSucceeded()
             return true
         } catch {
             Self.logger.error(
-                "flushPendingChangesSync failed: \(error.localizedDescription, privacy: .public)")
-            modelContext.rollback()
+                "save failed: \(error.localizedDescription, privacy: .public)")
             lastSaveError = error
+            saveStatus = .unsaved
+            scheduleSaveAttempt(after: saveRetryInterval)
             return false
         }
     }
 
-    private func performSave() async {
-        guard let modelContext else { return }
-        guard modelContext.hasChanges else {
-            lastSaveError = nil
-            return
-        }
-        do {
-            try modelContext.save()
-            lastSaveError = nil
-        } catch {
-            Self.logger.error(
-                "performSave failed: \(error.localizedDescription, privacy: .public)")
-            modelContext.rollback()
-            lastSaveError = error
-        }
+    private func markSaveSucceeded() {
+        lastSaveError = nil
+        saveStatus = .saved
     }
 }

@@ -83,6 +83,10 @@ final class TodoTextEditSession {
         store: TodoStore
     ) {
         guard item.title == event.beforeText, event.beforeText != event.afterText else { return }
+        let selectionBeforeEdit = selectionState(
+            selectionManager: selectionManager,
+            textSelection: event.beforeSelection
+        )
         let now = clock.now
         let continuesCurrentSegment = pending.map { segment in
             let continuesNamedInputSession = event.inputSession.map {
@@ -129,10 +133,7 @@ final class TodoTextEditSession {
                 before: beforeSnapshot,
                 after: TodoItemSnapshot(from: item),
                 selectionManager: selectionManager,
-                selectionBefore: selectionState(
-                    selectionManager: selectionManager,
-                    textSelection: event.beforeSelection
-                ),
+                selectionBefore: selectionBeforeEdit,
                 selectionAfter: selectionState(
                     selectionManager: selectionManager,
                     textSelection: event.afterSelection
@@ -171,19 +172,21 @@ final class TodoTextEditSession {
         guard let segment = pending else { return false }
         pending = nil
         hasPendingSegment = false
+        segment.selectionManager.activateHistoryContext()
         return store.undoManager.recordApplied(
-            TodoOperation(
+            TodoOperationUnit(
                 actionName: "编辑",
-                itemStateChanges: [
-                    TodoItemStateChange(before: segment.before, after: segment.after)
+                itemTransitions: [
+                    TodoItemTransition(before: segment.before, after: segment.after)
                 ],
-                selectionChanges: [
-                    TodoSelectionChange(
-                        selectionManager: segment.selectionManager,
+                selectionTransitions: [
+                    TodoSelectionTransition(
+                        historyContext: segment.selectionManager.historyContext,
                         before: segment.selectionBefore,
                         after: segment.selectionAfter
                     )
-                ]
+                ],
+                attention: .item(segment.itemId)
             ),
             store: store
         )

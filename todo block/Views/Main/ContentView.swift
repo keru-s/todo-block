@@ -38,6 +38,12 @@ struct ContentView: View {
         }
         .frame(minWidth: 600, minHeight: 400)
         .coordinateSpace(name: "main-window")
+        .overlay(alignment: .top) {
+            if TodoStore.shared.hasUnsavedChanges {
+                TodoUnsavedChangesNotice()
+                    .padding()
+            }
+        }
         .id(injectionHook)
         .onAppear {
             if let request = historyPresentation.revealRequest {
@@ -59,6 +65,24 @@ struct ContentView: View {
         ) { _ in
             injectionHook = Date()
         }
+    }
+}
+
+private struct TodoUnsavedChangesNotice: View {
+    var body: some View {
+        Label {
+            VStack(alignment: .leading) {
+                Text("待办尚未保存")
+                Text("应用会继续自动重试。退出前请保持应用打开，直到此提示消失。")
+            }
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
+        .padding()
+        .foregroundStyle(.primary)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .shadow(radius: 2)
+        .accessibilityElement(children: .combine)
     }
 }
 

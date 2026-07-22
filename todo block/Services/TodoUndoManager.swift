@@ -2,8 +2,6 @@
 //  TodoUndoManager.swift
 //  todo block
 //
-//  Created by Claude on 2026/2/9.
-//
 
 import Foundation
 
@@ -12,48 +10,29 @@ enum TodoOperationValueTarget {
     case after
 }
 
-struct TodoCompletionChange {
-    let itemId: UUID
-    let before: Bool
-    let after: Bool
-
-    func value(for target: TodoOperationValueTarget) -> Bool {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
-        }
-    }
+/// 当前入口能直接展示的历史结果范围。主窗口可以承接任意结果，菜单栏只承接今天。
+enum TodoHistoryDisplayScope {
+    case all
+    case today(on: Date)
 }
 
-struct TodoItemExistenceChange {
-    let snapshot: TodoItemSnapshot
-    let beforeExists: Bool
-    let afterExists: Bool
-
-    func exists(for target: TodoOperationValueTarget) -> Bool {
-        switch target {
-        case .before:
-            beforeExists
-        case .after:
-            afterExists
-        }
-    }
+/// 历史已经完整应用后交给外层界面的事实描述。它不携带任何窗口、导航或滚动命令。
+struct TodoHistoryApplicationResult {
+    let destination: TodoDropDestination
+    let itemId: UUID?
+    let sourceHistoryContext: TodoSelectionHistoryContext?
+    let sourceSelectionState: TodoSelectionState?
 }
 
-struct TodoItemStateChange {
-    let before: TodoItemSnapshot
-    let after: TodoItemSnapshot
+/// 历史应用是否成功与界面是否有明确定位目标是两件事：没有定位目标时仍不能把成功操作报成失败。
+struct TodoHistoryExecutionResult {
+    let presentationResult: TodoHistoryApplicationResult?
+}
 
-    func snapshot(for target: TodoOperationValueTarget) -> TodoItemSnapshot {
-        switch target {
-        case .before:
-            before
-        case .after:
-            after
-        }
-    }
+/// 一次完整操作希望用户在撤销或恢复后看到的主对象或列表。
+enum TodoOperationAttention {
+    case item(UUID)
+    case destination(TodoDropDestination)
 }
 
 struct TodoSelectionState: Equatable {
@@ -104,10 +83,64 @@ struct TodoSelectionState: Equatable {
     }
 }
 
-struct TodoSelectionChange {
+// MARK: - 操作单元
+
+/// 一个待办在一个操作单元两端的完整用户状态。`nil` 表示该待办在该端不存在。
+struct TodoItemTransition {
+    let before: TodoItemSnapshot?
+    let after: TodoItemSnapshot?
+
+    init(before: TodoItemSnapshot?, after: TodoItemSnapshot?) {
+        self.before = before
+        self.after = after
+    }
+
+    var itemId: UUID? {
+        before?.id ?? after?.id
+    }
+
+    var isValid: Bool {
+        guard let itemId else { return false }
+        return before.map { $0.id == itemId } ?? true
+            && after.map { $0.id == itemId } ?? true
+    }
+
+    var changesUserState: Bool {
+        switch (before, after) {
+        case (nil, nil):
+            false
+        case let (before?, after?):
+            before.matchesUserState(of: after) == false
+        default:
+            true
+        }
+    }
+
+    func snapshot(for target: TodoOperationValueTarget) -> TodoItemSnapshot? {
+        switch target {
+        case .before:
+            before
+        case .after:
+            after
+        }
+    }
+}
+
+/// 历史只记录可移植的选择值及其所属列表，不保留活的界面对象。
+struct TodoSelectionTransition {
     let historyContext: TodoSelectionHistoryContext
     let before: TodoSelectionState
     let after: TodoSelectionState
+
+    init(
+        historyContext: TodoSelectionHistoryContext,
+        before: TodoSelectionState,
+        after: TodoSelectionState
+    ) {
+        self.historyContext = historyContext
+        self.before = before
+        self.after = after
+    }
 
     init(
         selectionManager: SelectionManager,
@@ -115,9 +148,11 @@ struct TodoSelectionChange {
         after: TodoSelectionState
     ) {
         selectionManager.activateHistoryContext()
-        historyContext = selectionManager.historyContext
-        self.before = before
-        self.after = after
+        self.init(
+            historyContext: selectionManager.historyContext,
+            before: before,
+            after: after
+        )
     }
 
     func state(for target: TodoOperationValueTarget) -> TodoSelectionState {
@@ -130,28 +165,44 @@ struct TodoSelectionChange {
     }
 
     func apply(for target: TodoOperationValueTarget) {
-        guard let selectionManager = SelectionManager.activeManager(for: historyContext) else {
-            return
-        }
-        state(for: target).apply(to: selectionManager)
+        SelectionManager.applyHistoryState(state(for: target), for: historyContext)
     }
 }
 
-struct TodoOperation {
+/// 唯一进入正式历史的记录。规则模块只应计算这个单元，应用和登记由 `TodoUndoManager` 负责。
+struct TodoOperationUnit {
     let actionName: String
-    var completionChanges: [TodoCompletionChange] = []
-    var itemExistenceChanges: [TodoItemExistenceChange] = []
-    var itemStateChanges: [TodoItemStateChange] = []
-    var selectionChanges: [TodoSelectionChange] = []
+    let itemTransitions: [TodoItemTransition]
+    let selectionTransitions: [TodoSelectionTransition]
+    let attention: TodoOperationAttention?
+
+    init(
+        actionName: String,
+        itemTransitions: [TodoItemTransition] = [],
+        selectionTransitions: [TodoSelectionTransition] = [],
+        attention: TodoOperationAttention? = nil
+    ) {
+        self.actionName = actionName
+        self.itemTransitions = itemTransitions.filter(\.changesUserState)
+        self.selectionTransitions = selectionTransitions
+        self.attention = attention
+    }
 
     var isEmpty: Bool {
-        completionChanges.isEmpty
-            && itemExistenceChanges.isEmpty
-            && itemStateChanges.isEmpty
+        itemTransitions.isEmpty
+    }
+
+    var isValid: Bool {
+        let ids = itemTransitions.compactMap(\.itemId)
+        return itemTransitions.allSatisfy(\.isValid) && Set(ids).count == ids.count
+    }
+
+    func snapshots(for target: TodoOperationValueTarget) -> [TodoItemSnapshot] {
+        itemTransitions.compactMap { $0.snapshot(for: target) }
     }
 }
 
-// MARK: - TodoItem 快照（用于恢复已删除或移动的项目）
+// MARK: - TodoItem 快照
 
 struct TodoItemSnapshot {
     let id: UUID
@@ -165,15 +216,15 @@ struct TodoItemSnapshot {
     let updatedAt: Date
 
     init(from item: TodoItem) {
-        self.id = item.id
-        self.title = item.title
-        self.isCompleted = item.isCompleted
-        self.indentLevel = item.indentLevel
-        self.sortOrder = item.sortOrder
-        self.containerKindRaw = item.containerKindRaw
-        self.dayDate = item.dayDate
-        self.createdAt = item.createdAt
-        self.updatedAt = item.updatedAt
+        id = item.id
+        title = item.title
+        isCompleted = item.isCompleted
+        indentLevel = item.indentLevel
+        sortOrder = item.sortOrder
+        containerKindRaw = item.containerKindRaw
+        dayDate = item.dayDate
+        createdAt = item.createdAt
+        updatedAt = item.updatedAt
     }
 
     init(
@@ -222,6 +273,7 @@ struct TodoItemSnapshot {
 
     func replacing(
         title: String? = nil,
+        isCompleted: Bool? = nil,
         indentLevel: Int? = nil,
         sortOrder: Double? = nil,
         containerKindRaw: String? = nil,
@@ -230,7 +282,7 @@ struct TodoItemSnapshot {
         TodoItemSnapshot(
             id: id,
             title: title ?? self.title,
-            isCompleted: isCompleted,
+            isCompleted: isCompleted ?? self.isCompleted,
             indentLevel: indentLevel ?? self.indentLevel,
             sortOrder: sortOrder ?? self.sortOrder,
             containerKindRaw: containerKindRaw ?? self.containerKindRaw,
@@ -239,210 +291,259 @@ struct TodoItemSnapshot {
             updatedAt: .now
         )
     }
-
 }
 
-// MARK: - 统一撤销管理器（基于 NSUndoManager）
+// MARK: - 统一操作历史
 
-/// 使用 NSUndoManager 统一管理所有撤销操作
-/// 这样可以与 TextField 的原生撤销共享同一个撤销栈
 @MainActor
 @Observable
 final class TodoUndoManager {
-    private struct TodayImpact {
-        let scheduledDays: Set<Date>
-
-        func affectsToday(on date: Date, calendar: Calendar) -> Bool {
-            scheduledDays.contains { calendar.isDate($0, inSameDayAs: date) }
-        }
-    }
-
-    /// 共享的 NSUndoManager 实例
-    private let nsUndoManager = UndoManager()
-
-    /// 最大撤销步数
     private let maxUndoSteps = 50
+    private var undoHistory: [TodoOperationUnit] = []
+    private var redoHistory: [TodoOperationUnit] = []
 
-    private enum InvocationResult {
-        case applied
-        case invalid
-    }
-
-    private var invocationResult = InvocationResult.invalid
-    private var historyRevision = 0
-    private var undoTodayImpacts: [TodayImpact] = []
-    private var redoTodayImpacts: [TodayImpact] = []
-
-    /// 是否有可撤销的操作
     var canUndo: Bool {
-        _ = historyRevision
-        return nsUndoManager.canUndo
+        return undoHistory.isEmpty == false
     }
 
-    /// 是否有可重做的操作
     var canRedo: Bool {
-        _ = historyRevision
-        return nsUndoManager.canRedo
+        return redoHistory.isEmpty == false
+    }
+
+    func canUndo(displayScope: TodoHistoryDisplayScope) -> Bool {
+        guard let unit = undoHistory.last else { return false }
+        return displayScope.canDisplay(unit)
+    }
+
+    func canRedo(displayScope: TodoHistoryDisplayScope) -> Bool {
+        guard let unit = redoHistory.last else { return false }
+        return displayScope.canDisplay(unit)
     }
 
     var undoActionName: String {
-        nsUndoManager.undoActionName
-    }
-
-    func nextUndoAffectsToday(on date: Date) -> Bool? {
-        undoTodayImpacts.last?.affectsToday(on: date, calendar: .current)
-    }
-
-    func nextRedoAffectsToday(on date: Date) -> Bool? {
-        redoTodayImpacts.last?.affectsToday(on: date, calendar: .current)
-    }
-
-    init() {
-        nsUndoManager.levelsOfUndo = maxUndoSteps
-        nsUndoManager.groupsByEvent = false
+        return undoHistory.last?.actionName ?? ""
     }
 
     @discardableResult
-    func perform(_ operation: TodoOperation, store: TodoStore) -> Bool {
+    func perform(_ unit: TodoOperationUnit, store: TodoStore) -> Bool {
         store.flushPendingTextEdit()
-        guard operation.isEmpty == false else { return false }
-        guard canApply(operation, target: .after, store: store) else { return false }
+        guard unit.isEmpty == false, unit.isValid else { return false }
+        guard canApply(unit, target: .after, store: store) else { return false }
+        guard apply(unit, target: .after, store: store) else { return false }
+        appendNewHistory(unit)
+        store.scheduleSave()
+        return true
+    }
 
-        guard apply(operation, target: .after, store: store) else { return false }
-        register(operation, target: .before, store: store)
+    /// 仅用于连续文字输入这类已即时呈现的变化：当前状态必须已经等于 `after`。
+    @discardableResult
+    func recordApplied(_ unit: TodoOperationUnit, store: TodoStore) -> Bool {
+        guard unit.isEmpty == false, unit.isValid else { return false }
+        guard canApply(unit, target: .before, store: store) else { return false }
+        appendNewHistory(unit)
         store.scheduleSave()
         return true
     }
 
     @discardableResult
-    func recordApplied(_ operation: TodoOperation, store: TodoStore) -> Bool {
-        guard operation.isEmpty == false else { return false }
-        guard canApply(operation, target: .before, store: store) else { return false }
-        register(operation, target: .before, store: store)
-        store.scheduleSave()
+    func undo() -> Bool {
+        undo(displayScope: .all, store: .shared) != nil
+    }
+
+    /// 在同一次历史栈检查和应用中确认当前入口能展示下一步，不能展示时绝不越过它。
+    @discardableResult
+    func undo(
+        displayScope: TodoHistoryDisplayScope,
+        store: TodoStore
+    ) -> TodoHistoryExecutionResult? {
+        while let unit = undoHistory.popLast() {
+            guard displayScope.canDisplay(unit) else {
+                undoHistory.append(unit)
+                return nil
+            }
+            guard canApply(unit, target: .before, store: store) else { continue }
+            guard apply(unit, target: .before, store: store) else { continue }
+            redoHistory.append(unit)
+            store.scheduleSave()
+            return TodoHistoryExecutionResult(
+                presentationResult: applicationResult(of: unit, target: .before, store: store)
+            )
+        }
+        return nil
+    }
+
+    @discardableResult
+    func redo() -> Bool {
+        redo(displayScope: .all, store: .shared) != nil
+    }
+
+    /// 与撤销使用完全相同的展示范围规则，避免菜单栏恢复时跳过中间步骤。
+    @discardableResult
+    func redo(
+        displayScope: TodoHistoryDisplayScope,
+        store: TodoStore
+    ) -> TodoHistoryExecutionResult? {
+        while let unit = redoHistory.popLast() {
+            guard displayScope.canDisplay(unit) else {
+                redoHistory.append(unit)
+                return nil
+            }
+            guard canApply(unit, target: .after, store: store) else { continue }
+            guard apply(unit, target: .after, store: store) else { continue }
+            undoHistory.append(unit)
+            store.scheduleSave()
+            return TodoHistoryExecutionResult(
+                presentationResult: applicationResult(of: unit, target: .after, store: store)
+            )
+        }
+        return nil
+    }
+
+    func clear() {
+        undoHistory.removeAll()
+        redoHistory.removeAll()
+        SelectionManager.clearDeferredHistoryStates()
+    }
+
+    private func appendNewHistory(_ unit: TodoOperationUnit) {
+        undoHistory.append(unit)
+        if undoHistory.count > maxUndoSteps {
+            undoHistory.removeFirst(undoHistory.count - maxUndoSteps)
+        }
+        redoHistory.removeAll()
+    }
+
+    private func canApply(
+        _ unit: TodoOperationUnit,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) -> Bool {
+        let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
+        return unit.itemTransitions.allSatisfy { transition in
+            switch transition.snapshot(for: sourceTarget) {
+            case let snapshot?:
+                guard let item = store.todoItemsCache[snapshot.id] else { return false }
+                return snapshot.matchesUserState(of: item)
+            case nil:
+                guard let itemId = transition.itemId else { return false }
+                return store.todoItemsCache[itemId] == nil
+            }
+        }
+    }
+
+    private func apply(
+        _ unit: TodoOperationUnit,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) -> Bool {
+        let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
+        let createSnapshots = unit.itemTransitions.compactMap { transition -> TodoItemSnapshot? in
+            guard transition.snapshot(for: sourceTarget) == nil else { return nil }
+            return transition.snapshot(for: target)
+        }
+        let updateSnapshots = unit.itemTransitions.compactMap { transition -> TodoItemSnapshot? in
+            guard transition.snapshot(for: sourceTarget) != nil else { return nil }
+            return transition.snapshot(for: target)
+        }
+        let deleteIds = unit.itemTransitions.compactMap { transition -> UUID? in
+            guard transition.snapshot(for: sourceTarget) != nil,
+                  transition.snapshot(for: target) == nil
+            else { return nil }
+            return transition.itemId
+        }
+
+        // `canApply` 已完整验证全部前态；以下三个存储调用在此前提下不会留下半个操作。
+        guard store.restoreItems(from: createSnapshots) else { return false }
+        guard store.applyExistingItemSnapshots(updateSnapshots) else { return false }
+        for itemId in deleteIds {
+            guard let item = store.todoItemsCache[itemId] else { return false }
+            store.deleteItemForOperationApplication(item)
+        }
+        unit.selectionTransitions.forEach { $0.apply(for: target) }
         return true
     }
 
-    private func register(
-        _ operation: TodoOperation,
+    private func applicationResult(
+        of unit: TodoOperationUnit,
         target: TodoOperationValueTarget,
         store: TodoStore
-    ) {
-        recordHistoryRegistration(operation, store: store)
-        registerStandalone {
-            nsUndoManager.registerUndo(withTarget: store) { [weak self] store in
-                guard let self else { return }
-                guard self.canApply(operation, target: target, store: store) else {
-                    self.invocationResult = .invalid
-                    return
-                }
+    ) -> TodoHistoryApplicationResult? {
+        let sourceTransition = unit.selectionTransitions.last
+        let sourceSelectionState = sourceTransition?.state(for: target)
 
-                guard self.apply(operation, target: target, store: store) else {
-                    self.invocationResult = .invalid
-                    return
-                }
-                self.invocationResult = .applied
-                self.revealResult(of: operation, target: target, store: store)
-                let oppositeTarget: TodoOperationValueTarget =
-                    target == .before ? .after : .before
-                self.register(operation, target: oppositeTarget, store: store)
-                store.scheduleSave()
-            }
-            nsUndoManager.setActionName(operation.actionName)
-        }
-    }
-
-    private func recordHistoryRegistration(_ operation: TodoOperation, store: TodoStore) {
-        let todayImpact = todayImpact(of: operation, store: store)
-        if nsUndoManager.isUndoing {
-            redoTodayImpacts.append(todayImpact)
-            trimHistory(&redoTodayImpacts)
-        } else if nsUndoManager.isRedoing {
-            undoTodayImpacts.append(todayImpact)
-            trimHistory(&undoTodayImpacts)
-        } else {
-            undoTodayImpacts.append(todayImpact)
-            trimHistory(&undoTodayImpacts)
-            redoTodayImpacts.removeAll()
-        }
-    }
-
-    private func trimHistory(_ history: inout [TodayImpact]) {
-        if history.count > maxUndoSteps {
-            history.removeFirst(history.count - maxUndoSteps)
-        }
-    }
-
-    private func todayImpact(of operation: TodoOperation, store: TodoStore) -> TodayImpact {
-        let snapshots = operation.itemExistenceChanges.map(\.snapshot)
-            + operation.itemStateChanges.flatMap { [$0.before, $0.after] }
-        let snapshotDays = snapshots.compactMap { snapshot -> Date? in
-            guard (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled)
-                == .scheduled
-            else { return nil }
-            return snapshot.dayDate
-        }
-        let completionDays = operation.completionChanges.compactMap { change -> Date? in
-            guard let item = store.todoItemsCache[change.itemId],
-                  item.containerKind == .scheduled
-            else { return nil }
-            return item.dayDate
-        }
-        return TodayImpact(scheduledDays: Set(snapshotDays + completionDays))
-    }
-
-    private func registerStandalone(_ registration: () -> Void) {
-        let opensGroup = nsUndoManager.isUndoing == false
-            && nsUndoManager.isRedoing == false
-            && nsUndoManager.groupingLevel == 0
-        if opensGroup {
-            nsUndoManager.beginUndoGrouping()
-        }
-        registration()
-        if opensGroup {
-            nsUndoManager.endUndoGrouping()
-        }
-        historyRevision += 1
-    }
-
-    private func revealResult(
-        of operation: TodoOperation,
-        target: TodoOperationValueTarget,
-        store: TodoStore
-    ) {
-        let selectionIds = operation.selectionChanges.reversed().flatMap { change in
-            let state = change.state(for: target)
-            return [state.focusedItemId].compactMap { $0 }
-                + Array(state.selectedItemIds)
-        }
-        let changedIds = operation.itemStateChanges.map { $0.snapshot(for: target).id }
-            + operation.itemExistenceChanges.map(\.snapshot.id)
-            + operation.completionChanges.map(\.itemId)
-        let resultItem = (selectionIds + changedIds).lazy.compactMap {
-            store.todoItemsCache[$0]
-        }.first
-        let resultSelectionState = operation.selectionChanges.last?.state(for: target)
-
-        let fallbackSnapshot = operation.itemStateChanges.first?.snapshot(for: target)
-            ?? operation.itemExistenceChanges.first?.snapshot
-        let resultDestination: TodoDropDestination?
-        if let resultItem {
-            resultDestination = store.destination(for: resultItem)
-        } else if let fallbackSnapshot {
-            resultDestination = destination(for: fallbackSnapshot)
-        } else if let completion = operation.completionChanges.first,
-                  let item = store.todoItemsCache[completion.itemId] {
-            resultDestination = store.destination(for: item)
-        } else {
-            resultDestination = nil
+        if let focusedItemId = sourceSelectionState?.focusedItemId,
+           let focusedItem = store.todoItemsCache[focusedItemId] {
+            return TodoHistoryApplicationResult(
+                destination: store.destination(for: focusedItem),
+                itemId: focusedItem.id,
+                sourceHistoryContext: sourceTransition?.historyContext,
+                sourceSelectionState: sourceSelectionState
+            )
         }
 
-        guard let resultDestination else { return }
-        TodoHistoryPresentationCoordinator.shared.reveal(
-            destination: resultDestination,
-            itemId: resultItem?.id,
-            selectionState: resultSelectionState
+        if let attentionResult = applicationResult(
+            for: unit.attention,
+            in: unit,
+            target: target,
+            store: store
+        ) {
+            return TodoHistoryApplicationResult(
+                destination: attentionResult.destination,
+                itemId: attentionResult.itemId,
+                sourceHistoryContext: sourceTransition?.historyContext,
+                sourceSelectionState: sourceSelectionState
+            )
+        }
+
+        let targetSnapshots = unit.snapshots(for: target)
+        let fallbackSnapshots = unit.snapshots(
+            for: target == .before ? .after : .before
         )
+        let resultDestination = uniqueDestination(
+            for: targetSnapshots.isEmpty ? fallbackSnapshots : targetSnapshots
+        )
+        guard let resultDestination else { return nil }
+        return TodoHistoryApplicationResult(
+            destination: resultDestination,
+            itemId: nil,
+            sourceHistoryContext: sourceTransition?.historyContext,
+            sourceSelectionState: sourceSelectionState
+        )
+    }
+
+    private func uniqueDestination(
+        for snapshots: [TodoItemSnapshot]
+    ) -> TodoDropDestination? {
+        guard let firstSnapshot = snapshots.first else { return nil }
+        let firstDestination = destination(for: firstSnapshot)
+        guard snapshots.dropFirst().allSatisfy({
+            destination(for: $0).normalized == firstDestination.normalized
+        }) else { return nil }
+        return firstDestination
+    }
+
+    private func applicationResult(
+        for attention: TodoOperationAttention?,
+        in unit: TodoOperationUnit,
+        target: TodoOperationValueTarget,
+        store: TodoStore
+    ) -> (destination: TodoDropDestination, itemId: UUID?)? {
+        guard let attention else { return nil }
+        switch attention {
+        case .destination(let destination):
+            return (destination.normalized, nil)
+        case .item(let itemId):
+            if let item = store.todoItemsCache[itemId] {
+                return (store.destination(for: item), item.id)
+            }
+            let preferred = unit.snapshots(for: target).filter { $0.id == itemId }
+            let oppositeTarget: TodoOperationValueTarget = target == .before ? .after : .before
+            let snapshots = preferred.isEmpty
+                ? unit.snapshots(for: oppositeTarget).filter { $0.id == itemId }
+                : preferred
+            guard let snapshot = snapshots.first else { return nil }
+            return (destination(for: snapshot), nil)
+        }
     }
 
     private func destination(for snapshot: TodoItemSnapshot) -> TodoDropDestination {
@@ -455,120 +556,22 @@ final class TodoUndoManager {
             .longTerm(isUrgent: false)
         }
     }
+}
 
-    private func canApply(
-        _ operation: TodoOperation,
-        target: TodoOperationValueTarget,
-        store: TodoStore
-    ) -> Bool {
-        let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
-        let completionChangesAreValid = operation.completionChanges.allSatisfy { change in
-            guard let item = store.todoItemsCache[change.itemId] else { return false }
-            return item.isCompleted == change.value(for: sourceTarget)
-        }
-        guard completionChangesAreValid else { return false }
-
-        let itemStateChangesAreValid = operation.itemStateChanges.allSatisfy { change in
-            let sourceSnapshot = change.snapshot(for: sourceTarget)
-            guard let item = store.todoItemsCache[sourceSnapshot.id] else { return false }
-            return sourceSnapshot.matchesUserState(of: item)
-        }
-        guard itemStateChangesAreValid else { return false }
-
-        return operation.itemExistenceChanges.allSatisfy { change in
-            let sourceExists = change.exists(for: sourceTarget)
-            guard sourceExists else {
-                return store.todoItemsCache[change.snapshot.id] == nil
-            }
-            guard let item = store.todoItemsCache[change.snapshot.id] else { return false }
-            return change.snapshot.matchesUserState(of: item)
-        }
-    }
-
-    private func apply(
-        _ operation: TodoOperation,
-        target: TodoOperationValueTarget,
-        store: TodoStore
-    ) -> Bool {
-        let snapshotsToRestore: [TodoItemSnapshot] =
-            operation.itemExistenceChanges.compactMap { change -> TodoItemSnapshot? in
-            guard
-                change.exists(for: target),
-                store.todoItemsCache[change.snapshot.id] == nil
-            else { return nil }
-            return change.snapshot
-        }
-        guard store.restoreItems(from: snapshotsToRestore) else {
-            return false
-        }
-
-        for change in operation.completionChanges {
-            guard let item = store.todoItemsCache[change.itemId] else { continue }
-            item.isCompleted = change.value(for: target)
-            item.updatedAt = .now
-        }
-
-        guard store.applyExistingItemSnapshots(
-            operation.itemStateChanges.map { $0.snapshot(for: target) }
-        ) else {
-            return false
-        }
-
-        for change in operation.itemExistenceChanges
-        where change.exists(for: target) == false {
-            guard let item = store.todoItemsCache[change.snapshot.id] else { continue }
-            store.deleteItemWithoutUndo(item)
-        }
-
-        operation.selectionChanges.forEach { $0.apply(for: target) }
-        return true
-    }
-
-    /// 执行撤销
-    @discardableResult
-    func undo() -> Bool {
-        while nsUndoManager.canUndo {
-            if undoTodayImpacts.isEmpty == false {
-                undoTodayImpacts.removeLast()
-            }
-            invocationResult = .invalid
-            nsUndoManager.undo()
-            historyRevision += 1
-            switch invocationResult {
-            case .invalid:
-                continue
-            case .applied:
-                return true
+private extension TodoHistoryDisplayScope {
+    func canDisplay(_ unit: TodoOperationUnit) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .today(let date):
+            unit.itemTransitions.contains { transition in
+                [transition.before, transition.after].contains(where: { snapshot in
+                    guard let snapshot,
+                          TodoContainerKind(rawValue: snapshot.containerKindRaw) == .scheduled
+                    else { return false }
+                    return Calendar.current.isDate(snapshot.dayDate, inSameDayAs: date)
+                })
             }
         }
-        return false
-    }
-
-    /// 执行重做
-    @discardableResult
-    func redo() -> Bool {
-        while nsUndoManager.canRedo {
-            if redoTodayImpacts.isEmpty == false {
-                redoTodayImpacts.removeLast()
-            }
-            invocationResult = .invalid
-            nsUndoManager.redo()
-            historyRevision += 1
-            switch invocationResult {
-            case .invalid:
-                continue
-            case .applied:
-                return true
-            }
-        }
-        return false
-    }
-
-    /// 清空撤销栈
-    func clear() {
-        nsUndoManager.removeAllActions()
-        undoTodayImpacts.removeAll()
-        redoTodayImpacts.removeAll()
-        historyRevision += 1
     }
 }

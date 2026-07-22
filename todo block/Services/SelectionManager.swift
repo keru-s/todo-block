@@ -33,6 +33,7 @@ private final class WeakSelectionManager {
 @Observable
 final class SelectionManager {
     private static var historyManagers: [TodoSelectionHistoryContext: WeakSelectionManager] = [:]
+    private static var deferredHistoryStates: [TodoSelectionHistoryContext: TodoSelectionState] = [:]
 
     let historyContext: TodoSelectionHistoryContext
 
@@ -60,10 +61,28 @@ final class SelectionManager {
     func activateHistoryContext() {
         Self.historyManagers = Self.historyManagers.filter { $0.value.value != nil }
         Self.historyManagers[historyContext] = WeakSelectionManager(self)
+        if let deferredState = Self.deferredHistoryStates.removeValue(forKey: historyContext) {
+            deferredState.apply(to: self)
+        }
     }
 
     static func activeManager(for context: TodoSelectionHistoryContext) -> SelectionManager? {
         historyManagers[context]?.value
+    }
+
+    static func applyHistoryState(
+        _ state: TodoSelectionState,
+        for context: TodoSelectionHistoryContext
+    ) {
+        if let selectionManager = activeManager(for: context) {
+            state.apply(to: selectionManager)
+        } else if context.canRestoreDeferredState {
+            deferredHistoryStates[context] = state
+        }
+    }
+
+    static func clearDeferredHistoryStates() {
+        deferredHistoryStates.removeAll()
     }
 
     // MARK: - 选择逻辑
@@ -358,11 +377,22 @@ final class SelectionManager {
             }
         }
 
-        let selectionChange = TodoSelectionChange(
+        let selectionTransition = TodoSelectionTransition(
             selectionManager: self,
             before: selectionBefore,
             after: TodoSelectionState(focusing: nextFocusId)
         )
-        return store.deleteItemsAsBatch(itemsToDelete, selectionChange: selectionChange)
+        return store.deleteItemsAsBatch(itemsToDelete, selectionTransition: selectionTransition)
+    }
+}
+
+private extension TodoSelectionHistoryContext {
+    var canRestoreDeferredState: Bool {
+        switch self {
+        case .ephemeral:
+            false
+        case .mainWindow, .longTerm, .menuBar:
+            true
+        }
     }
 }
