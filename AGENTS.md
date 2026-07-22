@@ -70,6 +70,12 @@ You are a **Senior macOS Engineer**, specializing in SwiftUI + SwiftData with se
 - 共享视图工具 / design tokens → `Views/Shared/`
 - 测试在 `todo blockTests/`（XCTest）；目录名带空格，shell 命令记得加引号
 
+## 快速运行
+
+- `./run.sh`：退出旧实例 → 团队签名编译 Debug → 打开 `build/Debug/todo block.app`，不用开 Xcode
+- 必须用团队签名（脚本内已覆盖 `NoSigning.Debug.xcconfig`），否则沙盒不生效，SwiftData 会写到沙盒容器外的孤立目录，和 Xcode 构建的数据不通
+- 签名团队 ID 默认 `4727XHULQX`，可用 `TODO_DEV_TEAM` 环境变量覆盖
+
 ## Testing
 
 - Pure logic / engines / store 必须有 XCTest 覆盖
