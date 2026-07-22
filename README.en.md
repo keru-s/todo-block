@@ -24,7 +24,7 @@ Todo Block is a native macOS to-do app with nested tasks, keyboard-first workflo
 ## Download
 
 - Latest release page: [GitHub Releases](https://github.com/keru-s/todo-block/releases/latest)
-- Direct download: [Todo-Block-macOS.zip](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.zip)
+- Direct download: [Todo-Block-macOS.dmg](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.dmg)
 
 ### Gatekeeper will block the first launch
 
@@ -49,8 +49,8 @@ xattr -dr com.apple.quarantine "/Applications/todo block.app"
 
 ### Install the app
 
-1. Download the archive from Releases.
-2. Unzip it and move `todo block.app` to the Applications folder.
+1. Download the DMG image from Releases.
+2. Open the image and drag `todo block.app` to the Applications folder.
 3. If macOS blocks the app on first launch, run the command above and open it again.
 
 ### Run from source
@@ -126,7 +126,7 @@ git tag v0.1.0
 git push origin main v0.1.0
 ```
 
-The GitHub Action builds the Release app, creates `Todo-Block-macOS.zip`, and attaches it to the GitHub Release page.
+The GitHub Action builds the Release app, creates `Todo-Block-macOS.dmg`, and attaches it to the GitHub Release page.
 
 If you only want to test the packaging flow, you can also run the workflow manually in GitHub Actions. Manual runs upload a build artifact but do not create a formal Release.
 

@@ -79,21 +79,28 @@ jobs:
           echo "=== Entitlements ==="
           codesign -d --entitlements - "$APP" || true
 
-      - name: Package app
+      - name: Package app as DMG
         run: |
+          set -euo pipefail
           mkdir -p release
-          ditto -c -k --sequesterRsrc --keepParent \
-            "build/DerivedData/Build/Products/Release/$APP_NAME.app" \
-            "release/Todo-Block-macOS.zip"
+          STAGING="$RUNNER_TEMP/dmg-staging"
+          mkdir -p "$STAGING"
+          cp -R "build/DerivedData/Build/Products/Release/$APP_NAME.app" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create \
+            -volname "Todo Block" \
+            -srcfolder "$STAGING" \
+            -ov -format UDZO \
+            "release/Todo-Block-macOS.dmg"
 
       - name: Upload packaged app
         uses: actions/upload-artifact@v4
         with:
           name: Todo-Block-macOS
-          path: release/Todo-Block-macOS.zip
+          path: release/Todo-Block-macOS.dmg
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/Todo-Block-macOS.zip
+          files: release/Todo-Block-macOS.dmg
