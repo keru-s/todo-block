@@ -12,6 +12,8 @@ final class TodoListParticipationModule {
 
     private let actionModule: TodoListActionModule
     private let commandCoordinator: ActiveListCommandCoordinator
+    private let participationIdentity: TodoListParticipationIdentity
+    private let historyPresentation: TodoHistoryPresentationCoordinator
     private let claimsCurrentListWhenFirstActivated: Bool
     private let retainsHistoryRevealsWhileInactive: Bool
     private var historyRevealMatches: HistoryRevealMatcher
@@ -32,12 +34,16 @@ final class TodoListParticipationModule {
     init(
         actionModule: TodoListActionModule,
         commandCoordinator: ActiveListCommandCoordinator? = nil,
+        participationIdentity: TodoListParticipationIdentity? = nil,
+        historyPresentation: TodoHistoryPresentationCoordinator? = nil,
         claimsCurrentListWhenFirstActivated: Bool = true,
         retainsHistoryRevealsWhileInactive: Bool = true,
         historyRevealMatches: @escaping HistoryRevealMatcher = { $0.destination == .longTerm }
     ) {
         self.actionModule = actionModule
         self.commandCoordinator = commandCoordinator ?? .shared
+        self.participationIdentity = participationIdentity ?? .ephemeral(UUID())
+        self.historyPresentation = historyPresentation ?? .shared
         self.claimsCurrentListWhenFirstActivated = claimsCurrentListWhenFirstActivated
         self.retainsHistoryRevealsWhileInactive = retainsHistoryRevealsWhileInactive
         self.historyRevealMatches = historyRevealMatches
@@ -74,6 +80,7 @@ final class TodoListParticipationModule {
             if claimsCurrentListWhenActivating {
                 _ = commandCoordinator.claim(registration)
             }
+            receiveHistoryReveal(historyRevealRequest)
         } else {
             actionModule.feedbackPresenter.clear()
             if let commandRegistration {
@@ -106,6 +113,16 @@ final class TodoListParticipationModule {
         temporaryCommandClaim = temporaryClaim
         isActive = true
         receiveHistoryReveal(historyRevealRequest)
+    }
+
+    /// 声明菜单栏面板是否实际可见。注册、临时接管和释放顺序由模块自行收敛。
+    func updateTemporaryParticipation(isVisible: Bool) {
+        register()
+        if isVisible {
+            beginTemporaryParticipation()
+        } else {
+            endTemporaryParticipation()
+        }
     }
 
     /// 在菜单栏关闭时结束临时接管，并恢复此前仍有效的列表。
@@ -153,11 +170,15 @@ final class TodoListParticipationModule {
             historyRevealRequest = nil
             return
         }
+        guard historyRevealMatches(request) else { return }
         historyRevealRequest = request
         guard isActive,
-              handledHistoryRevealId != request.id,
-              historyRevealMatches(request)
+              handledHistoryRevealId != request.id
         else { return }
+        guard historyPresentation.consume(request, by: participationIdentity) else {
+            historyRevealRequest = nil
+            return
+        }
         handledHistoryRevealId = request.id
         actionModule.restoreHistorySelection(
             request.selectionState,
@@ -169,13 +190,21 @@ final class TodoListParticipationModule {
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
         guard isActive,
               let request = historyRevealRequest,
+              historyPresentation.isCurrent(request),
               historyRevealMatches(request)
         else { return nil }
         return request
     }
 
     private func claimCurrentList() -> Bool {
-        guard isActive, let commandRegistration else { return false }
+        guard isActive else {
+            actionModule.feedbackPresenter.present(message: "请在当前列表中重试")
+            return false
+        }
+        guard let commandRegistration else {
+            actionModule.feedbackPresenter.present(message: "请在当前列表中重试")
+            return false
+        }
         return commandCoordinator.claim(commandRegistration)
     }
 

@@ -27,7 +27,10 @@ struct LongTermListView: View {
             commandScope: .longTerm
         )
         _participation = State(
-            initialValue: TodoListParticipationModule(actionModule: actionModule)
+            initialValue: TodoListParticipationModule(
+                actionModule: actionModule,
+                participationIdentity: .longTerm
+            )
         )
     }
 

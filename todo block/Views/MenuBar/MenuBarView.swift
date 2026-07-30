@@ -52,6 +52,7 @@ struct MenuBarView: View {
         _participation = State(
             initialValue: TodoListParticipationModule(
                 actionModule: actionModule,
+                participationIdentity: .menuBar,
                 retainsHistoryRevealsWhileInactive: false,
                 historyRevealMatches: { request in
                     guard case .scheduled(let date) = request.resultDestination.normalized else {
@@ -136,21 +137,20 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(TodoDesignTokens.windowBackground)
         .onAppear {
-            participation.register()
-            if MenuBarStatusItemController.shared.isPopoverShown {
-                participation.beginTemporaryParticipation()
-            }
+            participation.updateTemporaryParticipation(
+                isVisible: MenuBarStatusItemController.shared.isPopoverShown
+            )
             participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
-            participation.beginTemporaryParticipation()
+            participation.updateTemporaryParticipation(isVisible: true)
             participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
-            participation.endTemporaryParticipation()
+            participation.updateTemporaryParticipation(isVisible: false)
         }
         .onDisappear {
-            participation.endTemporaryParticipation()
+            participation.updateTemporaryParticipation(isVisible: false)
         }
         .gesture(
             TapGesture().onEnded {

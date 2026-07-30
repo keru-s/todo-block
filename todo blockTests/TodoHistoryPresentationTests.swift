@@ -7,7 +7,7 @@ import XCTest
 final class TodoHistoryPresentationTests: XCTestCase {
     private var container: ModelContainer!
     private var store: TodoStore!
-    private var commandModules: [TodoListActionModule] = []
+    private var participations: [TodoListParticipationModule] = []
 
     override func setUp() async throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -19,7 +19,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
         store = TodoStore.shared
         store.reset()
         store.initialize(with: container.mainContext)
-        commandModules = []
+        participations = []
+        ActiveListCommandCoordinator.shared.resetForTesting()
+        TodoHistoryPresentationCoordinator.shared.resetForTesting()
+    }
+
+    override func tearDown() {
+        ActiveListCommandCoordinator.shared.resetForTesting()
+        TodoHistoryPresentationCoordinator.shared.resetForTesting()
     }
 
     func testUndoAppliesHistoryWithoutIssuingAnyPresentationRequest() {
@@ -80,13 +87,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
         originalSelection.cursorPosition = 1
         originalSelection.textSelectionLength = 1
         let menuSelection = SelectionManager(historyContext: .menuBar)
-        let menuModule = TodoListActionModule(
-            store: store,
+        let menu = makeParticipation(
             selectionManager: menuSelection,
-            commandScope: .today
+            participationIdentity: .menuBar,
+            commandScope: .today,
+            retainsHistoryRevealsWhileInactive: false,
+            historyRevealMatches: { _ in true }
         )
-        let menuRegistration = ActiveListCommandCoordinator.shared.register(menuModule)
-        XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(menuRegistration))
+        menu.update(isActive: true)
         store.undoManager.clear()
 
         let before = TodoItemSnapshot(from: item)
@@ -113,11 +121,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let request = try? XCTUnwrap(
             TodoHistoryPresentationCoordinator.shared.revealRequest
         )
-        menuModule.restoreHistorySelection(
-            request?.selectionState,
-            itemId: request?.itemId,
-            sourceHistoryContext: request?.sourceHistoryContext
-        )
+        menu.receiveHistoryReveal(request)
 
         XCTAssertEqual(originalSelection.focusedItemId, item.id)
         XCTAssertEqual(originalSelection.cursorPosition, 1)
@@ -129,13 +133,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
     func testCrossEntryUndoSurvivesWhenOriginalListHasGoneAway() {
         let item = store.createItem(title: "a", dayDate: .now)
         let menuSelection = SelectionManager(historyContext: .menuBar)
-        let menuModule = TodoListActionModule(
-            store: store,
+        let menu = makeParticipation(
             selectionManager: menuSelection,
-            commandScope: .today
+            participationIdentity: .menuBar,
+            commandScope: .today,
+            retainsHistoryRevealsWhileInactive: false,
+            historyRevealMatches: { _ in true }
         )
-        let menuRegistration = ActiveListCommandCoordinator.shared.register(menuModule)
-        XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(menuRegistration))
+        menu.update(isActive: true)
         store.undoManager.clear()
 
         func recordMainWindowOperation() {
@@ -167,11 +172,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let request = try? XCTUnwrap(
             TodoHistoryPresentationCoordinator.shared.revealRequest
         )
-        menuModule.restoreHistorySelection(
-            request?.selectionState,
-            itemId: request?.itemId,
-            sourceHistoryContext: request?.sourceHistoryContext
-        )
+        menu.receiveHistoryReveal(request)
         XCTAssertFalse(item.isCompleted)
         XCTAssertEqual(menuSelection.focusedItemId, item.id)
 
@@ -258,14 +259,15 @@ final class TodoHistoryPresentationTests: XCTestCase {
         selectionManager.lastSelectedId = item.id
         selectionManager.cursorPosition = 1
         selectionManager.textSelectionLength = 1
-        let actionModule = TodoListActionModule(
-            store: store,
+        let participation = makeParticipation(
             selectionManager: selectionManager,
-            commandScope: .scheduledMonth(year: 2027, month: 4)
+            participationIdentity: .mainWindow,
+            commandScope: .scheduledMonth(year: 2027, month: 4),
+            claimsCurrentListWhenFirstActivated: true,
+            historyRevealMatches: { $0.destination == .month(year: 2027, month: 4) }
         )
-        let registration = ActiveListCommandCoordinator.shared.register(actionModule)
-        XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(registration))
-        let actions = actionModule.editorActions
+        participation.update(isActive: true)
+        let actions = participation.editorActions
         store.undoManager.clear()
         actions.titleChanged(
             item.id,
@@ -398,14 +400,39 @@ final class TodoHistoryPresentationTests: XCTestCase {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day)) ?? .now
     }
 
-    private func claimList(scope: TodoClipboardScope) {
-        let module = TodoListActionModule(
+    private func makeParticipation(
+        selectionManager: SelectionManager,
+        participationIdentity: TodoListParticipationIdentity,
+        commandScope: TodoClipboardScope,
+        claimsCurrentListWhenFirstActivated: Bool = true,
+        retainsHistoryRevealsWhileInactive: Bool = true,
+        historyRevealMatches: @escaping TodoListParticipationModule.HistoryRevealMatcher
+    ) -> TodoListParticipationModule {
+        let actionModule = TodoListActionModule(
             store: store,
-            selectionManager: SelectionManager(),
-            commandScope: scope
+            selectionManager: selectionManager,
+            commandScope: commandScope
         )
-        commandModules.append(module)
-        let registration = ActiveListCommandCoordinator.shared.register(module)
-        XCTAssertTrue(ActiveListCommandCoordinator.shared.claim(registration))
+        let participation = TodoListParticipationModule(
+            actionModule: actionModule,
+            participationIdentity: participationIdentity,
+            claimsCurrentListWhenFirstActivated: claimsCurrentListWhenFirstActivated,
+            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive,
+            historyRevealMatches: historyRevealMatches
+        )
+        participations.append(participation)
+        return participation
+    }
+
+    private func claimList(scope: TodoClipboardScope) {
+        let selectionManager = SelectionManager()
+        let participation = makeParticipation(
+            selectionManager: selectionManager,
+            participationIdentity: .ephemeral(UUID()),
+            commandScope: scope,
+            claimsCurrentListWhenFirstActivated: true,
+            historyRevealMatches: { _ in true }
+        )
+        participation.update(isActive: true)
     }
 }

@@ -37,7 +37,7 @@ struct TodoListView: View {
         _participation = State(
             initialValue: TodoListParticipationModule(
                 actionModule: actionModule,
-                claimsCurrentListWhenFirstActivated: false,
+                participationIdentity: .mainWindow,
                 historyRevealMatches: { request in
                     request.destination == .month(year: year, month: month)
                 }

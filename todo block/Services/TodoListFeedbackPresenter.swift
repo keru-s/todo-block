@@ -28,9 +28,13 @@ final class TodoListFeedbackPresenter {
     func consume(_ result: TodoListActionResult) {
         guard case .rejected(let rejection) = result else { return }
 
+        present(message: message(for: rejection))
+    }
+
+    func present(message: String) {
         let feedback = TodoListFeedback(
             id: UUID(),
-            message: message(for: rejection)
+            message: message
         )
         dismissalTask?.cancel()
         self.feedback = feedback

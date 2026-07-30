@@ -65,24 +65,6 @@ final class ActiveListCommandCoordinator {
         }
     }
 
-    func replaceAndClaim(
-        _ registration: TodoListCommandRegistration,
-        with module: TodoListActionModule
-    ) -> TodoListCommandRegistration {
-        removeExpiredRegistrations()
-        guard registrations[registration.id] != nil else {
-            let replacement = register(module)
-            claim(replacement)
-            return replacement
-        }
-
-        registrations[registration.id] = WeakTodoListActionModule(module)
-        if activeTemporaryClaim?.previousRegistrationId != registration.id {
-            claim(registration)
-        }
-        return registration
-    }
-
     @discardableResult
     func claim(_ registration: TodoListCommandRegistration) -> Bool {
         removeExpiredRegistrations()

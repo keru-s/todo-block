@@ -26,38 +26,6 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         NSPasteboard.general.clearContents()
     }
 
-    func testDirectInteractionClaimsRegisteredListAndPassiveCallbackDoesNotStealClaim() {
-        let store = TodoStore.shared
-        let firstSelection = SelectionManager()
-        let secondSelection = SelectionManager()
-        let firstItem = store.createItem(title: "first", dayDate: .now)
-        let firstModule = TodoListActionModule(
-            store: store,
-            selectionManager: firstSelection,
-            commandScope: .today
-        )
-        let secondModule = TodoListActionModule(
-            store: store,
-            selectionManager: secondSelection,
-            commandScope: .today
-        )
-        let firstRegistration = coordinator.register(firstModule)
-        let secondRegistration = coordinator.register(secondModule)
-
-        XCTAssertFalse(coordinator.hasCurrentList)
-        XCTAssertTrue(coordinator.claim(firstRegistration))
-        XCTAssertTrue(coordinator.isCurrent(firstModule))
-        XCTAssertTrue(coordinator.claim(secondRegistration))
-        XCTAssertTrue(coordinator.isCurrent(secondModule))
-
-        firstModule.editorActions.textSelectionChanged(
-            firstItem.id,
-            TodoTextSelection(location: 0, length: 0)
-        )
-
-        XCTAssertTrue(coordinator.isCurrent(secondModule))
-    }
-
     func testInvalidatedOrStaleRegistrationCannotReceiveCommands() {
         let module = TodoListActionModule(
             store: .shared,
@@ -73,43 +41,6 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.claim(registration))
         XCTAssertEqual(coordinator.availability(of: .undo), .unavailable(nil))
         XCTAssertEqual(coordinator.perform(.undo), .noChange)
-    }
-
-    func testReplacingVisibleMonthRegistrationImmediatelyClaimsTheNewScope() {
-        let store = TodoStore.shared
-        let aprilItem = store.createItem(
-            title: "April",
-            dayDate: date(year: 2026, month: 4, day: 2)
-        )
-        let mayItem = store.createItem(
-            title: "May",
-            dayDate: date(year: 2026, month: 5, day: 3)
-        )
-        let selection = SelectionManager(historyContext: .mainWindow)
-        selection.focusedItemId = aprilItem.id
-        selection.selectedItemIds = [aprilItem.id]
-        let module = TodoListActionModule(
-            store: store,
-            selectionManager: selection,
-            commandScope: .scheduledMonth(year: 2026, month: 4)
-        )
-        let aprilRegistration = coordinator.register(module)
-        XCTAssertTrue(coordinator.claim(aprilRegistration))
-
-        selection.focusedItemId = mayItem.id
-        selection.selectedItemIds = [mayItem.id]
-        module.updateCommandScope(.scheduledMonth(year: 2026, month: 5))
-        let mayRegistration = coordinator.replaceAndClaim(
-            aprilRegistration,
-            with: module
-        )
-
-        XCTAssertTrue(coordinator.isCurrent(module))
-        XCTAssertEqual(mayRegistration, aprilRegistration)
-        XCTAssertTrue(coordinator.claim(aprilRegistration))
-        XCTAssertTrue(coordinator.claim(mayRegistration))
-        XCTAssertEqual(coordinator.perform(.copy), .performed)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] May")
     }
 
     func testCommandsAndAvailabilityFollowOnlyTheClaimedListModule() {
@@ -496,122 +427,6 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.perform(.undo), .noChange)
         XCTAssertNotNil(store.todoItemsCache[item.id])
         XCTAssertFalse(store.canUndo)
-    }
-
-    func testMenuBarTemporarilyClaimsCommandsAndRestoresThePreviousVisibleList() {
-        let mainModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .mainWindow),
-            commandScope: .today
-        )
-        let menuBarModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .menuBar),
-            commandScope: .today
-        )
-        let mainRegistration = coordinator.register(mainModule)
-        let menuBarRegistration = coordinator.register(menuBarModule)
-        XCTAssertTrue(coordinator.claim(mainRegistration))
-
-        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
-
-        XCTAssertNotNil(temporaryClaim)
-        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
-
-        if let temporaryClaim {
-            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
-        }
-        XCTAssertTrue(coordinator.isCurrent(mainModule))
-    }
-
-    func testMenuBarCloseRestoresMainListAfterItsVisibleMonthChanges() {
-        let mainModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .mainWindow),
-            commandScope: .scheduledMonth(year: 2026, month: 7)
-        )
-        let menuBarModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .menuBar),
-            commandScope: .today
-        )
-        let mainRegistration = coordinator.register(mainModule)
-        let menuBarRegistration = coordinator.register(menuBarModule)
-        XCTAssertTrue(coordinator.claim(mainRegistration))
-        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
-        XCTAssertNotNil(temporaryClaim)
-
-        mainModule.updateCommandScope(.scheduledMonth(year: 2026, month: 8))
-        let updatedMainRegistration = coordinator.replaceAndClaim(
-            mainRegistration,
-            with: mainModule
-        )
-
-        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
-        if let temporaryClaim {
-            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
-        }
-        XCTAssertTrue(coordinator.isCurrent(mainModule))
-        XCTAssertTrue(coordinator.claim(updatedMainRegistration))
-    }
-
-    func testMenuBarCloseDoesNotRestoreAListThatDisappearedWhilePopoverWasOpen() {
-        let mainModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .mainWindow),
-            commandScope: .today
-        )
-        let menuBarModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .menuBar),
-            commandScope: .today
-        )
-        let mainRegistration = coordinator.register(mainModule)
-        let menuBarRegistration = coordinator.register(menuBarModule)
-        XCTAssertTrue(coordinator.claim(mainRegistration))
-        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
-        XCTAssertNotNil(temporaryClaim)
-
-        coordinator.unregister(mainRegistration)
-        if let temporaryClaim {
-            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
-        }
-
-        XCTAssertFalse(coordinator.hasCurrentList)
-    }
-
-    func testTemporaryMenuBarClaimCannotBeOverriddenUntilItEnds() {
-        let previousModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(),
-            commandScope: .today
-        )
-        let menuBarModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .menuBar),
-            commandScope: .today
-        )
-        let newerModule = TodoListActionModule(
-            store: .shared,
-            selectionManager: SelectionManager(historyContext: .longTerm),
-            commandScope: .longTerm
-        )
-        let previousRegistration = coordinator.register(previousModule)
-        let menuBarRegistration = coordinator.register(menuBarModule)
-        let newerRegistration = coordinator.register(newerModule)
-        XCTAssertTrue(coordinator.claim(previousRegistration))
-        let temporaryClaim = coordinator.beginTemporaryClaim(menuBarRegistration)
-        XCTAssertNotNil(temporaryClaim)
-
-        XCTAssertFalse(coordinator.claim(newerRegistration))
-        XCTAssertTrue(coordinator.isCurrent(menuBarModule))
-        if let temporaryClaim {
-            XCTAssertTrue(coordinator.endTemporaryClaim(temporaryClaim))
-        }
-
-        XCTAssertTrue(coordinator.isCurrent(previousModule))
-        XCTAssertTrue(coordinator.claim(newerRegistration))
-        XCTAssertTrue(coordinator.isCurrent(newerModule))
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {
