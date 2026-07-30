@@ -11,24 +11,11 @@ import SwiftUI
 struct MenuBarView: View {
     let onOpenMainWindow: () -> Void
 
-    init(onOpenMainWindow: @escaping () -> Void = {}) {
-        self.onOpenMainWindow = onOpenMainWindow
-    }
-
-    @State private var actionModule = TodoListActionModule(
-        store: .shared,
-        selectionManager: SelectionManager(historyContext: .menuBar),
-        commandScope: .today,
-        allowsSidebarMoves: false
-    )
-    @State private var handledHistoryRevealId: UUID?
-    @State private var commandRegistration: TodoListCommandRegistration?
-    @State private var temporaryCommandClaim: TodoListTemporaryCommandClaim?
+    @State private var participation: TodoListParticipationModule
 
     private var store: TodoStore { TodoStore.shared }
-    private var selectionManager: SelectionManager { actionModule.selectionManager }
+    private var selectionManager: SelectionManager { participation.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
-    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
@@ -54,12 +41,26 @@ struct MenuBarView: View {
         return formatter.string(from: Date())
     }
 
-    private var editorActions: TodoEditorActions {
-        let registration = commandRegistration
-        return actionModule.editorActions {
-            guard let registration else { return }
-            ActiveListCommandCoordinator.shared.claim(registration)
-        }
+    init(onOpenMainWindow: @escaping () -> Void = {}) {
+        self.onOpenMainWindow = onOpenMainWindow
+        let actionModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today,
+            allowsSidebarMoves: false
+        )
+        _participation = State(
+            initialValue: TodoListParticipationModule(
+                actionModule: actionModule,
+                retainsHistoryRevealsWhileInactive: false,
+                historyRevealMatches: { request in
+                    guard case .scheduled(let date) = request.resultDestination.normalized else {
+                        return false
+                    }
+                    return Calendar.current.isDateInToday(date)
+                }
+            )
+        )
     }
 
     var body: some View {
@@ -90,12 +91,12 @@ struct MenuBarView: View {
             TodoEditorRepresentable(
                 sections: editorSections,
                 emptyTitle: "今天没有待办事项",
-                actions: editorActions,
-                revealRequest: visibleHistoryRevealRequest
+                actions: participation.editorActions,
+                revealRequest: participation.visibleHistoryRevealRequest
             )
             .frame(minHeight: 80, maxHeight: 350)
             .overlay(alignment: .bottom) {
-                TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+                TodoListFeedbackToast(feedback: participation.feedback)
                     .padding(10)
             }
 
@@ -135,24 +136,21 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(TodoDesignTokens.windowBackground)
         .onAppear {
-            registerCommandContextIfNeeded()
+            participation.register()
             if MenuBarStatusItemController.shared.isPopoverShown {
-                beginTemporaryCommandClaim()
+                participation.beginTemporaryParticipation()
             }
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
-            registerCommandContextIfNeeded()
-            beginTemporaryCommandClaim()
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.beginTemporaryParticipation()
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
-            actionModule.feedbackPresenter.clear()
-            endTemporaryCommandClaim()
+            participation.endTemporaryParticipation()
         }
         .onDisappear {
-            actionModule.feedbackPresenter.clear()
-            endTemporaryCommandClaim()
+            participation.endTemporaryParticipation()
         }
         .gesture(
             TapGesture().onEnded {
@@ -161,7 +159,7 @@ struct MenuBarView: View {
             including: .gesture
         )
         .onChange(of: historyPresentation.revealRequest) { _, request in
-            restoreHistoryRevealIfVisible(request)
+            participation.receiveHistoryReveal(request)
         }
     }
 }
@@ -169,59 +167,14 @@ struct MenuBarView: View {
 // MARK: - Actions
 
 private extension MenuBarView {
-    func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
-        guard let request,
-              handledHistoryRevealId != request.id,
-              visibleHistoryRevealRequest?.id == request.id
-        else { return }
-        handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(
-            request.selectionState,
-            itemId: request.itemId,
-            sourceHistoryContext: request.sourceHistoryContext
-        )
-    }
-
-    var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
-        guard let request = historyPresentation.revealRequest,
-              case .scheduled(let date) = request.resultDestination.normalized,
-              Calendar.current.isDateInToday(date)
-        else { return nil }
-        return request
-    }
-
     func addTodayItem() {
-        claimCurrentList()
-        actionModule.editorActions.addItem(.scheduled(date: .now))
-    }
-
-    func registerCommandContextIfNeeded() {
-        guard commandRegistration == nil else { return }
-        commandRegistration = commandCoordinator.register(actionModule)
-    }
-
-    func claimCurrentList() {
-        guard let commandRegistration else { return }
-        commandCoordinator.claim(commandRegistration)
-    }
-
-    func beginTemporaryCommandClaim() {
-        guard temporaryCommandClaim == nil,
-              let commandRegistration
-        else { return }
-        actionModule.feedbackPresenter.clear()
-        temporaryCommandClaim = commandCoordinator.beginTemporaryClaim(commandRegistration)
-    }
-
-    func endTemporaryCommandClaim() {
-        guard let temporaryCommandClaim else { return }
-        commandCoordinator.endTemporaryClaim(temporaryCommandClaim)
-        self.temporaryCommandClaim = nil
+        participation.performDirectAction {
+            $0.editorActions.addItem(.scheduled(date: .now))
+        }
     }
 
     func handleBackgroundTap() {
-        claimCurrentList()
-        actionModule.clearSelection()
+        participation.performDirectAction { $0.clearSelection() }
     }
 }
 

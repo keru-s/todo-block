@@ -11,20 +11,25 @@ import SwiftUI
 struct LongTermListView: View {
     var isActiveContext: Bool = true
 
-    @State private var actionModule = TodoListActionModule(
-        store: .shared,
-        selectionManager: SelectionManager(historyContext: .longTerm),
-        commandScope: .longTerm
-    )
-    @State private var handledHistoryRevealId: UUID?
-    @State private var commandRegistration: TodoListCommandRegistration?
+    @State private var participation: TodoListParticipationModule
 
     private var store: TodoStore { TodoStore.shared }
-    private var selectionManager: SelectionManager { actionModule.selectionManager }
+    private var selectionManager: SelectionManager { participation.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
-    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
     private let urgentSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
     private let importantSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
+
+    init(isActiveContext: Bool = true) {
+        self.isActiveContext = isActiveContext
+        let actionModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .longTerm),
+            commandScope: .longTerm
+        )
+        _participation = State(
+            initialValue: TodoListParticipationModule(actionModule: actionModule)
+        )
+    }
 
     private var editorSections: [TodoEditorSectionSnapshot] {
         [
@@ -47,85 +52,32 @@ struct LongTermListView: View {
         ]
     }
 
-    private var editorActions: TodoEditorActions {
-        let registration = commandRegistration
-        return actionModule.editorActions {
-            guard let registration else { return }
-            ActiveListCommandCoordinator.shared.claim(registration)
-        }
-    }
-
     var body: some View {
         TodoEditorRepresentable(
             sections: editorSections,
             emptyTitle: "暂无长期待办",
-            actions: editorActions,
-            revealRequest: visibleHistoryRevealRequest
+            actions: participation.editorActions,
+            revealRequest: participation.visibleHistoryRevealRequest
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottom) {
-            TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+            TodoListFeedbackToast(feedback: participation.feedback)
                 .padding(12)
         }
         .onAppear {
-            registerCommandContextIfNeeded()
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.appear(isActive: isActiveContext)
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
-            guard newValue else {
-                actionModule.feedbackPresenter.clear()
-                unregisterCommandContext()
-                return
-            }
-            registerCommandContextIfNeeded()
-            claimCurrentList()
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.update(isActive: newValue)
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
-            restoreHistoryRevealIfVisible(request)
+            participation.receiveHistoryReveal(request)
         }
         .onDisappear {
-            actionModule.feedbackPresenter.clear()
-            unregisterCommandContext()
+            participation.update(isActive: false)
         }
-    }
-
-    private func registerCommandContextIfNeeded() {
-        guard isActiveContext, commandRegistration == nil else { return }
-        commandRegistration = commandCoordinator.register(actionModule)
-    }
-
-    private func claimCurrentList() {
-        guard let commandRegistration else { return }
-        commandCoordinator.claim(commandRegistration)
-    }
-
-    private func unregisterCommandContext() {
-        guard let commandRegistration else { return }
-        commandCoordinator.unregister(commandRegistration)
-        self.commandRegistration = nil
-    }
-
-    private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
-        guard isActiveContext,
-              let request,
-              handledHistoryRevealId != request.id,
-              request.destination == .longTerm
-        else { return }
-        handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(
-            request.selectionState,
-            itemId: request.itemId,
-            sourceHistoryContext: request.sourceHistoryContext
-        )
-    }
-
-    private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
-        guard isActiveContext,
-              let request = historyPresentation.revealRequest,
-              request.destination == .longTerm
-        else { return nil }
-        return request
     }
 }
 

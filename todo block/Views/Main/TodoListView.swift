@@ -13,13 +13,8 @@ struct TodoListView: View {
     let month: Int
     var isActiveContext: Bool = true
 
-    @State private var actionModule = TodoListActionModule(
-        store: .shared,
-        selectionManager: SelectionManager(historyContext: .mainWindow)
-    )
+    @State private var participation: TodoListParticipationModule
     @State private var showModePopover = false
-    @State private var handledHistoryRevealId: UUID?
-    @State private var commandRegistration: TodoListCommandRegistration?
     @AppStorage("addTodayMode") private var addTodayModeRaw: String = TodoTodayAdditionMode.carryOver.rawValue
 
     private var addTodayMode: TodoTodayAdditionMode {
@@ -27,9 +22,28 @@ struct TodoListView: View {
     }
 
     private var store: TodoStore { TodoStore.shared }
-    private var selectionManager: SelectionManager { actionModule.selectionManager }
+    private var selectionManager: SelectionManager { participation.selectionManager }
     private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
-    private var commandCoordinator: ActiveListCommandCoordinator { .shared }
+
+    init(year: Int, month: Int, isActiveContext: Bool = true) {
+        self.year = year
+        self.month = month
+        self.isActiveContext = isActiveContext
+        let actionModule = TodoListActionModule(
+            store: .shared,
+            selectionManager: SelectionManager(historyContext: .mainWindow),
+            commandScope: .scheduledMonth(year: year, month: month)
+        )
+        _participation = State(
+            initialValue: TodoListParticipationModule(
+                actionModule: actionModule,
+                claimsCurrentListWhenFirstActivated: false,
+                historyRevealMatches: { request in
+                    request.destination == .month(year: year, month: month)
+                }
+            )
+        )
+    }
 
     private var daySections: [DaySection] {
         store.sections(year: year, month: month)
@@ -42,14 +56,6 @@ struct TodoListView: View {
                 items: store.items(for: section.date),
                 selectionManager: selectionManager
             )
-        }
-    }
-
-    private var editorActions: TodoEditorActions {
-        let registration = commandRegistration
-        return actionModule.editorActions {
-            guard let registration else { return }
-            ActiveListCommandCoordinator.shared.claim(registration)
         }
     }
 
@@ -67,12 +73,12 @@ struct TodoListView: View {
             TodoEditorRepresentable(
                 sections: appKitEditorSections,
                 emptyTitle: "暂无待办",
-                actions: editorActions,
-                revealRequest: visibleHistoryRevealRequest
+                actions: participation.editorActions,
+                revealRequest: participation.visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottom) {
-                TodoListFeedbackToast(feedback: actionModule.feedbackPresenter.feedback)
+                TodoListFeedbackToast(feedback: participation.feedback)
                     .padding(12)
             }
 
@@ -132,52 +138,26 @@ struct TodoListView: View {
             .background(TodoDesignTokens.windowBackground)
         }
         .onAppear {
-            registerCommandContextIfNeeded()
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.updateCommandScope(clipboardScope)
+            updateHistoryRevealMatcher()
+            participation.appear(isActive: isActiveContext)
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
-            guard newValue else {
-                actionModule.feedbackPresenter.clear()
-                unregisterCommandContext()
-                return
-            }
-            registerCommandContextIfNeeded()
-            claimCurrentList()
-            restoreHistoryRevealIfVisible(historyPresentation.revealRequest)
+            participation.update(isActive: newValue)
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
-            actionModule.feedbackPresenter.clear()
-            replaceCommandContextForCurrentScope()
+            participation.updateCommandScope(clipboardScope)
+            updateHistoryRevealMatcher()
+            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: historyPresentation.revealRequest) { _, request in
-            restoreHistoryRevealIfVisible(request)
+            participation.receiveHistoryReveal(request)
         }
         .onDisappear {
-            actionModule.feedbackPresenter.clear()
-            unregisterCommandContext()
+            participation.update(isActive: false)
         }
-    }
-
-    private func restoreHistoryRevealIfVisible(_ request: TodoHistoryRevealRequest?) {
-        guard isActiveContext,
-              let request,
-              handledHistoryRevealId != request.id,
-              request.destination == .month(year: year, month: month)
-        else { return }
-        handledHistoryRevealId = request.id
-        actionModule.restoreHistorySelection(
-            request.selectionState,
-            itemId: request.itemId,
-            sourceHistoryContext: request.sourceHistoryContext
-        )
-    }
-
-    private var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
-        guard isActiveContext,
-              let request = historyPresentation.revealRequest,
-              request.destination == .month(year: year, month: month)
-        else { return nil }
-        return request
     }
 
     private var addTodayModePanel: some View {
@@ -249,39 +229,14 @@ struct TodoListView: View {
     }
 
     private func executeAddToday() {
-        claimCurrentList()
-        actionModule.addToday(mode: addTodayMode)
+        participation.performDirectAction { $0.addToday(mode: addTodayMode) }
     }
 
-    private func claimCurrentList() {
-        guard let commandRegistration else { return }
-        commandCoordinator.claim(commandRegistration)
-    }
-
-    private func registerCommandContextIfNeeded() {
-        guard isActiveContext, commandRegistration == nil else { return }
-        actionModule.updateCommandScope(clipboardScope)
-        commandRegistration = commandCoordinator.register(actionModule)
-    }
-
-    private func replaceCommandContextForCurrentScope() {
-        guard isActiveContext else { return }
-        actionModule.updateCommandScope(clipboardScope)
-        guard let commandRegistration else {
-            registerCommandContextIfNeeded()
-            claimCurrentList()
-            return
+    private func updateHistoryRevealMatcher() {
+        let destination = SidebarDestination.month(year: year, month: month)
+        participation.updateHistoryRevealMatcher { request in
+            request.destination == destination
         }
-        self.commandRegistration = commandCoordinator.replaceAndClaim(
-            commandRegistration,
-            with: actionModule
-        )
-    }
-
-    private func unregisterCommandContext() {
-        guard let commandRegistration else { return }
-        commandCoordinator.unregister(commandRegistration)
-        self.commandRegistration = nil
     }
 
 }

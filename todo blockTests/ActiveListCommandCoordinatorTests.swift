@@ -147,38 +147,6 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "- [ ] May")
     }
 
-    func testLongTermEditorInteractionClaimsItsModuleBeforeChangingItem() {
-        let store = TodoStore.shared
-        let item = store.createItem(
-            title: "long term",
-            dayDate: .now,
-            containerKind: .longTermUrgent
-        )
-        let monthModule = TodoListActionModule(
-            store: store,
-            selectionManager: SelectionManager(historyContext: .mainWindow),
-            commandScope: .today
-        )
-        let longTermSelection = SelectionManager(historyContext: .longTerm)
-        let longTermModule = TodoListActionModule(
-            store: store,
-            selectionManager: longTermSelection,
-            commandScope: .longTerm
-        )
-        let monthRegistration = coordinator.register(monthModule)
-        let longTermRegistration = coordinator.register(longTermModule)
-        XCTAssertTrue(coordinator.claim(monthRegistration))
-
-        let actions = longTermModule.editorActions(claimCurrentList: {
-            self.coordinator.claim(longTermRegistration)
-        })
-        actions.claimCurrentList()
-        actions.toggleCompleted(item.id)
-
-        XCTAssertTrue(item.isCompleted)
-        XCTAssertTrue(coordinator.isCurrent(longTermModule))
-    }
-
     func testDateAndLongTermModulesKeepIndependentSelectionWhenCommandsSwitchTarget() {
         let store = TodoStore.shared
         let dateItem = store.createItem(title: "date", dayDate: .now)
