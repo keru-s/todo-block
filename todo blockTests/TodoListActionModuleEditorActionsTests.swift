@@ -140,7 +140,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         selectionManager.cursorPosition = 2
         store.undoManager.clear()
 
-        actions.enterPressed(
+        _ = actions.enterPressed(
             item.id,
             .splitIntoChild(newCurrentTitle: "ab", childTitle: "cde")
         )
@@ -161,6 +161,119 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         XCTAssertEqual(store.items(for: day).map(\.title), ["ab", "cde"])
         XCTAssertEqual(selectionManager.focusedItemId, items.last?.id)
         XCTAssertEqual(selectionManager.cursorPosition, 0)
+    }
+
+    func testEnterAtEndWithDescendantsCreatesFirstDirectChild() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        let firstChild = store.createItem(
+            title: "first child",
+            dayDate: day,
+            afterItem: parent,
+            indentLevel: 1
+        )
+        _ = store.createItem(
+            title: "second child",
+            dayDate: day,
+            afterItem: firstChild,
+            indentLevel: 1
+        )
+        let actions = makeModule(store: store).editorActions
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        selectionManager.cursorPosition = parent.title.count
+        store.undoManager.clear()
+
+        _ = actions.enterPressed(parent.id, .insertSiblingBelow)
+
+        let items = store.items(for: day)
+        XCTAssertEqual(items.map(\.title), ["parent", "", "first child", "second child"])
+        XCTAssertEqual(items.map(\.indentLevel), [0, 1, 1, 1])
+        XCTAssertEqual(selectionManager.focusedItemId, items[1].id)
+        XCTAssertEqual(selectionManager.cursorPosition, 0)
+    }
+
+    func testEnterAtEndOnNestedItemCreatesChildAtThatLevel() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let root = store.createItem(title: "root", dayDate: day, indentLevel: 0)
+        let parent = store.createItem(title: "parent", dayDate: day, afterItem: root, indentLevel: 1)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
+        let actions = makeModule(store: store).editorActions
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        store.undoManager.clear()
+
+        _ = actions.enterPressed(parent.id, .insertSiblingBelow)
+
+        let items = store.items(for: day)
+        guard let insertedId = selectionManager.focusedItemId else {
+            return XCTFail("Expected the new item to receive focus")
+        }
+        XCTAssertNotEqual(insertedId, child.id)
+        XCTAssertEqual(items.map(\.id), [root.id, parent.id, insertedId, child.id])
+        XCTAssertEqual(items.map(\.indentLevel), [0, 1, 2, 2])
+    }
+
+    func testEnterOnEmptyItemWithDescendantsKeepsSiblingLevel() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let parent = store.createItem(dayDate: day, indentLevel: 0)
+        let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
+        let actions = makeModule(store: store).editorActions
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        store.undoManager.clear()
+
+        _ = actions.enterPressed(parent.id, .insertSiblingBelow)
+
+        let items = store.items(for: day)
+        guard let insertedId = selectionManager.focusedItemId else {
+            return XCTFail("Expected the new item to receive focus")
+        }
+        XCTAssertNotEqual(insertedId, child.id)
+        XCTAssertEqual(items.map(\.id), [parent.id, insertedId, child.id])
+        XCTAssertEqual(items.map(\.indentLevel), [0, 0, 1])
+    }
+
+    func testEnterAfterReplacingSuffixUndoesTextAndNewItemTogether() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
+        _ = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
+        let actions = makeModule(store: store).editorActions
+        selectionManager.selectedItemIds = [parent.id]
+        selectionManager.focusedItemId = parent.id
+        selectionManager.lastSelectedId = parent.id
+        selectionManager.cursorPosition = 2
+        selectionManager.textSelectionLength = 4
+        store.undoManager.clear()
+
+        _ = actions.enterPressed(
+            parent.id,
+            .insertSiblingBelowAfterTextReplacement(
+                beforeTitle: "parent",
+                newCurrentTitle: "pa",
+                beforeSelection: TodoTextSelection(location: 2, length: 4)
+            )
+        )
+
+        let itemsAfterEnter = store.items(for: day)
+        XCTAssertEqual(itemsAfterEnter.map(\.title), ["pa", "", "child"])
+        XCTAssertEqual(selectionManager.focusedItemId, itemsAfterEnter[1].id)
+        XCTAssertEqual(selectionManager.cursorPosition, 0)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.title), ["parent", "child"])
+        XCTAssertEqual(selectionManager.focusedItemId, parent.id)
+        XCTAssertEqual(selectionManager.selectedItemIds, [parent.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 2)
+        XCTAssertEqual(selectionManager.textSelectionLength, 4)
+        XCTAssertFalse(store.undo())
     }
 
     func testMoveDraggedItemToLongTermSidebarKeepsParentChildBlock() {

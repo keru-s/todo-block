@@ -745,12 +745,12 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(selectionManager.cursorPosition, 1)
         XCTAssertFalse(store.canUndo)
 
-        module.editorActions.enterPressed(first.id, .insertSiblingAbove)
+        _ = module.editorActions.enterPressed(first.id, .insertSiblingAbove)
         let above = store.items(for: day)[0]
         XCTAssertEqual(selectionManager.focusedItemId, above.id)
         XCTAssertEqual(store.items(for: day).map(\.title), ["", "first", "second"])
 
-        module.editorActions.enterPressed(second.id, .insertSiblingBelow)
+        _ = module.editorActions.enterPressed(second.id, .insertSiblingBelow)
         let below = store.items(for: day).last
         XCTAssertEqual(selectionManager.focusedItemId, below?.id)
         XCTAssertEqual(store.items(for: day).map(\.title), ["", "first", "second", ""])

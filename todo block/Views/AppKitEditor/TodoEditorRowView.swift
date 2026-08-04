@@ -127,7 +127,7 @@ final class TodoEditorRowView: NSView {
             guard let self, let itemId else { return false }
             switch command {
             case .return(let action):
-                actions.enterPressed(itemId, action)
+                return actions.enterPressed(itemId, action)
             case .deleteBackward:
                 actions.deletePressed(itemId)
             case .tab:

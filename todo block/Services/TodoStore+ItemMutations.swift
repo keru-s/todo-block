@@ -22,45 +22,14 @@ extension TodoStore {
         insertAtBeginning: Bool = false,
         selectionManager: SelectionManager? = nil
     ) -> TodoItem {
-        let normalizedDate = Calendar.current.startOfDay(for: dayDate)
-        let destination: TodoDropDestination = {
-            switch containerKind {
-            case .scheduled:
-                return .scheduled(date: normalizedDate)
-            case .longTermUrgent:
-                return .longTerm(isUrgent: true)
-            case .longTermImportant:
-                return .longTerm(isUrgent: false)
-            }
-        }()
-
-        let currentItems = items(in: destination)
-        var newSortOrder: Double
-
-        if let afterItem,
-            let afterIndex = currentItems.firstIndex(where: { $0.id == afterItem.id })
-        {
-            if afterIndex + 1 < currentItems.count {
-                let nextItem = currentItems[afterIndex + 1]
-                newSortOrder = (afterItem.sortOrder + nextItem.sortOrder) / 2
-            } else {
-                newSortOrder = afterItem.sortOrder + 1000
-            }
-        } else if insertAtBeginning, let firstItem = currentItems.first {
-            newSortOrder = firstItem.sortOrder - 1000
-        } else if let lastItem = currentItems.last {
-            newSortOrder = lastItem.sortOrder + 1000
-        } else {
-            newSortOrder = 1000
-        }
-
-        let snapshot = TodoItemSnapshot(
+        let snapshot = newItemSnapshot(
             title: title,
             isCompleted: isCompleted,
+            dayDate: dayDate,
+            afterItem: afterItem,
             indentLevel: indentLevel,
-            sortOrder: newSortOrder,
-            containerKindRaw: containerKind.rawValue,
-            dayDate: normalizedDate
+            containerKind: containerKind,
+            insertAtBeginning: insertAtBeginning
         )
         let selectionTransitions: [TodoSelectionTransition]
         if let selectionManager {
@@ -86,6 +55,112 @@ extension TodoStore {
             preconditionFailure("创建待办的统一操作未能应用")
         }
         return newItem
+    }
+
+    /// 在现有待办文字被替换的同时，在其下方创建新待办，作为一个撤销单元应用。
+    @discardableResult
+    func createItemAfterReplacingTitle(
+        _ item: TodoItem,
+        newCurrentTitle: String,
+        indentLevel: Int,
+        beforeSelection: TodoTextSelection,
+        selectionManager: SelectionManager
+    ) -> TodoItem? {
+        guard todoItemsCache[item.id] === item,
+              item.title != newCurrentTitle
+        else { return nil }
+
+        let before = TodoItemSnapshot(from: item)
+        let newItem = newItemSnapshot(
+            dayDate: item.dayDate,
+            afterItem: item,
+            indentLevel: indentLevel,
+            containerKind: item.containerKind
+        )
+        let beforeSelectionState = TodoSelectionState(
+            focusedItemId: selectionManager.focusedItemId,
+            selectedItemIds: selectionManager.selectedItemIds,
+            lastSelectedId: selectionManager.lastSelectedId,
+            cursorPosition: beforeSelection.location,
+            textSelectionLength: beforeSelection.length
+        )
+        let operation = TodoOperationUnit(
+            actionName: "新建",
+            itemTransitions: [
+                TodoItemTransition(
+                    before: before,
+                    after: before.replacing(title: newCurrentTitle)
+                ),
+                TodoItemTransition(before: nil, after: newItem)
+            ],
+            selectionTransitions: [
+                TodoSelectionTransition(
+                    selectionManager: selectionManager,
+                    before: beforeSelectionState,
+                    after: TodoSelectionState(focusing: newItem.id)
+                )
+            ]
+        )
+        guard undoManager.perform(operation, store: self) else { return nil }
+        return todoItemsCache[newItem.id]
+    }
+
+    private func newItemSnapshot(
+        title: String = "",
+        isCompleted: Bool = false,
+        dayDate: Date,
+        afterItem: TodoItem? = nil,
+        indentLevel: Int = 0,
+        containerKind: TodoContainerKind = .scheduled,
+        insertAtBeginning: Bool = false
+    ) -> TodoItemSnapshot {
+        let normalizedDate = Calendar.current.startOfDay(for: dayDate)
+        let destination: TodoDropDestination = switch containerKind {
+        case .scheduled:
+            .scheduled(date: normalizedDate)
+        case .longTermUrgent:
+            .longTerm(isUrgent: true)
+        case .longTermImportant:
+            .longTerm(isUrgent: false)
+        }
+        let currentItems = items(in: destination)
+        let newSortOrder = newItemSortOrder(
+            afterItem: afterItem,
+            in: currentItems,
+            insertAtBeginning: insertAtBeginning
+        )
+
+        return TodoItemSnapshot(
+            title: title,
+            isCompleted: isCompleted,
+            indentLevel: indentLevel,
+            sortOrder: newSortOrder,
+            containerKindRaw: containerKind.rawValue,
+            dayDate: normalizedDate
+        )
+    }
+
+    private func newItemSortOrder(
+        afterItem: TodoItem?,
+        in currentItems: [TodoItem],
+        insertAtBeginning: Bool
+    ) -> Double {
+        if let afterItem,
+           let afterIndex = currentItems.firstIndex(where: { $0.id == afterItem.id })
+        {
+            if afterIndex + 1 < currentItems.count {
+                let nextItem = currentItems[afterIndex + 1]
+                return (afterItem.sortOrder + nextItem.sortOrder) / 2
+            }
+            return afterItem.sortOrder + 1000
+        }
+        if insertAtBeginning, let firstItem = currentItems.first {
+            return firstItem.sortOrder - 1000
+        }
+        if let lastItem = currentItems.last {
+            return lastItem.sortOrder + 1000
+        }
+        return 1000
     }
 
     /// 在 `item` 前插入一条同级新 item。
@@ -129,15 +204,14 @@ extension TodoStore {
         let before = TodoItemSnapshot(from: item)
         let newIndent = min(item.indentLevel + 1, TodoItem.maxIndentLevel)
         let destinationItems = items(in: destination(for: item))
-        guard let itemIndex = destinationItems.firstIndex(where: { $0.id == item.id }) else {
+        guard destinationItems.contains(where: { $0.id == item.id }) else {
             return nil
         }
-        let childSortOrder: Double
-        if itemIndex + 1 < destinationItems.count {
-            childSortOrder = (item.sortOrder + destinationItems[itemIndex + 1].sortOrder) / 2
-        } else {
-            childSortOrder = item.sortOrder + 1000
-        }
+        let childSortOrder = newItemSortOrder(
+            afterItem: item,
+            in: destinationItems,
+            insertAtBeginning: false
+        )
         let childSnapshot = TodoItemSnapshot(
             title: childTitle,
             indentLevel: newIndent,

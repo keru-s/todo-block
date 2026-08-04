@@ -11,6 +11,11 @@ import CoreGraphics
 enum EnterAction {
     case insertSiblingAbove
     case insertSiblingBelow
+    case insertSiblingBelowAfterTextReplacement(
+        beforeTitle: String,
+        newCurrentTitle: String,
+        beforeSelection: TodoTextSelection
+    )
     case splitIntoChild(newCurrentTitle: String, childTitle: String)
 }
 
@@ -36,7 +41,7 @@ struct TodoEditorActions {
     var endDragSelection: () -> Void = {}
     var cancelDragSelection: () -> Void = {}
     var addItem: (TodoDropDestination) -> Void = { _ in }
-    var enterPressed: (UUID, EnterAction) -> Void = { _, _ in }
+    var enterPressed: (UUID, EnterAction) -> Bool = { _, _ in false }
     var deletePressed: (UUID) -> Void = { _ in }
     var indent: (UUID) -> Void = { _ in }
     var outdent: (UUID) -> Void = { _ in }

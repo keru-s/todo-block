@@ -373,40 +373,72 @@ final class TodoEditorTextView: NSTextView {
                 return true
             }
 
-            var range = selectedRange()
-            if range.length > 0 {
-                insertText("", replacementRange: range)
-                range = selectedRange()
-            }
-
-            let fullText = string
-            let length = (fullText as NSString).length
-            let cursor = range.location
-
+            let originalRange = selectedRange()
+            let originalText = string
+            let originalLength = (originalText as NSString).length
             let action: EnterAction
-            if length == 0 {
-                action = .insertSiblingBelow
-            } else if cursor == 0 {
-                action = .insertSiblingAbove
-            } else if cursor >= length {
-                action = .insertSiblingBelow
-            } else {
-                let nsText = fullText as NSString
-                action = .splitIntoChild(
-                    newCurrentTitle: nsText.substring(to: cursor),
-                    childTitle: nsText.substring(from: cursor)
+            var textAfterSelection = originalText
+            if originalRange.length > 0,
+               originalRange.location > 0,
+               NSMaxRange(originalRange) == originalLength
+            {
+                let nsText = originalText as NSString
+                action = .insertSiblingBelowAfterTextReplacement(
+                    beforeTitle: originalText,
+                    newCurrentTitle: nsText.substring(to: originalRange.location),
+                    beforeSelection: TodoTextSelection(originalRange)
                 )
+            } else {
+                var range = originalRange
+                if range.length > 0 {
+                    insertText("", replacementRange: range)
+                    range = selectedRange()
+                }
+
+                let fullText = string
+                textAfterSelection = fullText
+                let length = (fullText as NSString).length
+                let cursor = range.location
+
+                if length == 0 {
+                    action = .insertSiblingBelow
+                } else if cursor == 0 {
+                    action = .insertSiblingAbove
+                } else if cursor >= length {
+                    action = .insertSiblingBelow
+                } else {
+                    let nsText = fullText as NSString
+                    action = .splitIntoChild(
+                        newCurrentTitle: nsText.substring(to: cursor),
+                        childTitle: nsText.substring(from: cursor)
+                    )
+                }
             }
 
-            if case .splitIntoChild(let newCurrentTitle, _) = action {
+            var deferredHandledCommandText: String?
+            switch action {
+            case .splitIntoChild(let newCurrentTitle, _):
                 replaceTextForHandledCommand(newCurrentTitle)
+            case .insertSiblingBelowAfterTextReplacement(_, let newCurrentTitle, _):
+                deferredHandledCommandText = newCurrentTitle
+            default:
+                break
             }
             window?.makeFirstResponder(nil)
             let handled = onCommand?(.return(action)) == true
-            if handled == false, case .splitIntoChild = action {
-                replaceTextForHandledCommand(fullText)
+            if handled {
+                if let deferredHandledCommandText {
+                    replaceTextForHandledCommand(deferredHandledCommandText)
+                }
+            } else {
+                switch action {
+                case .splitIntoChild:
+                    replaceTextForHandledCommand(textAfterSelection)
+                default:
+                    break
+                }
             }
-            return handled
+            return handled || deferredHandledCommandText != nil
         }
 
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
@@ -444,6 +476,7 @@ final class TodoEditorTextView: NSTextView {
     private func replaceTextForHandledCommand(_ newText: String) {
         isApplyingHandledCommandText = true
         string = newText
+        synchronizeReportedText(newText)
         let length = (newText as NSString).length
         setSelectedRange(NSRange(location: length, length: 0))
         invalidateIntrinsicContentSize()

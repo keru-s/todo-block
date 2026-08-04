@@ -55,6 +55,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         var actions = TodoEditorActions.readOnly
         actions.enterPressed = { _, action in
             capturedAction = action
+            return true
         }
 
         let rowView = TodoEditorRowView(
@@ -86,6 +87,57 @@ final class TodoEditorRowViewTests: XCTestCase {
         }
         XCTAssertEqual(newCurrentTitle, "ab")
         XCTAssertEqual(childTitle, "cde")
+    }
+
+    func testSuffixReturnEmitsReplacementAction() throws {
+        let item = TodoItem(title: "abcde")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id]
+        selectionManager.cursorPosition = 2
+        selectionManager.textSelectionLength = 3
+
+        var capturedAction: EnterAction?
+        var actions = TodoEditorActions.readOnly
+        actions.enterPressed = { _, action in
+            capturedAction = action
+            return true
+        }
+
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            actions: actions
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+        textView.string = "abcde"
+        textView.setSelectedRange(NSRange(location: 2, length: 3))
+
+        textView.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+
+        XCTAssertEqual(textView.string, "ab")
+        guard case .insertSiblingBelowAfterTextReplacement(
+            let beforeTitle,
+            let newCurrentTitle,
+            let beforeSelection
+        ) = capturedAction else {
+            return XCTFail("Expected replacement-and-insert action")
+        }
+        XCTAssertEqual(beforeTitle, "abcde")
+        XCTAssertEqual(newCurrentTitle, "ab")
+        XCTAssertEqual(beforeSelection, TodoTextSelection(location: 2, length: 3))
     }
 
     func testApplySnapshotRestoresTextSelectionAfterUndo() throws {

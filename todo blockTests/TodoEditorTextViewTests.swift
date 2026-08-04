@@ -91,4 +91,15 @@ final class TodoEditorTextViewTests: XCTestCase {
         XCTAssertEqual(selections.last, TodoTextSelection(location: 1, length: 1))
     }
 
+    func testRejectedSuffixReturnLeavesTextUnchanged() {
+        let textView = TodoEditorTextView()
+        textView.string = "abcde"
+        textView.synchronizeReportedText("abcde")
+        textView.setSelectedRange(NSRange(location: 2, length: 3))
+        textView.onCommand = { _ in false }
+
+        textView.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertEqual(textView.string, "abcde")
+    }
+
 }

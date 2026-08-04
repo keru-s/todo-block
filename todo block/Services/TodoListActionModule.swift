@@ -509,7 +509,7 @@ final class TodoListActionModule {
             },
             enterPressed: { [self] itemId, action in
                 self.prepareForExternalAction()
-                self.handleEnter(itemId: itemId, action: action)
+                return self.handleEnter(itemId: itemId, action: action)
             },
             deletePressed: { [self] itemId in
                 self.prepareForExternalAction()
@@ -583,18 +583,37 @@ final class TodoListActionModule {
         )
     }
 
-    private func handleEnter(itemId: UUID, action: EnterAction) {
-        guard let item = store.todoItemsCache[itemId] else { return }
+    @discardableResult
+    private func handleEnter(itemId: UUID, action: EnterAction) -> Bool {
+        guard let item = store.todoItemsCache[itemId] else { return false }
         let newItem: TodoItem
         switch action {
         case .insertSiblingBelow:
+            let destinationItems = store.items(in: store.destination(for: item))
             newItem = store.createItem(
                 dayDate: item.dayDate,
                 afterItem: item,
-                indentLevel: item.indentLevel,
+                indentLevel: item.title.isEmpty
+                    ? item.indentLevel
+                    : enterBelowIndentLevel(for: item, in: destinationItems),
                 containerKind: item.containerKind,
                 selectionManager: selectionManager
             )
+        case .insertSiblingBelowAfterTextReplacement(
+            let beforeTitle,
+            let newCurrentTitle,
+            let beforeSelection
+        ):
+            guard item.title == beforeTitle else { return false }
+            let destinationItems = store.items(in: store.destination(for: item))
+            guard let createdItem = store.createItemAfterReplacingTitle(
+                item,
+                newCurrentTitle: newCurrentTitle,
+                indentLevel: enterBelowIndentLevel(for: item, in: destinationItems),
+                beforeSelection: beforeSelection,
+                selectionManager: selectionManager
+            ) else { return false }
+            newItem = createdItem
         case .insertSiblingAbove:
             newItem = store.createItemBefore(item, selectionManager: selectionManager)
         case .splitIntoChild(let newCurrentTitle, let childTitle):
@@ -603,7 +622,7 @@ final class TodoListActionModule {
                 newCurrentTitle: newCurrentTitle,
                 childTitle: childTitle,
                 selectionManager: selectionManager
-            ) else { return }
+            ) else { return false }
             newItem = splitItem
         }
         selectionManager.handleSelect(
@@ -612,6 +631,18 @@ final class TodoListActionModule {
             shiftPressed: false,
             cursorPosition: 0
         )
+        return true
+    }
+
+    private func enterBelowIndentLevel(for item: TodoItem, in items: [TodoItem]) -> Int {
+        guard let itemIndex = items.firstIndex(where: { $0.id == item.id }),
+              let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: items),
+              block.range.count > 1
+        else {
+            return item.indentLevel
+        }
+
+        return min(item.indentLevel + 1, TodoItem.maxIndentLevel)
     }
 
     private func delete(itemId: UUID) {

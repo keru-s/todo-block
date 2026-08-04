@@ -256,9 +256,8 @@ final class TodoListParticipationModule {
             }
         }
         actions.enterPressed = { [weak self] itemId, action in
-            self?.performEditorDirectAction {
-                baseActions.enterPressed(itemId, action)
-            }
+            guard let self, self.claimCurrentList() else { return false }
+            return baseActions.enterPressed(itemId, action)
         }
         actions.deletePressed = { [weak self] itemId in
             self?.performEditorDirectAction {
