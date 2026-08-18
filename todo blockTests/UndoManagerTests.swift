@@ -525,7 +525,7 @@ final class UndoManagerTests: XCTestCase {
         let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        ).editorActions
+        ).editorEntry
         store.undoManager.clear()
 
         actions.titleChanged(

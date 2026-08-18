@@ -31,7 +31,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
 
         actions.toggleCompleted(parent.id)
 
@@ -44,7 +44,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let first = store.createItem(title: "first", dayDate: day)
         let second = store.createItem(title: "second", dayDate: day, afterItem: first)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [first.id, second.id]
         selectionManager.focusedItemId = first.id
 
@@ -67,7 +67,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let moving = store.createItem(title: "moving", dayDate: day, indentLevel: 0)
         let child = store.createItem(title: "child", dayDate: day, afterItem: moving, indentLevel: 1)
         let next = store.createItem(title: "next", dayDate: day, afterItem: child, indentLevel: 0)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [moving.id, next.id]
         selectionManager.focusedItemId = next.id
         selectionManager.lastSelectedId = next.id
@@ -97,7 +97,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let first = store.createItem(title: "first", dayDate: day)
         let second = store.createItem(title: "second", dayDate: day, afterItem: first)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [first.id, second.id]
         selectionManager.focusedItemId = second.id
         selectionManager.lastSelectedId = second.id
@@ -119,7 +119,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let second = store.createItem(title: "second", dayDate: day)
         let third = store.createItem(title: "third", dayDate: day)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
 
         actions.beginDragSelection(first.id, nil)
         actions.updateDragSelection(third.id)
@@ -133,7 +133,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
         let item = store.createItem(title: "abcde", dayDate: day, indentLevel: 1)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [item.id]
         selectionManager.focusedItemId = item.id
         selectionManager.lastSelectedId = item.id
@@ -179,7 +179,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
             afterItem: firstChild,
             indentLevel: 1
         )
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id]
         selectionManager.focusedItemId = parent.id
         selectionManager.lastSelectedId = parent.id
@@ -201,7 +201,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let root = store.createItem(title: "root", dayDate: day, indentLevel: 0)
         let parent = store.createItem(title: "parent", dayDate: day, afterItem: root, indentLevel: 1)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id]
         selectionManager.focusedItemId = parent.id
         selectionManager.lastSelectedId = parent.id
@@ -223,7 +223,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let parent = store.createItem(dayDate: day, indentLevel: 0)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id]
         selectionManager.focusedItemId = parent.id
         selectionManager.lastSelectedId = parent.id
@@ -245,7 +245,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
         _ = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id]
         selectionManager.focusedItemId = parent.id
         selectionManager.lastSelectedId = parent.id
@@ -281,7 +281,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 1)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id, child.id]
         selectionManager.focusedItemId = child.id
         selectionManager.lastSelectedId = child.id
@@ -333,7 +333,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
             dayDate: day,
             containerKind: .longTermImportant
         )
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
         selectionManager.selectedItemIds = [parent.id, target.id]
         selectionManager.focusedItemId = target.id
         selectionManager.lastSelectedId = target.id
@@ -383,7 +383,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
             indentLevel: 2,
             containerKind: .longTermImportant
         )
-        let actions = makeModule(store: store).editorActions
+        let actions = makeModule(store: store).editorEntry
 
         actions.moveDraggedItemToSidebar(parent.id, .month(year: 2026, month: 6))
 

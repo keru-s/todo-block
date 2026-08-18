@@ -73,7 +73,7 @@ struct TodoListView: View {
             TodoEditorRepresentable(
                 sections: appKitEditorSections,
                 emptyTitle: "暂无待办",
-                actions: participation.editorActions,
+                editorEntry: participation.editorEntry,
                 revealRequest: participation.visibleHistoryRevealRequest
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)

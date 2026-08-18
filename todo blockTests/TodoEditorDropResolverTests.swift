@@ -59,8 +59,16 @@ final class TodoEditorDropResolverTests: XCTestCase {
         let session = TodoEditorDragSession.shared
         let destination = SidebarDestination.month(year: 2026, month: 6)
         let point = CGPoint(x: 40, y: 40)
+        var invalidatedDestination: SidebarDestination?
 
         session.clearSidebarTargets()
+        let observerId = session.addObserver(
+            onSidebarTargetInvalidated: { destination in
+                invalidatedDestination = destination
+            },
+            onExternalAction: {}
+        )
+        defer { session.removeObserver(observerId) }
         session.registerSidebarTarget(destination, frame: CGRect(x: 0, y: 0, width: 80, height: 80))
         session.begin(itemId: UUID(), screenLocation: point)
 
@@ -70,7 +78,23 @@ final class TodoEditorDropResolverTests: XCTestCase {
         session.update(screenLocation: point)
 
         XCTAssertNil(session.hoveredSidebarDestination)
+        XCTAssertEqual(invalidatedDestination, destination)
         session.end()
         session.clearSidebarTargets()
+    }
+
+    @MainActor
+    func testExternalActionNotifiesTheCurrentEditor() {
+        let session = TodoEditorDragSession.shared
+        var notificationCount = 0
+        let observerId = session.addObserver(
+            onSidebarTargetInvalidated: { _ in },
+            onExternalAction: { notificationCount += 1 }
+        )
+        defer { session.removeObserver(observerId) }
+
+        session.notifyExternalAction()
+
+        XCTAssertEqual(notificationCount, 1)
     }
 }

@@ -7,12 +7,13 @@ import AppKit
 
 @MainActor
 final class TodoEditorDragHandleView: NSView {
-    var onDragBegan: ((NSPoint) -> Void)?
-    var onDragChanged: ((NSPoint) -> Void)?
-    var onDragEnded: ((NSPoint) -> Void)?
+    var onDragBegan: ((NSPoint) -> TodoEditorContinuousInteractionToken?)?
+    var onDragChanged: ((NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
+    var onDragEnded: ((NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
 
     private var isHovering = false
     private var isDragging = false
+    private var dragToken: TodoEditorContinuousInteractionToken?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -61,20 +62,23 @@ final class TodoEditorDragHandleView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         isDragging = false
+        dragToken = nil
     }
 
     override func mouseDragged(with event: NSEvent) {
         if isDragging == false {
             isDragging = true
-            onDragBegan?(event.locationInWindow)
+            dragToken = onDragBegan?(event.locationInWindow)
         }
-        onDragChanged?(event.locationInWindow)
+        if let dragToken {
+            onDragChanged?(event.locationInWindow, dragToken)
+        }
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        if isDragging {
-            onDragEnded?(event.locationInWindow)
+        if isDragging, let dragToken {
+            onDragEnded?(event.locationInWindow, dragToken)
         }
         resetInteractionState()
     }
@@ -90,6 +94,7 @@ final class TodoEditorDragHandleView: NSView {
         guard isHovering || isDragging else { return }
         isHovering = false
         isDragging = false
+        dragToken = nil
         needsDisplay = true
     }
 

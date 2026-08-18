@@ -8,7 +8,7 @@ final class TodoTextEditSessionTests: XCTestCase {
     private var container: ModelContainer!
     private var selectionManager: SelectionManager!
     private var store: TodoStore!
-    private var actions: TodoEditorActions!
+    private var actions: TodoEditorEntry!
 
     override func setUp() async throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -24,7 +24,7 @@ final class TodoTextEditSessionTests: XCTestCase {
         actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        ).editorActions
+        ).editorEntry
     }
 
     func testContinuousInsertionsSaveImmediatelyAndUndoAsOneStep() {

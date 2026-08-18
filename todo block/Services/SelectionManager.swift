@@ -178,8 +178,9 @@ final class SelectionManager {
     }
 
     func cancelDragSelection() {
-        guard let dragSelectionBefore else { return }
-        dragSelectionBefore.apply(to: self)
+        if let dragSelectionBefore {
+            dragSelectionBefore.apply(to: self)
+        }
         isDragSelecting = false
         dragAnchorId = nil
         self.dragSelectionBefore = nil

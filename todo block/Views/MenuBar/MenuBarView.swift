@@ -92,7 +92,7 @@ struct MenuBarView: View {
             TodoEditorRepresentable(
                 sections: editorSections,
                 emptyTitle: "今天没有待办事项",
-                actions: participation.editorActions,
+                editorEntry: participation.editorEntry,
                 revealRequest: participation.visibleHistoryRevealRequest
             )
             .frame(minHeight: 80, maxHeight: 350)
@@ -168,9 +168,7 @@ struct MenuBarView: View {
 
 private extension MenuBarView {
     func addTodayItem() {
-        participation.performDirectAction {
-            $0.editorActions.addItem(.scheduled(date: .now))
-        }
+        participation.editorEntry.addItem(.scheduled(date: .now))
     }
 
     func handleBackgroundTap() {

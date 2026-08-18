@@ -267,7 +267,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             historyRevealMatches: { $0.destination == .month(year: 2027, month: 4) }
         )
         participation.update(isActive: true)
-        let actions = participation.editorActions
+        let actions = participation.editorEntry
         store.undoManager.clear()
         actions.titleChanged(
             item.id,
@@ -372,7 +372,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
-        ).editorActions
+        ).editorEntry
         store.undoManager.clear()
         var didChange = false
         withObservationTracking {

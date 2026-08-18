@@ -59,7 +59,7 @@ struct LongTermListView: View {
         TodoEditorRepresentable(
             sections: editorSections,
             emptyTitle: "暂无长期待办",
-            actions: participation.editorActions,
+            editorEntry: participation.editorEntry,
             revealRequest: participation.visibleHistoryRevealRequest
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

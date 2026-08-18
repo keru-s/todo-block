@@ -28,7 +28,8 @@ struct TodoEditorPreviewView: View {
     var body: some View {
         TodoEditorRepresentable(
             sections: sections,
-            emptyTitle: "暂无可预览的待办"
+            emptyTitle: "暂无可预览的待办",
+            editorEntry: .readOnly
         )
     }
 }

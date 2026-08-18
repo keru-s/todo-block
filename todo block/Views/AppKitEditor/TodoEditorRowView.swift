@@ -14,28 +14,31 @@ final class TodoEditorRowView: NSView {
     private let completionButton = NSButton()
     private let completionTrailingSpacer = NSView()
     private let titleTextView = TodoEditorTextView()
-    private var actions: TodoEditorActions
+    private var editorEntry: TodoEditorEntry
     private var itemId: UUID?
     private var indentConstraint: NSLayoutConstraint?
     private var isApplyingSnapshot = false
     private var isComposingText = false
     private var latestSnapshot: TodoEditorItemSnapshot?
     private var didStartDragSelection = false
+    private var dragSelectionToken: TodoEditorContinuousInteractionToken?
+    private var itemDragToken: TodoEditorContinuousInteractionToken?
     private var textSelectionAnchor: Int?
     private var prefersRowFirstResponder = false
     private var lastStyledCompleted: Bool?
     private var focusUpdateVersion = 0
 
-    var onDragBegan: ((UUID, NSPoint) -> Void)?
-    var onDragChanged: ((UUID, NSPoint) -> Void)?
-    var onDragEnded: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragEnded: (() -> Void)?
-    var onSelectionDragCancelled: (() -> Void)?
+    var onDragBegan: ((UUID, NSPoint) -> TodoEditorContinuousInteractionToken?)?
+    var onDragChanged: ((UUID, NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
+    var onDragEnded: ((UUID, NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
+    var onDragCancelled: ((TodoEditorContinuousInteractionToken) -> Bool)?
+    var onSelectionDragBeganResult: ((UUID, NSPoint) -> TodoEditorContinuousInteractionToken?)?
+    var onSelectionDragChanged: ((UUID, NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
+    var onSelectionDragEnded: ((NSPoint?, TodoEditorContinuousInteractionToken) -> Void)?
+    var onSelectionDragCancelled: ((TodoEditorContinuousInteractionToken) -> Void)?
 
-    init(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions) {
-        self.actions = actions
+    init(snapshot: TodoEditorItemSnapshot, editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
         super.init(frame: .zero)
         configureViewHierarchy()
         apply(snapshot: snapshot)
@@ -74,24 +77,28 @@ final class TodoEditorRowView: NSView {
         titleTextView.allowsUndo = false
         titleTextView.onTextDidChange = { [weak self] event in
             guard let self, let itemId, isApplyingSnapshot == false else { return }
-            actions.titleChanged(itemId, event)
+            editorEntry.titleChanged(itemId, event)
         }
         titleTextView.onSelectionDidChange = { [weak self] selection in
             guard let self, let itemId, isApplyingSnapshot == false else { return }
-            actions.textSelectionChanged(itemId, selection)
+            editorEntry.textSelectionChanged(itemId, selection)
         }
         titleTextView.onInputSessionEnded = { [weak self] in
-            self?.actions.inputSessionEnded()
+            self?.editorEntry.inputSessionEnded()
         }
         titleTextView.onMouseFocus = { [weak self] shiftPressed, cursorPosition in
             guard let self, let itemId else { return }
             prefersRowFirstResponder = false
-            actions.captureDragSelectionBefore()
-            actions.selectItem(itemId, shiftPressed, cursorPosition)
+            editorEntry.captureDragSelectionBefore()
+            editorEntry.selectItem(
+                itemId,
+                shiftPressed: shiftPressed,
+                cursorPosition: cursorPosition
+            )
         }
         titleTextView.onMouseInteractionEnded = { [weak self] didCrossItemSelection in
             guard let self, didCrossItemSelection == false else { return }
-            actions.discardPreparedDragSelection()
+            editorEntry.discardPreparedDragSelection()
         }
         titleTextView.onEscapePressed = { [weak self] in
             self?.handleEscape() ?? false
@@ -99,26 +106,28 @@ final class TodoEditorRowView: NSView {
         titleTextView.shouldBeginCrossItemSelection = { [weak self] location in
             self?.hasExitedTextSelectionRegion(at: location) ?? false
         }
-        titleTextView.onCrossItemSelectionBegan = { [weak self] location, cursorPosition in
-            guard let self, let itemId else { return }
+        titleTextView.onCrossItemSelectionBeganResult = { [weak self] location, cursorPosition in
+            guard let self, let itemId else { return nil }
             prefersRowFirstResponder = true
             window?.makeFirstResponder(self)
-            onSelectionDragBegan?(itemId, location)
+            let token = onSelectionDragBeganResult?(itemId, location)
+            dragSelectionToken = token
+            return token
         }
-        titleTextView.onCrossItemSelectionChanged = { [weak self] location in
+        titleTextView.onCrossItemSelectionChanged = { [weak self] location, token in
             guard let self, let itemId else { return }
-            onSelectionDragChanged?(itemId, location)
+            onSelectionDragChanged?(itemId, location, token)
         }
-        titleTextView.onCrossItemSelectionEnded = { [weak self] in
-            self?.onSelectionDragEnded?()
+        titleTextView.onCrossItemSelectionEnded = { [weak self] location, token in
+            guard let self else { return }
+            onSelectionDragEnded?(location, token)
+            dragSelectionToken = nil
         }
-        titleTextView.onCrossItemSelectionCancelled = { [weak self] in
+        titleTextView.onCrossItemSelectionCancelled = { [weak self] token in
             guard let self else { return }
             prefersRowFirstResponder = false
-            onSelectionDragCancelled?()
-        }
-        titleTextView.onUserInteraction = { [weak self] in
-            self?.actions.claimCurrentList()
+            onSelectionDragCancelled?(token)
+            dragSelectionToken = nil
         }
         titleTextView.onCompositionChange = { [weak self] composing in
             self?.isComposingText = composing
@@ -127,39 +136,51 @@ final class TodoEditorRowView: NSView {
             guard let self, let itemId else { return false }
             switch command {
             case .return(let action):
-                return actions.enterPressed(itemId, action)
-            case .deleteBackward:
-                actions.deletePressed(itemId)
+                return editorEntry.enterPressed(itemId, action)
+            case .deleteBackward(let textSelection):
+                return editorEntry.deletePressed(itemId, textSelection: textSelection)
             case .tab:
-                actions.indent(itemId)
+                editorEntry.indent(itemId)
             case .backtab:
-                actions.outdent(itemId)
+                editorEntry.outdent(itemId)
             case .moveUp(let position, let horizontalOffset):
-                actions.moveFocus(itemId, .up, position, horizontalOffset)
+                editorEntry.moveFocus(
+                    itemId: itemId,
+                    direction: .up,
+                    cursorPosition: position,
+                    horizontalOffset: horizontalOffset
+                )
             case .moveDown(let position, let horizontalOffset):
-                actions.moveFocus(itemId, .down, position, horizontalOffset)
+                editorEntry.moveFocus(
+                    itemId: itemId,
+                    direction: .down,
+                    cursorPosition: position,
+                    horizontalOffset: horizontalOffset
+                )
             case .moveItemUp:
-                actions.moveItemByKeyboard(itemId, .up)
+                editorEntry.moveItemByKeyboard(itemId: itemId, direction: .up)
             case .moveItemDown:
-                actions.moveItemByKeyboard(itemId, .down)
+                editorEntry.moveItemByKeyboard(itemId: itemId, direction: .down)
             }
             return true
         }
 
         handleView.onDragBegan = { [weak self] location in
-            guard let self, let itemId else { return }
-            actions.claimCurrentList()
+            guard let self, let itemId else { return nil }
             prefersRowFirstResponder = true
             window?.makeFirstResponder(self)
-            onDragBegan?(itemId, location)
+            let token = onDragBegan?(itemId, location)
+            itemDragToken = token
+            return token
         }
-        handleView.onDragChanged = { [weak self] location in
-            guard let self, let itemId else { return }
-            onDragChanged?(itemId, location)
+        handleView.onDragChanged = { [weak self] location, token in
+            guard let self, let itemId, itemDragToken == token else { return }
+            onDragChanged?(itemId, location, token)
         }
-        handleView.onDragEnded = { [weak self] location in
-            guard let self, let itemId else { return }
-            onDragEnded?(itemId, location)
+        handleView.onDragEnded = { [weak self] location, token in
+            guard let self, let itemId, itemDragToken == token else { return }
+            onDragEnded?(itemId, location, token)
+            self.itemDragToken = nil
         }
 
         addSubview(stackView)
@@ -183,10 +204,12 @@ final class TodoEditorRowView: NSView {
         ])
     }
 
-    func apply(snapshot: TodoEditorItemSnapshot, actions: TodoEditorActions? = nil) {
-        if let actions {
-            self.actions = actions
-        }
+    func apply(snapshot: TodoEditorItemSnapshot) {
+        apply(snapshot: snapshot, editorEntry: editorEntry)
+    }
+
+    func apply(snapshot: TodoEditorItemSnapshot, editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
 
         focusUpdateVersion += 1
         let currentFocusUpdateVersion = focusUpdateVersion
@@ -210,8 +233,11 @@ final class TodoEditorRowView: NSView {
             accessibilityDescription: snapshot.isCompleted ? "已完成" : "未完成"
         )
         completionButton.contentTintColor = snapshot.isCompleted ? .systemGreen : .secondaryLabelColor
-
-        titleTextView.deletesOnBackspace = snapshot.hasMultipleSelection
+        completionButton.isEnabled = editorEntry.access.isEditable
+        completionButton.toolTip = editorEntry.access.isEditable ? nil : "只读列表"
+        handleView.isHidden = editorEntry.access.isEditable == false
+        titleTextView.isEditable = editorEntry.access.isEditable
+        titleTextView.isSelectable = true
 
         var didReplaceText = false
         if titleTextView.string != snapshot.title && isComposingText == false {
@@ -277,25 +303,29 @@ final class TodoEditorRowView: NSView {
 
     func resetDragHandleState() {
         handleView.resetInteractionState()
+        itemDragToken = nil
     }
 
     @objc private func toggleCompleted() {
         guard let itemId else { return }
-        actions.claimCurrentList()
-        actions.toggleCompleted(itemId)
+        editorEntry.toggleCompleted(itemId)
     }
 
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         if let itemId {
-            actions.claimCurrentList()
             didStartDragSelection = false
+            dragSelectionToken = nil
             let position = titleCharacterIndex(at: event.locationInWindow)
             textSelectionAnchor = position
             prefersRowFirstResponder = false
-            actions.captureDragSelectionBefore()
-            actions.selectItem(itemId, event.modifierFlags.contains(.shift), position)
+            editorEntry.captureDragSelectionBefore()
+            editorEntry.selectItem(
+                itemId,
+                shiftPressed: event.modifierFlags.contains(.shift),
+                cursorPosition: position
+            )
             titleTextView.focus(
                 cursorPosition: position,
                 selectionLength: 0,
@@ -314,11 +344,13 @@ final class TodoEditorRowView: NSView {
 
         if didStartDragSelection == false,
            hasExitedTextSelectionRegion(at: event.locationInWindow) {
-            didStartDragSelection = true
-            onSelectionDragBegan?(itemId, event.locationInWindow)
+            if let token = onSelectionDragBeganResult?(itemId, event.locationInWindow) {
+                dragSelectionToken = token
+                didStartDragSelection = true
+            }
         }
-        if didStartDragSelection {
-            onSelectionDragChanged?(itemId, event.locationInWindow)
+        if didStartDragSelection, let dragSelectionToken {
+            onSelectionDragChanged?(itemId, event.locationInWindow, dragSelectionToken)
         } else if let textSelectionAnchor {
             let position = titleCharacterIndex(at: event.locationInWindow)
             titleTextView.setSelectedRange(
@@ -331,12 +363,14 @@ final class TodoEditorRowView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if didStartDragSelection {
-            onSelectionDragEnded?()
+        if didStartDragSelection, let dragSelectionToken {
+            onSelectionDragEnded?(event.locationInWindow, dragSelectionToken)
         } else {
-            actions.discardPreparedDragSelection()
+            editorEntry.discardPreparedDragSelection()
         }
         didStartDragSelection = false
+        dragSelectionToken = nil
+        itemDragToken = nil
         textSelectionAnchor = nil
         super.mouseUp(with: event)
     }
@@ -347,25 +381,27 @@ final class TodoEditorRowView: NSView {
             return
         }
 
+        guard editorEntry.access.isEditable else {
+            super.keyDown(with: event)
+            return
+        }
+
         if event.keyCode == 53, handleEscape() {
             return
         }
 
         if event.modifierFlags.contains(.command), event.keyCode == 126 {
-            actions.claimCurrentList()
-            actions.moveItemByKeyboard(itemId, .up)
+            editorEntry.moveItemByKeyboard(itemId: itemId, direction: .up)
             return
         }
 
         if event.modifierFlags.contains(.command), event.keyCode == 125 {
-            actions.claimCurrentList()
-            actions.moveItemByKeyboard(itemId, .down)
+            editorEntry.moveItemByKeyboard(itemId: itemId, direction: .down)
             return
         }
 
         if event.charactersIgnoringModifiers == " " {
-            actions.claimCurrentList()
-            actions.toggleCompleted(itemId)
+            editorEntry.toggleCompleted(itemId)
             return
         }
 
@@ -373,21 +409,24 @@ final class TodoEditorRowView: NSView {
     }
 
     private func cancelSelectionDragIfNeeded() -> Bool {
-        guard didStartDragSelection else { return false }
+        guard didStartDragSelection, let dragSelectionToken else { return false }
         didStartDragSelection = false
+        self.dragSelectionToken = nil
         textSelectionAnchor = nil
         prefersRowFirstResponder = false
-        onSelectionDragCancelled?()
+        onSelectionDragCancelled?(dragSelectionToken)
         return true
     }
 
     private func handleEscape() -> Bool {
+        if let itemDragToken, onDragCancelled?(itemDragToken) == true {
+            self.itemDragToken = nil
+            return true
+        }
         if cancelSelectionDragIfNeeded() {
             return true
         }
-        guard actions.hasMultipleSelection() else { return false }
-        actions.clearSelection()
-        return true
+        return editorEntry.escapePressed()
     }
 
     private func applyTextStyle(isCompleted: Bool) {

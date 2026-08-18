@@ -51,7 +51,6 @@ struct TodoEditorItemSnapshot: Equatable, Identifiable {
     let indentLevel: Int
     let isSelected: Bool
     let isFocused: Bool
-    let hasMultipleSelection: Bool
     let cursorPosition: Int
     let textSelectionLength: Int
     let preferredHorizontalOffset: CGFloat?
@@ -64,7 +63,6 @@ struct TodoEditorItemSnapshot: Equatable, Identifiable {
         indentLevel = item.indentLevel
         isSelected = selectionManager.selectedItemIds.contains(item.id)
         isFocused = selectionManager.focusedItemId == item.id
-        hasMultipleSelection = selectionManager.selectedItemIds.count > 1
         cursorPosition = selectionManager.cursorPosition
         textSelectionLength = selectionManager.textSelectionLength
         preferredHorizontalOffset = selectionManager.preferredHorizontalOffset

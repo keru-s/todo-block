@@ -111,8 +111,8 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        module.editorActions.selectItem(first.id, false, 3)
-        let refreshedActions = module.editorActions
+        module.editorEntry.selectItem(first.id, false, 3)
+        let refreshedActions = module.editorEntry
         refreshedActions.addItem(.scheduled(date: day))
 
         let added = store.items(for: day)[1]
@@ -135,6 +135,70 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(added.indentLevel, 1)
     }
 
+    func testContinuousSelectionStartDoesNotInterruptItself() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let item = store.createItem(title: "连续选择", dayDate: day)
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+        let session = TodoEditorDragSession.shared
+        var externalActionCount = 0
+        let observerId = session.addObserver(
+            onSidebarTargetInvalidated: { _ in },
+            onExternalAction: { externalActionCount += 1 }
+        )
+        defer {
+            session.removeObserver(observerId)
+            session.end()
+            session.clearSidebarTargets()
+        }
+
+        module.editorEntry.beginDragSelection(item.id, nil)
+
+        XCTAssertEqual(externalActionCount, 0)
+        XCTAssertTrue(selectionManager.isDragSelecting)
+        module.editorEntry.endDragSelection()
+    }
+
+    func testModuleActionNotifiesEditorBeforeMutating() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "动作协调", dayDate: .now)
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selectionManager
+        )
+        let session = TodoEditorDragSession.shared
+        var externalActionCount = 0
+        let observerId = session.addObserver(
+            onSidebarTargetInvalidated: { _ in },
+            onExternalAction: { externalActionCount += 1 }
+        )
+        defer { session.removeObserver(observerId) }
+
+        XCTAssertEqual(module.toggleCompleted(itemId: item.id), .performed)
+
+        XCTAssertEqual(externalActionCount, 1)
+    }
+
+    func testUnavailableCommandStillNotifiesEditorBeforeItReturns() {
+        let module = TodoListActionModule(
+            store: TodoStore.shared,
+            selectionManager: selectionManager
+        )
+        let session = TodoEditorDragSession.shared
+        var externalActionCount = 0
+        let observerId = session.addObserver(
+            onSidebarTargetInvalidated: { _ in },
+            onExternalAction: { externalActionCount += 1 }
+        )
+        defer { session.removeObserver(observerId) }
+
+        XCTAssertEqual(module.perform(.copy), .noChange)
+        XCTAssertEqual(externalActionCount, 1)
+    }
+
     func testTextEditingThroughModuleRestoresTextAndCursorAsOneOperation() {
         let store = TodoStore.shared
         let day = date(year: 2026, month: 5, day: 31)
@@ -151,7 +215,7 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        module.editorActions.titleChanged(
+        module.editorEntry.titleChanged(
             item.id,
             TodoTextEditEvent(
                 beforeText: "buy",
@@ -165,7 +229,7 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertEqual(item.title, "buy milk")
         XCTAssertEqual(selectionManager.focusedItemId, item.id)
         XCTAssertEqual(selectionManager.cursorPosition, 8)
-        module.editorActions.textSelectionChanged(
+        module.editorEntry.textSelectionChanged(
             item.id,
             TodoTextSelection(location: 4, length: 2)
         )
@@ -195,7 +259,7 @@ final class TodoListActionModuleTests: XCTestCase {
             selectionManager: selectionManager,
             activeTextViewProvider: { textView }
         )
-        let actions = module.editorActions
+        let actions = module.editorEntry
         textView.onTextDidChange = { event in
             actions.titleChanged(item.id, event)
         }
@@ -239,7 +303,7 @@ final class TodoListActionModuleTests: XCTestCase {
             commandScope: .today,
             activeTextViewProvider: { textView }
         )
-        let actions = module.editorActions
+        let actions = module.editorEntry
         textView.onTextDidChange = { event in
             actions.titleChanged(item.id, event)
         }
@@ -278,7 +342,7 @@ final class TodoListActionModuleTests: XCTestCase {
             selectionManager: selectionManager,
             activeTextViewProvider: { textView }
         )
-        let actions = module.editorActions
+        let actions = module.editorEntry
         textView.onTextDidChange = { event in
             actions.titleChanged(item.id, event)
         }
@@ -330,7 +394,7 @@ final class TodoListActionModuleTests: XCTestCase {
             commandScope: .today,
             activeTextViewProvider: { textView }
         )
-        let actions = module.editorActions
+        let actions = module.editorEntry
         textView.onTextDidChange = { actions.titleChanged(item.id, $0) }
         textView.onInputSessionEnded = { store.flushPendingTextEdit() }
         store.undoManager.clear()
@@ -432,7 +496,7 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        module.editorActions.sectionDateChanged(section.id, targetDay)
+        module.editorEntry.sectionDateChanged(section.id, targetDay)
 
         XCTAssertEqual(store.items(for: targetDay).map(\.id), [parent.id, child.id])
         XCTAssertTrue(store.items(for: sourceDay).isEmpty)
@@ -737,20 +801,20 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        module.editorActions.moveFocus(first.id, .down, 2, 24)
+        module.editorEntry.moveFocus(first.id, .down, 2, 24)
         XCTAssertEqual(selectionManager.focusedItemId, second.id)
         XCTAssertEqual(selectionManager.cursorPosition, 2)
-        module.editorActions.moveFocus(second.id, .up, 1, 16)
+        module.editorEntry.moveFocus(second.id, .up, 1, 16)
         XCTAssertEqual(selectionManager.focusedItemId, first.id)
         XCTAssertEqual(selectionManager.cursorPosition, 1)
         XCTAssertFalse(store.canUndo)
 
-        _ = module.editorActions.enterPressed(first.id, .insertSiblingAbove)
+        _ = module.editorEntry.enterPressed(first.id, .insertSiblingAbove)
         let above = store.items(for: day)[0]
         XCTAssertEqual(selectionManager.focusedItemId, above.id)
         XCTAssertEqual(store.items(for: day).map(\.title), ["", "first", "second"])
 
-        _ = module.editorActions.enterPressed(second.id, .insertSiblingBelow)
+        _ = module.editorEntry.enterPressed(second.id, .insertSiblingBelow)
         let below = store.items(for: day).last
         XCTAssertEqual(selectionManager.focusedItemId, below?.id)
         XCTAssertEqual(store.items(for: day).map(\.title), ["", "first", "second", ""])
@@ -767,7 +831,7 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         store.undoManager.clear()
 
-        module.editorActions.moveDraggedItemToSidebar(item.id, .longTerm)
+        module.editorEntry.moveDraggedItemToSidebar(item.id, .longTerm)
 
         XCTAssertEqual(store.destination(for: item), .scheduled(date: .now).normalized)
         XCTAssertFalse(store.canUndo)
@@ -794,7 +858,7 @@ final class TodoListActionModuleTests: XCTestCase {
             commandScope: commandScope,
             activeTextViewProvider: { textView }
         )
-        let actions = module.editorActions
+        let actions = module.editorEntry
         textView.onTextDidChange = { event in
             actions.titleChanged(item.id, event)
         }

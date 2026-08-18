@@ -45,14 +45,181 @@ final class TodoListActionModule {
     private let parentChildGroupMoveModule: TodoParentChildGroupMoveModule
     private var commandScope: TodoClipboardScope?
 
-    var editorActions: TodoEditorActions { makeEditorActions() }
+    /// 未绑定列表参与的编辑器入口，供动作模块行为测试使用。
+    /// 可见列表应通过 `makeEditorEntry(claimCurrentList:)` 建立自己的稳定入口。
+    var editorEntry: TodoEditorEntry {
+        makeEditorEntry()
+    }
 
-    func editorActions(
-        claimCurrentList: @escaping () -> Void
-    ) -> TodoEditorActions {
-        var actions = makeEditorActions()
-        actions.claimCurrentList = claimCurrentList
-        return actions
+    /// 建立一份已经连接到本动作模块的编辑器入口。
+    ///
+    /// 列表参与由调用方提供；直接动作在执行前确认参与，选区、焦点和输入
+    /// 结束等被动事实则不会接管当前列表。
+    func makeEditorEntry(
+        claimCurrentList: @escaping () -> Bool = { true }
+    ) -> TodoEditorEntry {
+        TodoEditorEntry(
+            access: .editable,
+            claimCurrentList: claimCurrentList,
+            titleChanged: { [self] itemId, event in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return }
+                store.textEditSession.apply(
+                    event,
+                    to: item,
+                    selectionManager: selectionManager,
+                    store: store
+                )
+            },
+            textSelectionChanged: { [self] itemId, selection in
+                store.textEditSession.selectionDidChange(
+                    itemId: itemId,
+                    selection: selection,
+                    selectionManager: selectionManager,
+                    store: store
+                )
+            },
+            inputSessionEnded: { [self] in
+                store.flushPendingTextEdit()
+            },
+            selectItem: { [self] itemId, shiftPressed, cursorPosition in
+                guard let item = self.store.todoItemsCache[itemId] else { return }
+                prepareForExternalAction()
+                selectionManager.handleSelect(
+                    item: item,
+                    allItems: store.items(in: store.destination(for: item)),
+                    shiftPressed: shiftPressed,
+                    cursorPosition: cursorPosition
+                )
+            },
+            clearSelection: { [self] in
+                prepareForExternalAction()
+                selectionManager.clearAllSelection()
+            },
+            captureDragSelectionBefore: { [self] in
+                selectionManager.captureDragSelectionBefore()
+            },
+            discardPreparedDragSelection: { [self] in
+                selectionManager.discardPreparedDragSelection()
+            },
+            beginDragSelection: { [self] itemId, cursorPosition in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return false }
+                commitPendingTextInput()
+                selectionManager.beginDragSelection(
+                    item: item,
+                    allItems: store.items(in: store.destination(for: item)),
+                    cursorPosition: cursorPosition
+                )
+                return true
+            },
+            updateDragSelection: { [self] itemId in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return }
+                selectionManager.updateDragSelection(
+                    to: item,
+                    allItems: store.items(in: store.destination(for: item))
+                )
+            },
+            endDragSelection: { [self] in
+                selectionManager.endDragSelection()
+            },
+            cancelDragSelection: { [self] in
+                selectionManager.cancelDragSelection()
+            },
+            hasMultipleSelection: { [self] in
+                selectionManager.selectedItemIds.count > 1
+            },
+            addItem: { [self] destination in
+                guard claimCurrentList() else { return }
+                prepareForExternalAction()
+                addItem(to: destination)
+            },
+            enterPressed: { [self] itemId, action in
+                guard claimCurrentList() else { return false }
+                prepareForExternalAction()
+                return handleEnter(itemId: itemId, action: action)
+            },
+            deletePressed: { [self] itemId, textSelection in
+                guard textSelection.length == 0,
+                      let item = self.store.todoItemsCache[itemId],
+                      item.title.isEmpty || selectionManager.selectedItemIds.count > 1
+                else { return false }
+                guard claimCurrentList() else { return true }
+                prepareForExternalAction()
+                delete(itemId: itemId)
+                return true
+            },
+            prepareItemDrag: { [self] itemId in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return false }
+                if selectionManager.selectedItemIds.contains(itemId) == false {
+                    selectionManager.handleSelect(
+                        item: item,
+                        allItems: store.items(in: store.destination(for: item)),
+                        shiftPressed: false
+                    )
+                }
+                return true
+            },
+            toggleCompleted: { [self] itemId in
+                guard claimCurrentList() else { return }
+                _ = toggleCompleted(itemId: itemId)
+            },
+            indent: { [self] itemId in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return }
+                prepareForExternalAction()
+                store.indentItem(item, selectionManager: selectionManager)
+            },
+            outdent: { [self] itemId in
+                guard claimCurrentList(),
+                      let item = self.store.todoItemsCache[itemId]
+                else { return }
+                prepareForExternalAction()
+                store.outdentItem(item, selectionManager: selectionManager)
+            },
+            moveFocus: { [self] itemId, direction, cursorPosition, horizontalOffset in
+                moveFocus(
+                    itemId: itemId,
+                    direction: direction,
+                    cursorPosition: cursorPosition,
+                    horizontalOffset: horizontalOffset
+                )
+            },
+            moveItemByKeyboard: { [self] itemId, direction in
+                guard claimCurrentList() else { return }
+                _ = moveItemByKeyboard(itemId: itemId, direction: direction)
+            },
+            moveDraggedItem: { [self] itemId, destination, insertionIndex, indentLevel in
+                guard claimCurrentList() else { return }
+                prepareForExternalAction()
+                _ = parentChildGroupMoveModule.execute(
+                    .place(
+                        draggedItemId: itemId,
+                        destination: destination,
+                        insertionIndex: insertionIndex,
+                        indentLevel: indentLevel
+                    )
+                )
+            },
+            moveDraggedItemToSidebar: { [self] itemId, destination in
+                guard claimCurrentList(), allowsSidebarMoves else { return }
+                moveDraggedItemToSidebar(itemId: itemId, destination: destination)
+            },
+            sectionDateChanged: { [self] sectionId, newDate in
+                guard claimCurrentList(),
+                      let section = sectionById(sectionId)
+                else { return }
+                prepareForExternalAction()
+                store.updateSectionDate(section, to: newDate)
+            }
+        )
     }
 
     init(
@@ -100,6 +267,7 @@ final class TodoListActionModule {
     }
 
     func clearSelection() {
+        prepareForExternalAction()
         selectionManager.clearSelection()
     }
 
@@ -217,11 +385,18 @@ final class TodoListActionModule {
                 }
                 return .noChange
             }
-            guard let focusedItemId = selectionManager.focusedItemId else { return .noChange }
+            guard let focusedItemId = selectionManager.focusedItemId else {
+                notifyExternalAction()
+                return .noChange
+            }
             return performKeyboardMove(itemId: focusedItemId, direction: direction)
         }
         if command == .moveUp || command == .moveDown {
+            // 菜单移动即使落在边界，也要先提交当前输入；边界判断不能
+            // 把已经输入的文字留在编辑器的临时状态里。
             prepareForExternalAction()
+        } else {
+            notifyExternalAction()
         }
         switch commandAvailability(command) {
         case .available:
@@ -234,22 +409,22 @@ final class TodoListActionModule {
 
         switch command {
         case .copy:
+            prepareForExternalAction()
             if let activeTextView {
                 activeTextView.copy(nil)
                 return .performed
             }
-            prepareForExternalAction()
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             return NSPasteboard.general.setString(markdown, forType: .string)
                 ? .performed
                 : .noChange
         case .cut:
+            prepareForExternalAction()
             if let activeTextView {
                 activeTextView.cut(nil)
                 return .performed
             }
-            prepareForExternalAction()
             guard let markdown = exportedMarkdown else { return .noChange }
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(markdown, forType: .string) else {
@@ -262,11 +437,11 @@ final class TodoListActionModule {
                 ? .performed
                 : .noChange
         case .paste:
+            prepareForExternalAction()
             if let activeTextView {
                 activeTextView.paste(nil)
                 return .performed
             }
-            prepareForExternalAction()
             guard let commandScope,
                   let content = NSPasteboard.general.string(forType: .string),
                   store.importMarkdown(
@@ -278,6 +453,7 @@ final class TodoListActionModule {
             else { return .noChange }
             return .performed
         case .selectAll:
+            prepareForExternalAction()
             if let activeTextView {
                 activeTextView.selectAll(nil)
                 return .performed
@@ -293,10 +469,12 @@ final class TodoListActionModule {
             selectionManager.textSelectionLength = 0
             return .performed
         case .moveUp:
+            prepareForExternalAction()
             return parentChildGroupMoveModule.execute(
                 .moveSelectedGroups(direction: .up)
             )
         case .moveDown:
+            prepareForExternalAction()
             return parentChildGroupMoveModule.execute(
                 .moveSelectedGroups(direction: .down)
             )
@@ -369,6 +547,15 @@ final class TodoListActionModule {
     }
 
     private func prepareForExternalAction() {
+        notifyExternalAction()
+        commitPendingTextInput()
+    }
+
+    private func notifyExternalAction() {
+        TodoEditorDragSession.shared.notifyExternalAction()
+    }
+
+    private func commitPendingTextInput() {
         activeTextView?.commitPendingTextInput()
         store.flushPendingTextEdit()
     }
@@ -428,135 +615,6 @@ final class TodoListActionModule {
             _ = store.getOrCreateTodaySection()
             return .performed
         }
-    }
-
-    private func makeEditorActions() -> TodoEditorActions {
-        TodoEditorActions(
-            titleChanged: { [self] itemId, event in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                store.textEditSession.apply(
-                    event,
-                    to: item,
-                    selectionManager: selectionManager,
-                    store: store
-                )
-            },
-            textSelectionChanged: { [self] itemId, selection in
-                store.textEditSession.selectionDidChange(
-                    itemId: itemId,
-                    selection: selection,
-                    selectionManager: selectionManager,
-                    store: store
-                )
-            },
-            inputSessionEnded: { [self] in
-                store.flushPendingTextEdit()
-            },
-            toggleCompleted: { [self] itemId in
-                self.toggleCompleted(itemId: itemId)
-            },
-            isItemSelected: { [self] itemId in
-                selectionManager.selectedItemIds.contains(itemId)
-            },
-            hasMultipleSelection: { [self] in
-                selectionManager.selectedItemIds.count > 1
-            },
-            selectItem: { [self] itemId, shiftPressed, cursorPosition in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                prepareForExternalAction()
-                selectionManager.handleSelect(
-                    item: item,
-                    allItems: store.items(in: store.destination(for: item)),
-                    shiftPressed: shiftPressed,
-                    cursorPosition: cursorPosition
-                )
-            },
-            clearSelection: { [self] in
-                prepareForExternalAction()
-                selectionManager.clearAllSelection()
-            },
-            captureDragSelectionBefore: { [self] in
-                selectionManager.captureDragSelectionBefore()
-            },
-            discardPreparedDragSelection: { [self] in
-                selectionManager.discardPreparedDragSelection()
-            },
-            beginDragSelection: { [self] itemId, cursorPosition in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                prepareForExternalAction()
-                selectionManager.beginDragSelection(
-                    item: item,
-                    allItems: store.items(in: store.destination(for: item)),
-                    cursorPosition: cursorPosition
-                )
-            },
-            updateDragSelection: { [self] itemId in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                selectionManager.updateDragSelection(
-                    to: item,
-                    allItems: store.items(in: store.destination(for: item))
-                )
-            },
-            endDragSelection: { [self] in
-                self.selectionManager.endDragSelection()
-            },
-            cancelDragSelection: { [self] in
-                self.selectionManager.cancelDragSelection()
-            },
-            addItem: { [self] destination in
-                self.prepareForExternalAction()
-                self.addItem(to: destination)
-            },
-            enterPressed: { [self] itemId, action in
-                self.prepareForExternalAction()
-                return self.handleEnter(itemId: itemId, action: action)
-            },
-            deletePressed: { [self] itemId in
-                self.prepareForExternalAction()
-                self.delete(itemId: itemId)
-            },
-            indent: { [self] itemId in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                prepareForExternalAction()
-                store.indentItem(item, selectionManager: selectionManager)
-            },
-            outdent: { [self] itemId in
-                guard let item = self.store.todoItemsCache[itemId] else { return }
-                prepareForExternalAction()
-                store.outdentItem(item, selectionManager: selectionManager)
-            },
-            moveFocus: { [self] itemId, direction, cursorPosition, horizontalOffset in
-                self.moveFocus(
-                    itemId: itemId,
-                    direction: direction,
-                    cursorPosition: cursorPosition,
-                    horizontalOffset: horizontalOffset
-                )
-            },
-            moveItemByKeyboard: { [self] itemId, direction in
-                _ = self.moveItemByKeyboard(itemId: itemId, direction: direction)
-            },
-            moveDraggedItem: { [self] itemId, destination, toIndex, indentLevel in
-                prepareForExternalAction()
-                _ = parentChildGroupMoveModule.execute(
-                    .place(
-                        draggedItemId: itemId,
-                        destination: destination,
-                        insertionIndex: toIndex,
-                        indentLevel: indentLevel
-                    )
-                )
-            },
-            moveDraggedItemToSidebar: { [self] itemId, destination in
-                guard self.allowsSidebarMoves else { return }
-                self.moveDraggedItemToSidebar(itemId: itemId, destination: destination)
-            },
-            sectionDateChanged: { [self] sectionId, newDate in
-                guard let section = self.sectionById(sectionId) else { return }
-                prepareForExternalAction()
-                store.updateSectionDate(section, to: newDate)
-            }
-        )
     }
 
     private func addItem(to destination: TodoDropDestination) {

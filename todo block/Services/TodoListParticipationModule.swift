@@ -25,7 +25,8 @@ final class TodoListParticipationModule {
     private var hasAppeared = false
 
     private(set) var isActive = false
-    private(set) var editorActions = TodoEditorActions()
+    /// 当前列表专用的编辑器入口。所有编辑器动作都从这里进入，并在动作前接管列表。
+    private(set) var editorEntry = TodoEditorEntry.readOnly
 
     var selectionManager: SelectionManager { actionModule.selectionManager }
     var feedback: TodoListFeedback? { actionModule.feedbackPresenter.feedback }
@@ -47,7 +48,9 @@ final class TodoListParticipationModule {
         self.claimsCurrentListWhenFirstActivated = claimsCurrentListWhenFirstActivated
         self.retainsHistoryRevealsWhileInactive = retainsHistoryRevealsWhileInactive
         self.historyRevealMatches = historyRevealMatches
-        editorActions = makeEditorActions()
+        editorEntry = actionModule.makeEditorEntry { [weak self] in
+            self?.claimCurrentList() ?? false
+        }
     }
 
     /// 声明列表首次出现。不同列表可以选择是否在首次可见时自动成为当前列表。
@@ -208,103 +211,4 @@ final class TodoListParticipationModule {
         return commandCoordinator.claim(commandRegistration)
     }
 
-    private func makeEditorActions() -> TodoEditorActions {
-        let baseActions = actionModule.editorActions
-        var actions = baseActions
-
-        actions.claimCurrentList = { [weak self] in
-            _ = self?.claimCurrentList()
-        }
-        actions.titleChanged = { [weak self] itemId, event in
-            self?.performEditorDirectAction {
-                baseActions.titleChanged(itemId, event)
-            }
-        }
-        actions.toggleCompleted = { [weak self] itemId in
-            self?.performEditorDirectAction {
-                baseActions.toggleCompleted(itemId)
-            }
-        }
-        actions.selectItem = { [weak self] itemId, shiftPressed, cursorPosition in
-            self?.performEditorDirectAction {
-                baseActions.selectItem(itemId, shiftPressed, cursorPosition)
-            }
-        }
-        actions.clearSelection = { [weak self] in
-            self?.performEditorDirectAction {
-                baseActions.clearSelection()
-            }
-        }
-        actions.captureDragSelectionBefore = { [weak self] in
-            self?.performEditorDirectAction {
-                baseActions.captureDragSelectionBefore()
-            }
-        }
-        actions.beginDragSelection = { [weak self] itemId, cursorPosition in
-            self?.performEditorDirectAction {
-                baseActions.beginDragSelection(itemId, cursorPosition)
-            }
-        }
-        actions.updateDragSelection = { [weak self] itemId in
-            self?.performEditorDirectAction {
-                baseActions.updateDragSelection(itemId)
-            }
-        }
-        actions.addItem = { [weak self] destination in
-            self?.performEditorDirectAction {
-                baseActions.addItem(destination)
-            }
-        }
-        actions.enterPressed = { [weak self] itemId, action in
-            guard let self, self.claimCurrentList() else { return false }
-            return baseActions.enterPressed(itemId, action)
-        }
-        actions.deletePressed = { [weak self] itemId in
-            self?.performEditorDirectAction {
-                baseActions.deletePressed(itemId)
-            }
-        }
-        actions.indent = { [weak self] itemId in
-            self?.performEditorDirectAction {
-                baseActions.indent(itemId)
-            }
-        }
-        actions.outdent = { [weak self] itemId in
-            self?.performEditorDirectAction {
-                baseActions.outdent(itemId)
-            }
-        }
-        actions.moveFocus = { [weak self] itemId, direction, cursorPosition, horizontalOffset in
-            self?.performEditorDirectAction {
-                baseActions.moveFocus(itemId, direction, cursorPosition, horizontalOffset)
-            }
-        }
-        actions.moveItemByKeyboard = { [weak self] itemId, direction in
-            self?.performEditorDirectAction {
-                baseActions.moveItemByKeyboard(itemId, direction)
-            }
-        }
-        actions.moveDraggedItem = { [weak self] itemId, destination, index, indentLevel in
-            self?.performEditorDirectAction {
-                baseActions.moveDraggedItem(itemId, destination, index, indentLevel)
-            }
-        }
-        actions.moveDraggedItemToSidebar = { [weak self] itemId, destination in
-            self?.performEditorDirectAction {
-                baseActions.moveDraggedItemToSidebar(itemId, destination)
-            }
-        }
-        actions.sectionDateChanged = { [weak self] sectionId, date in
-            self?.performEditorDirectAction {
-                baseActions.sectionDateChanged(sectionId, date)
-            }
-        }
-
-        return actions
-    }
-
-    private func performEditorDirectAction(_ action: () -> Void) {
-        guard claimCurrentList() else { return }
-        action()
-    }
 }

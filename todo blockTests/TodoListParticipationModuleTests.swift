@@ -59,11 +59,11 @@ final class TodoListParticipationModuleTests: XCTestCase {
         first.update(isActive: true)
         second.update(isActive: true)
 
-        first.editorActions.textSelectionChanged(
+        first.editorEntry.textSelectionChanged(
             firstItem.id,
             TodoTextSelection(location: 0, length: 0)
         )
-        first.editorActions.inputSessionEnded()
+        first.editorEntry.inputSessionEnded()
 
         XCTAssertFalse(first.isCurrentList)
         XCTAssertTrue(second.isCurrentList)
@@ -105,7 +105,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let participation = makeParticipation()
-        let existingActions = participation.editorActions
+        let existingActions = participation.editorEntry
         store.undoManager.clear()
 
         participation.update(isActive: false)
@@ -133,7 +133,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         selection.focusedItemId = item.id
         selection.selectedItemIds = [item.id]
         let participation = makeParticipation(selectionManager: selection)
-        let actions = participation.editorActions
+        let actions = participation.editorEntry
         store.undoManager.clear()
 
         actions.deletePressed(item.id)
@@ -213,11 +213,407 @@ final class TodoListParticipationModuleTests: XCTestCase {
 
         longTerm.update(isActive: true)
         date.appear(isActive: true)
-        date.editorActions.toggleCompleted(item.id)
+        date.editorEntry.toggleCompleted(item.id)
 
         XCTAssertTrue(item.isCompleted)
         XCTAssertTrue(date.isCurrentList)
         XCTAssertFalse(longTerm.isCurrentList)
+    }
+
+    func testEditorEntryCompletionClaimsListAndUsesOneUndoUnit() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "入口待办", dayDate: .now)
+        let first = makeParticipation(
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let second = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+
+        first.update(isActive: true)
+        second.update(isActive: true)
+        store.undoManager.clear()
+
+        XCTAssertEqual(first.editorEntry.access, .editable)
+        first.editorEntry.toggleCompleted(item.id)
+
+        XCTAssertTrue(item.isCompleted)
+        XCTAssertTrue(first.isCurrentList)
+        XCTAssertFalse(second.isCurrentList)
+        XCTAssertTrue(store.canUndo)
+
+        XCTAssertTrue(store.undo())
+        XCTAssertFalse(item.isCompleted)
+        XCTAssertFalse(store.canUndo)
+        XCTAssertTrue(store.canRedo)
+
+        XCTAssertTrue(store.redo())
+        XCTAssertTrue(item.isCompleted)
+    }
+
+    func testEditorEntryTextInputClaimsListAndUndoRestoresTheWholeSegment() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原文", dayDate: .now)
+        let first = makeParticipation(
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let second = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+
+        first.update(isActive: true)
+        second.update(isActive: true)
+        first.selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 2
+        )
+        store.undoManager.clear()
+
+        let inputSession = TodoTextInputSession.dictation(UUID())
+        first.editorEntry.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "原文",
+                afterText: "原文一",
+                beforeSelection: TodoTextSelection(location: 2, length: 0),
+                afterSelection: TodoTextSelection(location: 3, length: 0),
+                kind: .insertion,
+                inputSession: inputSession
+            )
+        )
+        first.editorEntry.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "原文一",
+                afterText: "原文一段",
+                beforeSelection: TodoTextSelection(location: 3, length: 0),
+                afterSelection: TodoTextSelection(location: 4, length: 0),
+                kind: .insertion,
+                inputSession: inputSession
+            )
+        )
+
+        XCTAssertTrue(first.isCurrentList)
+        XCTAssertFalse(second.isCurrentList)
+        XCTAssertEqual(item.title, "原文一段")
+
+        first.editorEntry.inputSessionEnded()
+
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原文")
+        XCTAssertEqual(first.selectionManager.cursorPosition, 2)
+        XCTAssertEqual(first.selectionManager.textSelectionLength, 0)
+        XCTAssertFalse(store.canUndo)
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(item.title, "原文一段")
+        XCTAssertEqual(first.selectionManager.cursorPosition, 4)
+    }
+
+    func testEditorEntryTextSelectionIsPassiveAndEndsPendingInput() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原文", dayDate: .now)
+        let first = makeParticipation(
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let second = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+        first.update(isActive: true)
+        second.update(isActive: true)
+        first.selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 2
+        )
+        store.undoManager.clear()
+
+        first.editorEntry.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "原文",
+                afterText: "原文!",
+                beforeSelection: TodoTextSelection(location: 2, length: 0),
+                afterSelection: TodoTextSelection(location: 3, length: 0),
+                kind: .insertion
+            )
+        )
+        second.update(isActive: false)
+        second.update(isActive: true)
+        first.editorEntry.textSelectionChanged(
+            item.id,
+            TodoTextSelection(location: 1, length: 1)
+        )
+
+        XCTAssertFalse(first.isCurrentList)
+        XCTAssertTrue(second.isCurrentList)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原文")
+        XCTAssertEqual(first.selectionManager.cursorPosition, 2)
+        XCTAssertEqual(first.selectionManager.textSelectionLength, 0)
+    }
+
+    func testEditorEntryReturnFlushesPendingTextBeforeCreatingTheNextItem() {
+        let store = TodoStore.shared
+        let item = store.createItem(title: "原文", dayDate: .now)
+        let participation = makeParticipation(
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        participation.update(isActive: true)
+        participation.selectionManager.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 2
+        )
+        store.undoManager.clear()
+
+        participation.editorEntry.titleChanged(
+            item.id,
+            TodoTextEditEvent(
+                beforeText: "原文",
+                afterText: "原文!",
+                beforeSelection: TodoTextSelection(location: 2, length: 0),
+                afterSelection: TodoTextSelection(location: 3, length: 0),
+                kind: .insertion
+            )
+        )
+        XCTAssertTrue(
+            participation.editorEntry.enterPressed(item.id, .insertSiblingBelow)
+        )
+
+        XCTAssertEqual(store.items(for: item.dayDate).map(\.title), ["原文!", ""])
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: item.dayDate).map(\.title), ["原文!"])
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原文")
+    }
+
+    func testEditorEntryKeyboardNavigationAndStructureActionsUseOneActionOwner() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 8, day: 5)
+        let firstItem = store.createItem(title: "第一个", dayDate: day)
+        let focusedItem = store.createItem(title: "当前", dayDate: day, afterItem: firstItem)
+        let thirdItem = store.createItem(title: "第三个", dayDate: day, afterItem: focusedItem)
+        let selection = SelectionManager(historyContext: .longTerm)
+        let participation = makeParticipation(selectionManager: selection)
+        let other = makeParticipation()
+
+        participation.update(isActive: true)
+        other.update(isActive: true)
+        selection.handleSelect(
+            item: focusedItem,
+            allItems: store.items(for: day),
+            shiftPressed: false,
+            cursorPosition: 2
+        )
+        store.undoManager.clear()
+
+        participation.editorEntry.moveFocus(
+            itemId: focusedItem.id,
+            direction: .down,
+            cursorPosition: 2,
+            horizontalOffset: nil
+        )
+
+        XCTAssertFalse(participation.isCurrentList)
+        XCTAssertTrue(other.isCurrentList)
+        XCTAssertEqual(selection.focusedItemId, thirdItem.id)
+        XCTAssertEqual(selection.cursorPosition, 2)
+        XCTAssertFalse(store.canUndo)
+
+        participation.editorEntry.moveFocus(
+            itemId: thirdItem.id,
+            direction: .up,
+            cursorPosition: 1,
+            horizontalOffset: nil
+        )
+        XCTAssertEqual(selection.focusedItemId, focusedItem.id)
+        XCTAssertFalse(store.canUndo)
+
+        participation.editorEntry.indent(focusedItem.id)
+        XCTAssertEqual(focusedItem.indentLevel, 1)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(focusedItem.indentLevel, 0)
+
+        participation.editorEntry.outdent(focusedItem.id)
+        XCTAssertEqual(focusedItem.indentLevel, 0)
+        XCTAssertFalse(store.canUndo)
+
+        participation.editorEntry.moveItemByKeyboard(
+            itemId: focusedItem.id,
+            direction: .down
+        )
+        XCTAssertEqual(store.items(for: day).map(\.id), [firstItem.id, thirdItem.id, focusedItem.id])
+        XCTAssertTrue(store.canUndo)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [firstItem.id, focusedItem.id, thirdItem.id])
+    }
+
+    func testEditorEntryAddAndDeleteUseDirectEntryAndRespectInactiveBoundary() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 8, day: 5)
+        let item = store.createItem(title: "", dayDate: day)
+        let selection = SelectionManager(historyContext: .longTerm)
+        let participation = makeParticipation(selectionManager: selection)
+
+        participation.update(isActive: true)
+        store.undoManager.clear()
+        participation.editorEntry.addItem(.scheduled(date: day))
+        XCTAssertEqual(store.items(for: day).count, 2)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: day).map(\.id), [item.id])
+
+        selection.handleSelect(
+            item: item,
+            allItems: [item],
+            shiftPressed: false,
+            cursorPosition: 0
+        )
+        participation.update(isActive: false)
+        participation.editorEntry.deletePressed(item.id)
+        XCTAssertEqual(store.items(for: day).map(\.id), [item.id])
+        XCTAssertFalse(store.canUndo)
+
+        participation.update(isActive: true)
+        participation.editorEntry.deletePressed(item.id)
+        XCTAssertTrue(store.items(for: day).isEmpty)
+        XCTAssertTrue(store.canUndo)
+    }
+
+    func testEditorEntryClickAndShiftClickKeepSelectionLocalAndPassive() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 8, day: 5)
+        let firstItem = store.createItem(title: "第一个", dayDate: day)
+        let secondItem = store.createItem(title: "第二个", dayDate: day, afterItem: firstItem)
+        let thirdItem = store.createItem(title: "第三个", dayDate: day, afterItem: secondItem)
+        let selection = SelectionManager(historyContext: .mainWindow)
+        let first = makeParticipation(
+            selectionManager: selection,
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let other = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+
+        first.update(isActive: true)
+        other.update(isActive: true)
+        store.undoManager.clear()
+
+        first.editorEntry.selectItem(firstItem.id, shiftPressed: false, cursorPosition: 1)
+        first.editorEntry.selectItem(thirdItem.id, shiftPressed: true, cursorPosition: 1)
+
+        XCTAssertFalse(first.isCurrentList)
+        XCTAssertTrue(other.isCurrentList)
+        XCTAssertEqual(selection.selectedItemIds, [firstItem.id, secondItem.id, thirdItem.id])
+        XCTAssertEqual(selection.focusedItemId, thirdItem.id)
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testEditorEntryFocusNavigationIsPassiveButExplicitCompletionUsesLatestSelection() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 8, day: 5)
+        let firstItem = store.createItem(title: "第一个", dayDate: day)
+        let secondItem = store.createItem(title: "第二个", dayDate: day, afterItem: firstItem)
+        let selection = SelectionManager(historyContext: .mainWindow)
+        selection.handleSelect(
+            item: firstItem,
+            allItems: store.items(for: day),
+            shiftPressed: false,
+            cursorPosition: 1
+        )
+        let first = makeParticipation(
+            selectionManager: selection,
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let other = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+
+        first.update(isActive: true)
+        other.update(isActive: true)
+        store.undoManager.clear()
+
+        first.editorEntry.moveFocus(
+            itemId: firstItem.id,
+            direction: .down,
+            cursorPosition: 2,
+            horizontalOffset: nil
+        )
+
+        XCTAssertFalse(first.isCurrentList)
+        XCTAssertEqual(selection.focusedItemId, secondItem.id)
+        XCTAssertFalse(store.canUndo)
+
+        first.editorEntry.selectItem(firstItem.id, shiftPressed: false, cursorPosition: 1)
+        first.editorEntry.selectItem(secondItem.id, shiftPressed: true, cursorPosition: 1)
+        first.editorEntry.toggleCompleted(secondItem.id)
+
+        XCTAssertTrue(first.isCurrentList)
+        XCTAssertFalse(other.isCurrentList)
+        XCTAssertTrue(firstItem.isCompleted)
+        XCTAssertTrue(secondItem.isCompleted)
+        XCTAssertTrue(store.canUndo)
+    }
+
+    func testEditorEntryDeletePrefersNativeTextSelectionBeforeTodoSelection() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 8, day: 5)
+        let firstItem = store.createItem(title: "第一个", dayDate: day)
+        let secondItem = store.createItem(title: "第二个", dayDate: day, afterItem: firstItem)
+        let selection = SelectionManager(historyContext: .mainWindow)
+        selection.selectedItemIds = [firstItem.id, secondItem.id]
+        selection.focusedItemId = firstItem.id
+        let first = makeParticipation(
+            selectionManager: selection,
+            participationIdentity: .mainWindow,
+            historyRevealMatches: { _ in true }
+        )
+        let other = makeParticipation(
+            participationIdentity: .longTerm,
+            historyRevealMatches: { _ in true }
+        )
+
+        first.update(isActive: true)
+        other.update(isActive: true)
+        store.undoManager.clear()
+
+        XCTAssertFalse(
+            first.editorEntry.deletePressed(
+                firstItem.id,
+                textSelection: TodoTextSelection(location: 0, length: 1)
+            )
+        )
+        XCTAssertNotNil(store.todoItemsCache[firstItem.id])
+        XCTAssertNotNil(store.todoItemsCache[secondItem.id])
+        XCTAssertFalse(first.isCurrentList)
+        XCTAssertFalse(store.canUndo)
+
+        XCTAssertTrue(
+            first.editorEntry.deletePressed(
+                firstItem.id,
+                textSelection: TodoTextSelection(location: 0, length: 0)
+            )
+        )
+        XCTAssertNil(store.todoItemsCache[firstItem.id])
+        XCTAssertNil(store.todoItemsCache[secondItem.id])
+        XCTAssertTrue(first.isCurrentList)
+        XCTAssertTrue(store.canUndo)
     }
 
     func testUpdatingDateScopeDoesNotClaimWhileTemporaryListIsActive() {
@@ -326,7 +722,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             retainsHistoryRevealsWhileInactive: false,
             historyRevealMatches: { _ in true }
         )
-        let actions = menuBar.editorActions
+        let actions = menuBar.editorEntry
         store.undoManager.clear()
 
         menuBar.register()
@@ -478,7 +874,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         source.update(isActive: true)
         destination.appear(isActive: true)
         other.register()
-        source.editorActions.titleChanged(
+        source.editorEntry.titleChanged(
             item.id,
             TodoTextEditEvent(
                 beforeText: "日期待办",

@@ -12,24 +12,18 @@ final class TodoEditorSectionView: NSView {
     private let titleButton = NSButton(title: "", target: nil, action: nil)
     private let emptyButton = NSButton(title: "添加待办", target: nil, action: nil)
 
-    private var actions: TodoEditorActions
+    private var editorEntry: TodoEditorEntry
     private var snapshot: TodoEditorSectionSnapshot?
     private var rowViewsById: [UUID: TodoEditorRowView] = [:]
     private var rowWidthConstraintsById: [UUID: NSLayoutConstraint] = [:]
     private var popover: NSPopover?
     private var activeDatePicker: NSDatePicker?
 
-    var onDragBegan: ((UUID, NSPoint) -> Void)?
-    var onDragChanged: ((UUID, NSPoint) -> Void)?
-    var onDragEnded: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragBegan: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragChanged: ((UUID, NSPoint) -> Void)?
-    var onSelectionDragEnded: (() -> Void)?
-    var onSelectionDragCancelled: (() -> Void)?
-    var onBackgroundClick: (() -> Void)?
+    /// 控制器直接为每个行视图接入原生识别回调；分区本身不再转发动作。
+    var configureRow: ((TodoEditorRowView) -> Void)?
 
-    init(snapshot: TodoEditorSectionSnapshot, actions: TodoEditorActions) {
-        self.actions = actions
+    init(snapshot: TodoEditorSectionSnapshot, editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
         super.init(frame: .zero)
         configureViewHierarchy()
         apply(snapshot: snapshot)
@@ -41,7 +35,7 @@ final class TodoEditorSectionView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        onBackgroundClick?()
+        editorEntry.clearSelection()
     }
 
     private func configureViewHierarchy() {
@@ -83,18 +77,21 @@ final class TodoEditorSectionView: NSView {
         ])
     }
 
-    func apply(snapshot: TodoEditorSectionSnapshot, actions: TodoEditorActions? = nil) {
-        if let actions {
-            self.actions = actions
+    func apply(snapshot: TodoEditorSectionSnapshot, editorEntry newEditorEntry: TodoEditorEntry? = nil) {
+        if let newEditorEntry {
+            self.editorEntry = newEditorEntry
         }
         self.snapshot = snapshot
 
         titleButton.title = snapshot.title
-        titleButton.isEnabled = snapshot.editableDate != nil
+        titleButton.isEnabled = snapshot.editableDate != nil && editorEntry.access.isEditable
+        titleButton.toolTip = editorEntry.access.isEditable ? nil : "只读列表"
 
         if snapshot.items.isEmpty {
             removeRows(except: [])
             if snapshot.allowsAdding {
+                emptyButton.isEnabled = editorEntry.access.isEditable
+                emptyButton.toolTip = editorEntry.access.isEditable ? nil : "只读列表"
                 moveArrangedSubview(emptyButton, to: 1)
             } else {
                 removeArrangedSubviewIfNeeded(emptyButton, removeFromSuperview: true)
@@ -109,9 +106,10 @@ final class TodoEditorSectionView: NSView {
         var nextRowsById: [UUID: TodoEditorRowView] = [:]
         for (offset, item) in snapshot.items.enumerated() {
             let existingRowView = rowViewsById[item.id]
-            let rowView = existingRowView ?? TodoEditorRowView(snapshot: item, actions: self.actions)
-            configureCallbacks(for: rowView)
-            rowView.apply(snapshot: item, actions: self.actions)
+            let rowView = existingRowView
+                ?? TodoEditorRowView(snapshot: item, editorEntry: self.editorEntry)
+            configureRow?(rowView)
+            rowView.apply(snapshot: item, editorEntry: self.editorEntry)
             moveArrangedSubview(rowView, to: offset + 1)
             if rowWidthConstraintsById[item.id] == nil {
                 let constraint = rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor)
@@ -177,14 +175,16 @@ final class TodoEditorSectionView: NSView {
     }
 
     @objc private func addItem() {
-        guard let snapshot else { return }
-        actions.claimCurrentList()
-        actions.addItem(snapshot.destination)
+        guard editorEntry.access.isEditable, let snapshot else { return }
+        editorEntry.addItem(snapshot.destination)
     }
 
     @objc private func showDatePicker() {
-        guard let snapshot, let editableDate = snapshot.editableDate else { return }
-        actions.claimCurrentList()
+        guard editorEntry.access.isEditable,
+              let snapshot,
+              let editableDate = snapshot.editableDate
+        else { return }
+        guard editorEntry.claimCurrentList() else { return }
 
         let picker = NSDatePicker()
         picker.datePickerStyle = .clockAndCalendar
@@ -232,36 +232,13 @@ final class TodoEditorSectionView: NSView {
 
     @objc private func confirmDatePicker(_ sender: NSButton) {
         guard
+            editorEntry.access.isEditable,
             let snapshot,
             let picker = activeDatePicker
         else { return }
 
-        actions.sectionDateChanged(snapshot.id, picker.dateValue)
+        editorEntry.sectionDateChanged(snapshot.id, picker.dateValue)
         closeDatePicker()
-    }
-
-    private func configureCallbacks(for rowView: TodoEditorRowView) {
-        rowView.onDragBegan = { [weak self] itemId, location in
-            self?.onDragBegan?(itemId, location)
-        }
-        rowView.onDragChanged = { [weak self] itemId, location in
-            self?.onDragChanged?(itemId, location)
-        }
-        rowView.onDragEnded = { [weak self] itemId, location in
-            self?.onDragEnded?(itemId, location)
-        }
-        rowView.onSelectionDragBegan = { [weak self] itemId, location in
-            self?.onSelectionDragBegan?(itemId, location)
-        }
-        rowView.onSelectionDragChanged = { [weak self] itemId, location in
-            self?.onSelectionDragChanged?(itemId, location)
-        }
-        rowView.onSelectionDragEnded = { [weak self] in
-            self?.onSelectionDragEnded?()
-        }
-        rowView.onSelectionDragCancelled = { [weak self] in
-            self?.onSelectionDragCancelled?()
-        }
     }
 
     private func moveArrangedSubview(_ subview: NSView, to index: Int) {

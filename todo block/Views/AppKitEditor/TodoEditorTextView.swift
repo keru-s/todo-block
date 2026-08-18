@@ -10,18 +10,17 @@ final class TodoEditorTextView: NSTextView {
     var onTextDidChange: ((TodoTextEditEvent) -> Void)?
     var onSelectionDidChange: ((TodoTextSelection) -> Void)?
     var onMouseFocus: ((Bool, Int?) -> Void)?
-    var onUserInteraction: (() -> Void)?
     var onCommand: ((TodoEditorTextCommand) -> Bool)?
     var onCompositionChange: ((Bool) -> Void)?
     var onInputSessionEnded: (() -> Void)?
     var shouldBeginCrossItemSelection: ((NSPoint) -> Bool)?
-    var onCrossItemSelectionBegan: ((NSPoint, Int) -> Void)?
-    var onCrossItemSelectionChanged: ((NSPoint) -> Void)?
-    var onCrossItemSelectionEnded: (() -> Void)?
-    var onCrossItemSelectionCancelled: (() -> Void)?
+    /// 连续交互入口。返回 nil 表示编辑器已有另一个连续交互。
+    var onCrossItemSelectionBeganResult: ((NSPoint, Int) -> TodoEditorContinuousInteractionToken?)?
+    var onCrossItemSelectionChanged: ((NSPoint, TodoEditorContinuousInteractionToken) -> Void)?
+    var onCrossItemSelectionEnded: ((NSPoint?, TodoEditorContinuousInteractionToken) -> Void)?
+    var onCrossItemSelectionCancelled: ((TodoEditorContinuousInteractionToken) -> Void)?
     var onMouseInteractionEnded: ((Bool) -> Void)?
     var onEscapePressed: (() -> Bool)?
-    var deletesOnBackspace: Bool = false
     private var isApplyingHandledCommandText = false
     private var lastReportedText = ""
     private var pendingBeforeSelection: TodoTextSelection?
@@ -110,7 +109,6 @@ final class TodoEditorTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         endCurrentInputSession()
-        onUserInteraction?()
         guard let window else {
             super.mouseDown(with: event)
             return
@@ -127,6 +125,7 @@ final class TodoEditorTextView: NSTextView {
 
         setSelectedRange(NSRange(location: anchor, length: 0))
         var isCrossItemSelecting = false
+        var crossItemSelectionToken: TodoEditorContinuousInteractionToken?
         var windowDidResign = false
         let notificationCenter = NotificationCenter.default
         let windowObserverTokens = [
@@ -168,12 +167,18 @@ final class TodoEditorTextView: NSTextView {
             case .leftMouseDragged:
                 if isCrossItemSelecting == false,
                    shouldBeginCrossItemSelection?(nextEvent.locationInWindow) == true {
-                    isCrossItemSelecting = true
                     setSelectedRange(NSRange(location: anchor, length: 0))
-                    onCrossItemSelectionBegan?(nextEvent.locationInWindow, anchor)
+                    crossItemSelectionToken = onCrossItemSelectionBeganResult?(
+                        nextEvent.locationInWindow,
+                        anchor
+                    )
+                    isCrossItemSelecting = crossItemSelectionToken != nil
                 }
-                if isCrossItemSelecting {
-                    onCrossItemSelectionChanged?(nextEvent.locationInWindow)
+                if isCrossItemSelecting, let crossItemSelectionToken {
+                    onCrossItemSelectionChanged?(
+                        nextEvent.locationInWindow,
+                        crossItemSelectionToken
+                    )
                 } else {
                     let position = characterIndexForInsertion(
                         at: convert(nextEvent.locationInWindow, from: nil)
@@ -183,13 +188,18 @@ final class TodoEditorTextView: NSTextView {
                     )
                 }
             case .leftMouseUp:
-                if isCrossItemSelecting {
-                    onCrossItemSelectionEnded?()
+                if isCrossItemSelecting, let crossItemSelectionToken {
+                    onCrossItemSelectionEnded?(
+                        nextEvent.locationInWindow,
+                        crossItemSelectionToken
+                    )
                 }
                 onMouseInteractionEnded?(isCrossItemSelecting)
                 return
             case .keyDown where isCrossItemSelecting && nextEvent.keyCode == 53:
-                onCrossItemSelectionCancelled?()
+                if let crossItemSelectionToken {
+                    onCrossItemSelectionCancelled?(crossItemSelectionToken)
+                }
                 return
             default:
                 break
@@ -197,8 +207,8 @@ final class TodoEditorTextView: NSTextView {
         }
 
         if windowDidResign {
-            if isCrossItemSelecting {
-                onCrossItemSelectionEnded?()
+            if isCrossItemSelecting, let crossItemSelectionToken {
+                onCrossItemSelectionEnded?(nil, crossItemSelectionToken)
             }
             onMouseInteractionEnded?(isCrossItemSelecting)
         }
@@ -206,7 +216,6 @@ final class TodoEditorTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         endCurrentInputSession()
-        onUserInteraction?()
         if event.keyCode == 53, onEscapePressed?() == true {
             return
         }
@@ -442,10 +451,7 @@ final class TodoEditorTextView: NSTextView {
         }
 
         if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
-            if deletesOnBackspace || string.isEmpty {
-                return onCommand?(.deleteBackward) == true
-            }
-            return false
+            return onCommand?(.deleteBackward(TodoTextSelection(selectedRange()))) == true
         }
 
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
@@ -623,7 +629,7 @@ final class TodoEditorTextView: NSTextView {
 
 enum TodoEditorTextCommand {
     case `return`(EnterAction)
-    case deleteBackward
+    case deleteBackward(TodoTextSelection)
     case tab
     case backtab
     case moveUp(Int, CGFloat?)
