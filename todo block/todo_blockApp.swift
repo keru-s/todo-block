@@ -14,9 +14,15 @@ struct todo_blockApp: App {
     @NSApplicationDelegateAdaptor(TodoBlockApplicationDelegate.self)
     private var applicationDelegate
 
+    /// UI 测试模式（-UITestInMemoryStore）：使用内存容器，不读写用户真实数据。
+    private static let isUITestMode = ProcessInfo.processInfo.arguments
+        .contains("-UITestInMemoryStore")
+
     var sharedModelContainer: ModelContainer = {
         do {
-            return try TodoModelContainerFactory.makeContainer()
+            // UI 测试支持：带 -UITestInMemoryStore 启动时使用内存容器，
+            // 避免测试读写用户真实 SwiftData 数据。
+            return try TodoModelContainerFactory.makeContainer(inMemory: isUITestMode)
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }

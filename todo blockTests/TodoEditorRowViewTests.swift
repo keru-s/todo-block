@@ -596,6 +596,97 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertNil(selectionManager.focusedItemId)
     }
 
+    func testMultipleSelectionKeepsRowAsFirstResponder() throws {
+        let item = TodoItem(title: "focused")
+        let otherItem = TodoItem(title: "other")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id, otherItem.id]
+
+        let entry = makeEntry(
+            hasMultipleSelection: { selectionManager.selectedItemIds.count > 1 }
+        )
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            editorEntry: entry
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+
+        rowView.apply(snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager))
+        // 等一拍，确认没有异步任务把焦点拉回文字框。
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertTrue(
+            window.firstResponder === rowView,
+            "多选状态下焦点行应持有行级焦点，实际 firstResponder=\(String(describing: window.firstResponder))"
+        )
+    }
+
+    func testShiftClickOnRowBlankKeepsRowAsFirstResponder() throws {
+        let item = TodoItem(title: "abc")
+        let otherItem = TodoItem(title: "other")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = otherItem.id
+        selectionManager.selectedItemIds = [otherItem.id]
+        selectionManager.lastSelectedId = otherItem.id
+
+        let entry = makeEntry(
+            selectItem: { itemId, shiftPressed, cursorPosition in
+                guard itemId == item.id else { return }
+                selectionManager.handleSelect(
+                    item: item,
+                    allItems: [otherItem, item],
+                    shiftPressed: shiftPressed,
+                    cursorPosition: cursorPosition
+                )
+            },
+            hasMultipleSelection: { selectionManager.selectedItemIds.count > 1 }
+        )
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            editorEntry: entry
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        rowView.mouseDown(
+            with: try mouseEvent(
+                type: .leftMouseDown,
+                location: NSPoint(x: 40, y: 20),
+                modifierFlags: [.shift]
+            )
+        )
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(selectionManager.selectedItemIds.count, 2, "Shift 点击应形成多选")
+        XCTAssertTrue(
+            window.firstResponder === rowView,
+            "Shift 多选后焦点应移交行，实际 firstResponder=\(String(describing: window.firstResponder))"
+        )
+    }
+
     private func makeEntry(
         claimCurrentList: @escaping () -> Bool = { true },
         beforeExplicitAction: @escaping () -> Void = {},
@@ -655,11 +746,15 @@ final class TodoEditorRowViewTests: XCTestCase {
         )
     }
 
-    private func mouseEvent(type: NSEvent.EventType, location: NSPoint) throws -> NSEvent {
+    private func mouseEvent(
+        type: NSEvent.EventType,
+        location: NSPoint,
+        modifierFlags: NSEvent.ModifierFlags = []
+    ) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(
             with: type,
             location: location,
-            modifierFlags: [],
+            modifierFlags: modifierFlags,
             timestamp: 0,
             windowNumber: 0,
             context: nil,

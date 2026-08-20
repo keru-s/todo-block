@@ -51,6 +51,8 @@ final class TodoEditorRowView: NSView {
 
     private func configureViewHierarchy() {
         translatesAutoresizingMaskIntoConstraints = false
+        // UI 测试支持：用固定 identifier 定位每行的标题文本框。
+        titleTextView.setAccessibilityIdentifier("todo-title")
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.orientation = .horizontal
@@ -258,7 +260,9 @@ final class TodoEditorRowView: NSView {
             ? TodoDesignTokens.selectionTint.nsColor.cgColor
             : NSColor.clear.cgColor
 
-        if snapshot.isFocused, prefersRowFirstResponder {
+        // 形成多选即退出文字编辑状态：焦点行持有行级焦点，不再调度文字焦点，
+        // 复制/剪切/粘贴等命令随即作用于整条待办（见 CONTEXT.md「文字编辑状态」）。
+        if snapshot.isFocused, prefersRowFirstResponder || editorEntry.hasMultipleSelection {
             if window?.firstResponder !== self {
                 window?.makeFirstResponder(self)
             }
@@ -326,12 +330,18 @@ final class TodoEditorRowView: NSView {
                 shiftPressed: event.modifierFlags.contains(.shift),
                 cursorPosition: position
             )
-            titleTextView.focus(
-                cursorPosition: position,
-                selectionLength: 0,
-                preferredHorizontalOffset: nil,
-                verticalMoveDirection: nil
-            )
+            if editorEntry.hasMultipleSelection {
+                // Shift 点击形成多选：退出文字编辑，焦点移交行。
+                prefersRowFirstResponder = true
+                window?.makeFirstResponder(self)
+            } else {
+                titleTextView.focus(
+                    cursorPosition: position,
+                    selectionLength: 0,
+                    preferredHorizontalOffset: nil,
+                    verticalMoveDirection: nil
+                )
+            }
         }
         super.mouseDown(with: event)
     }
