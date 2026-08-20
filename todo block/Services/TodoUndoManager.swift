@@ -41,6 +41,7 @@ struct TodoSelectionState: Equatable {
     let lastSelectedId: UUID?
     let cursorPosition: Int
     let textSelectionLength: Int
+    let focusesText: Bool
 
     init(selectionManager: SelectionManager) {
         focusedItemId = selectionManager.focusedItemId
@@ -48,14 +49,16 @@ struct TodoSelectionState: Equatable {
         lastSelectedId = selectionManager.lastSelectedId
         cursorPosition = selectionManager.cursorPosition
         textSelectionLength = selectionManager.textSelectionLength
+        focusesText = selectionManager.focusesText
     }
 
-    init(focusing itemId: UUID?, cursorPosition: Int = 0) {
+    init(focusing itemId: UUID?, cursorPosition: Int = 0, focusesText: Bool = true) {
         focusedItemId = itemId
         selectedItemIds = itemId.map { [$0] } ?? []
         lastSelectedId = itemId
         self.cursorPosition = cursorPosition
         textSelectionLength = 0
+        self.focusesText = focusesText
     }
 
     init(
@@ -63,13 +66,15 @@ struct TodoSelectionState: Equatable {
         selectedItemIds: Set<UUID>,
         lastSelectedId: UUID?,
         cursorPosition: Int,
-        textSelectionLength: Int = 0
+        textSelectionLength: Int = 0,
+        focusesText: Bool = true
     ) {
         self.focusedItemId = focusedItemId
         self.selectedItemIds = selectedItemIds
         self.lastSelectedId = lastSelectedId
         self.cursorPosition = cursorPosition
         self.textSelectionLength = textSelectionLength
+        self.focusesText = focusesText
     }
 
     func apply(to selectionManager: SelectionManager) {
@@ -78,6 +83,7 @@ struct TodoSelectionState: Equatable {
         selectionManager.lastSelectedId = lastSelectedId
         selectionManager.cursorPosition = cursorPosition
         selectionManager.textSelectionLength = textSelectionLength
+        selectionManager.focusesText = focusesText
         selectionManager.preferredHorizontalOffset = nil
         selectionManager.verticalMoveDirection = nil
     }

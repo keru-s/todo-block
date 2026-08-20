@@ -262,7 +262,10 @@ final class TodoEditorRowView: NSView {
 
         // 形成多选即退出文字编辑状态：焦点行持有行级焦点，不再调度文字焦点，
         // 复制/剪切/粘贴等命令随即作用于整条待办（见 CONTEXT.md「文字编辑状态」）。
-        if snapshot.isFocused, prefersRowFirstResponder || editorEntry.hasMultipleSelection {
+        // 条目级操作的承接态（focusesText == false，如多选删除后）同样行持焦。
+        if snapshot.isFocused,
+           prefersRowFirstResponder || editorEntry.hasMultipleSelection
+               || snapshot.focusesText == false {
             if window?.firstResponder !== self {
                 window?.makeFirstResponder(self)
             }
@@ -397,6 +400,15 @@ final class TodoEditorRowView: NSView {
         }
 
         if event.keyCode == 53, handleEscape() {
+            return
+        }
+
+        // Backspace：行持焦时（典型为多选状态）路由整条待办的删除，是否
+        // 生效由命令层按选择状态裁决。只路由裸键：Cmd/Option 组合在文字
+        // 编辑语义里是删到行首/删词，Forward Delete 不做条目级路由。
+        if event.keyCode == 51,
+           event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+           editorEntry.deletePressed(itemId) {
             return
         }
 

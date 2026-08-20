@@ -53,6 +53,7 @@ struct TodoEditorItemSnapshot: Equatable, Identifiable {
     let isFocused: Bool
     let cursorPosition: Int
     let textSelectionLength: Int
+    let focusesText: Bool
     let preferredHorizontalOffset: CGFloat?
     let verticalMoveDirection: VerticalMoveDirection?
 
@@ -65,6 +66,7 @@ struct TodoEditorItemSnapshot: Equatable, Identifiable {
         isFocused = selectionManager.focusedItemId == item.id
         cursorPosition = selectionManager.cursorPosition
         textSelectionLength = selectionManager.textSelectionLength
+        focusesText = selectionManager.focusesText
         preferredHorizontalOffset = selectionManager.preferredHorizontalOffset
         verticalMoveDirection = selectionManager.verticalMoveDirection
     }

@@ -687,6 +687,72 @@ final class TodoEditorRowViewTests: XCTestCase {
         )
     }
 
+    func testBackspaceWithMultipleSelectionRoutesDeleteThroughEditorEntry() throws {
+        let item = TodoItem(title: "first")
+        let otherItem = TodoItem(title: "second")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id, otherItem.id]
+
+        var deletedItemIds: [UUID] = []
+        let entry = makeEntry(
+            hasMultipleSelection: { selectionManager.selectedItemIds.count > 1 },
+            deletePressed: { itemId, _ in
+                deletedItemIds.append(itemId)
+                return true
+            }
+        )
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            editorEntry: entry
+        )
+
+        // 裸 Backspace 应路由删除；Forward Delete 与带 Cmd/Option 的
+        // Backspace 不路由（保留文字编辑语义）。
+        rowView.keyDown(with: try keyEvent(keyCode: 51, modifierFlags: []))
+        rowView.keyDown(with: try keyEvent(keyCode: 117, modifierFlags: []))
+        rowView.keyDown(with: try keyEvent(keyCode: 51, modifierFlags: [.command]))
+        rowView.keyDown(with: try keyEvent(keyCode: 51, modifierFlags: [.option]))
+
+        XCTAssertEqual(deletedItemIds, [item.id])
+    }
+
+    func testItemLevelFocusKeepsRowAsFirstResponder() throws {
+        let item = TodoItem(title: "survivor")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id]
+        // 条目级焦点（如多选删除后的承接态）：单选也不进入文字编辑。
+        selectionManager.focusesText = false
+
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            editorEntry: .readOnly
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+
+        rowView.apply(snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertTrue(
+            window.firstResponder === rowView,
+            "条目级焦点应持有行级焦点，实际 firstResponder=\(String(describing: window.firstResponder))"
+        )
+    }
+
     private func makeEntry(
         claimCurrentList: @escaping () -> Bool = { true },
         beforeExplicitAction: @escaping () -> Void = {},

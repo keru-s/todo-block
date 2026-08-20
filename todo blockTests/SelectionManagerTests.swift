@@ -395,6 +395,43 @@ final class SelectionManagerDeleteTests: XCTestCase {
         XCTAssertEqual(replacement.selectedItemIds, [first.id, second.id])
     }
 
+    /// 多选删除属于条目级操作：删除后保留项应保持条目级焦点（行持焦），
+    /// 不进入文字编辑状态。
+    func testMultiDeleteKeepsSurvivorFocusAtItemLevel() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 12, day: 1)
+        let i0 = store.createItem(title: "0", dayDate: day)
+        let i1 = store.createItem(title: "1", dayDate: day)
+        let i2 = store.createItem(title: "2", dayDate: day)
+
+        selectionManager.selectedItemIds = [i1.id, i2.id]
+        selectionManager.focusedItemId = i1.id
+        selectionManager.lastSelectedId = i1.id
+        selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
+
+        XCTAssertEqual(selectionManager.focusedItemId, i0.id, "焦点回退到上方保留项")
+        XCTAssertFalse(
+            selectionManager.focusesText,
+            "多选删除后保留项应保持条目级焦点，不进入文字编辑"
+        )
+    }
+
+    /// 单条删除（文字编辑中的空行退格等路径）保持文字焦点惯例。
+    func testSingleDeleteKeepsTextFocus() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 12, day: 2)
+        let i0 = store.createItem(title: "0", dayDate: day)
+        let i1 = store.createItem(title: "", dayDate: day)
+
+        selectionManager.selectedItemIds = [i1.id]
+        selectionManager.focusedItemId = i1.id
+        selectionManager.lastSelectedId = i1.id
+        selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
+
+        XCTAssertEqual(selectionManager.focusedItemId, i0.id, "焦点回退到上方保留项")
+        XCTAssertTrue(selectionManager.focusesText, "单条删除后应保持文字焦点")
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year

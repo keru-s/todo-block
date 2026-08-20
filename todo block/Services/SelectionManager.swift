@@ -54,6 +54,12 @@ final class SelectionManager {
     var preferredHorizontalOffset: CGFloat?
     var verticalMoveDirection: VerticalMoveDirection?
 
+    /// 焦点是否为文字编辑焦点。条目级操作（如多选删除）的承接态置为
+    /// false：焦点行持有行级焦点、不进入文字编辑（见 CONTEXT.md
+    /// 「文字编辑状态」）。任何文字编辑意图（点击标题、键盘移动焦点、
+    /// 撤销恢复到文字状态）都会将其置回 true。
+    var focusesText: Bool = true
+
     init(historyContext: TodoSelectionHistoryContext = .ephemeral(UUID())) {
         self.historyContext = historyContext
     }
@@ -100,6 +106,7 @@ final class SelectionManager {
         dragAnchorId = nil
         preferredHorizontalOffset = nil
         verticalMoveDirection = nil
+        focusesText = true
 
         if let pos = cursorPosition {
             self.cursorPosition = pos
@@ -200,6 +207,7 @@ final class SelectionManager {
         textSelectionLength = 0
         preferredHorizontalOffset = nil
         verticalMoveDirection = nil
+        focusesText = true
     }
 
     // MARK: - 焦点移动
@@ -267,6 +275,7 @@ final class SelectionManager {
         focusedItemId = item.id
         selectedItemIds = [item.id]
         lastSelectedId = item.id
+        focusesText = true
         self.verticalMoveDirection = verticalMoveDirection
         self.preferredHorizontalOffset = preferredHorizontalOffset
     }
@@ -277,6 +286,7 @@ final class SelectionManager {
         textSelectionLength = 0
         preferredHorizontalOffset = nil
         verticalMoveDirection = nil
+        focusesText = true
         if let itemId {
             selectedItemIds = [itemId]
             lastSelectedId = itemId
@@ -381,7 +391,12 @@ final class SelectionManager {
         let selectionTransition = TodoSelectionTransition(
             selectionManager: self,
             before: selectionBefore,
-            after: TodoSelectionState(focusing: nextFocusId)
+            after: TodoSelectionState(
+                focusing: nextFocusId,
+                // 多选删除是条目级操作：保留项以条目级焦点承接（行持焦、
+                // 无文字光标）；单条删除保持文字编辑惯例。
+                focusesText: selectionBefore.selectedItemIds.count <= 1
+            )
         )
         return store.deleteItemsAsBatch(itemsToDelete, selectionTransition: selectionTransition)
     }
