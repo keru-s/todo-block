@@ -32,6 +32,18 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = true
 
+        // 上一个用例的 terminate() 返回时进程可能仍在退出中；若此时 launch()，
+        // LaunchServices 可能激活正在退出的旧实例（无窗口、无测试参数），
+        // 表现为「主窗口未出现」。先等旧实例彻底消失（最多 10 秒）。
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let lingering = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.insight.to-do-block"
+            )
+            if lingering.isEmpty { break }
+            usleep(200_000)
+        }
+
         // macOS 不允许同 bundle id 的两个实例并存：若用户的 app 正在运行，
         // launch() 只会激活既有实例（真实数据 + 无内存容器参数），必须跳过。
         let running = NSRunningApplication.runningApplications(
@@ -46,6 +58,9 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
 
         // 清除窗口恢复状态：此前若有实例在「窗口已关闭」状态下退出，
         // 保存的恢复状态会让主窗口在下次启动时不再出现。
+        // 注意：沙盒 UI 测试 runner 对用户容器只有只读权限，这个删除实际是
+        // 静默 no-op；真正的保证来自 app 侧——UI 测试模式下 todo_blockApp
+        // 对主窗口设置了 .restorationBehavior(.disabled)（忽略 savedState）。
         let savedState = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Containers/com.insight.to-do-block/Data/tmp/com.insight.to-do-block.savedState")
         try? FileManager.default.removeItem(at: savedState)
@@ -55,6 +70,18 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
 
     override func tearDownWithError() throws {
         app.terminate()
+        // terminate() 只是把退出事件发给当前进程，不等它真正退出。
+        // 若旧进程还没死透下一个用例就 launch()，迟到的退出事件可能被
+        // 投递给新实例，表现为新实例启动后立即自行退出
+        // （查询报 "Application is not running"）。等进程彻底消失再结束。
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let alive = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.insight.to-do-block"
+            )
+            if alive.isEmpty { break }
+            usleep(200_000)
+        }
         NSPasteboard.general.clearContents()
     }
 
@@ -188,25 +215,35 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
             ? app.windows["待办"]
             : app.windows.firstMatch
         if window.waitForExistence(timeout: 10) == false {
-            // 兜底：窗口状态持久化可能让主窗口不恢复，从「窗口」菜单手动打开。
-            // 只在「窗口」菜单的子菜单里找，避免匹配到「排序」菜单里
-            // 标题含「待办」的菜单项（如「上移当前待办」）。
-            let windowMenu = ["窗口", "Window"]
-                .map { app.menuBars.menuBarItems[$0] }
-                .first { $0.exists }
-            if let windowMenu {
-                windowMenu.click()
-                let reopen = windowMenu.menus.firstMatch.menuItems
-                    .matching(NSPredicate(format: "identifier == 'mainWindow' OR title == '待办'"))
-                    .firstMatch
-                if reopen.waitForExistence(timeout: 2) { reopen.click() }
-            }
+            // 兜底：XCUITest 以后台方式启动 app，SwiftUI Window scene 偶发不创建
+            // 主窗口。注意「窗口」菜单里没有 reopen 项（实测该菜单只有系统窗口
+            // 管理项，SwiftUI 不为 Window scene 注册菜单项），所以通过
+            // LaunchServices 对运行中的 app 重发 reopen（等价于点击 Dock 图标），
+            // SwiftUI 会响应 reopen 呈现主窗口。
+            reopenApp()
+            window = app.windows["待办"].exists
+                ? app.windows["待办"]
+                : app.windows.firstMatch
+        }
+        if window.waitForExistence(timeout: 8) == false {
+            reopenApp()
             window = app.windows["待办"].exists
                 ? app.windows["待办"]
                 : app.windows.firstMatch
         }
         XCTAssertTrue(window.waitForExistence(timeout: 5), "主窗口未出现")
         return window
+    }
+
+    /// 对运行中的被测 app 重发 reopen 事件（不重启、不重传启动参数）。
+    @MainActor
+    private func reopenApp() {
+        guard let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.insight.to-do-block"
+        ) else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in }
     }
 
     @MainActor
