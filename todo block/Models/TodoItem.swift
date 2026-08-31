@@ -8,7 +8,7 @@
 import Foundation
 import SwiftData
 
-enum TodoContainerKind: String, Codable, CaseIterable {
+nonisolated enum TodoContainerKind: String, Codable, CaseIterable, Sendable {
     case scheduled
     case longTermUrgent
     case longTermImportant = "longTermNonUrgent"

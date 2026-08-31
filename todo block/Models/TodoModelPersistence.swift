@@ -9,7 +9,11 @@ import SwiftData
 
 enum TodoModelContainerFactory {
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
-        let schema = Schema([TodoItem.self, DaySection.self])
+        let schema = Schema([
+            TodoItem.self,
+            DaySection.self,
+            TodoBackupConsumptionState.self
+        ])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         return try ModelContainer(for: schema, configurations: [configuration])
     }
