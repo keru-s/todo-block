@@ -122,7 +122,7 @@ xcodebuild build -project "todo block.xcodeproj" -scheme "todo block" \
 
 ## 仓库约定
 
-- 历史上修过的性能/正确性问题清单在 `docs/code-review-todos.md`——回归看起来眼熟时先查它
+- 历史上修过的性能/正确性问题清单在 `docs/archive/code-review-2026-05.md`——回归看起来眼熟时先查它
 
 ## PR
 
