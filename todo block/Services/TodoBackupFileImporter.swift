@@ -12,6 +12,9 @@ import UniformTypeIdentifiers
 @MainActor
 enum TodoBackupFileImporter {
     static func presentOpenPanel(store: TodoStore) {
+        // 同 TodoBackupFileExporter：后台无窗口状态下远程面板会静默失败，
+        // 先激活 app 再呈现打开面板。
+        NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
         panel.title = "导入备份"
         panel.prompt = "预览"

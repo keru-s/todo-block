@@ -35,37 +35,55 @@ jobs:
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO
 
-  release:
-    name: Package Release
+  package:
+    name: Package (${{ matrix.name }})
     runs-on: macos-26
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            name: AppleSilicon
+          - arch: x86_64
+            name: Intel
+    env:
+      DMG_NAME: Todo-Block-macOS-${{ matrix.name }}.dmg
+      DERIVED_DATA: build/DerivedData-${{ matrix.arch }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Release app
+      - name: Build Release app (${{ matrix.arch }})
         run: |
           xcodebuild build \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=${{ matrix.arch }} \
+            ONLY_ACTIVE_ARCH=NO
 
-      - name: Ad-hoc sign with sandbox entitlement
+      - name: Ad-hoc sign with sandbox entitlements
         run: |
           set -euo pipefail
-          APP="build/DerivedData/Build/Products/Release/$APP_NAME.app"
+          APP="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
           ENTITLEMENTS="$RUNNER_TEMP/todo-block.entitlements"
+          # user-selected.read-write 必须带上：缺它的沙盒 app 里
+          # NSOpenPanel/NSSavePanel 会静默不显示（导入/导出备份点了没反应），
+          # AppKit 日志报 "missing the User Selected File Read/Write app sandbox entitlement"。
           cat > "$ENTITLEMENTS" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>com.apple.security.app-sandbox</key>
+              <true/>
+              <key>com.apple.security.files.user-selected.read-write</key>
               <true/>
           </dict>
           </plist>
@@ -85,22 +103,64 @@ jobs:
           mkdir -p release
           STAGING="$RUNNER_TEMP/dmg-staging"
           mkdir -p "$STAGING"
-          cp -R "build/DerivedData/Build/Products/Release/$APP_NAME.app" "$STAGING/"
+          cp -R "$DERIVED_DATA/Build/Products/Release/$APP_NAME.app" "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
           hdiutil create \
             -volname "Todo Block" \
             -srcfolder "$STAGING" \
             -ov -format UDZO \
-            "release/Todo-Block-macOS.dmg"
+            "release/$DMG_NAME"
 
       - name: Upload packaged app
         uses: actions/upload-artifact@v4
         with:
-          name: Todo-Block-macOS
-          path: release/Todo-Block-macOS.dmg
+          name: Todo-Block-macOS-${{ matrix.name }}
+          path: release/${{ env.DMG_NAME }}
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download packaged apps
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Todo-Block-macOS-*
+          path: release
+          merge-multiple: true
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/Todo-Block-macOS.dmg
+          files: release/*.dmg
+          generate_release_notes: true
+          body: |
+            macOS 原生待办应用（SwiftUI + SwiftData + AppKit 编辑器），主窗口 + 菜单栏快速入口。
+
+            ## 下载（按芯片二选一）
+
+            | 你的 Mac | 下载文件 |
+            | --- | --- |
+            | Apple 芯片（M1 / M2 / M3 / M4 系列） | `Todo-Block-macOS-AppleSilicon.dmg` |
+            | Intel 芯片 | `Todo-Block-macOS-Intel.dmg` |
+
+            不确定芯片型号：屏幕左上角苹果菜单 → 关于本机，「芯片」一栏显示 Apple M 系列就下 AppleSilicon，显示 Intel 就下 Intel。
+
+            ## 安装
+
+            1. 打开下载的 `.dmg`，把 `todo block.app` 拖进 `Applications` 文件夹。
+            2. 首次打开若提示「无法验证开发者」或「已损坏」（应用未做公证，属预期现象），二选一处理：
+               - 右键点击 app 图标 →「打开」→ 在弹窗中再点「打开」；
+               - 或在终端执行：`xattr -cr "/Applications/todo block.app"`
+            3. 启动后应用图标出现在屏幕右上角的菜单栏。
+
+            ## 系统要求
+
+            macOS 15.7 或更高版本。
+
+            ## 数据与备份
+
+            - 全部数据保存在本机沙盒容器内，不上传任何服务器。
+            - 「文件」菜单提供 JSON 备份的导入 / 导出，以及「恢复到最近一次导入前」。
