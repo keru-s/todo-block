@@ -15,7 +15,6 @@ struct MenuBarView: View {
 
     private var store: TodoStore { TodoStore.shared }
     private var selectionManager: SelectionManager { participation.selectionManager }
-    private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
@@ -140,11 +139,9 @@ struct MenuBarView: View {
             participation.updateTemporaryParticipation(
                 isVisible: MenuBarStatusItemController.shared.isPopoverShown
             )
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverWillShow)) { _ in
             participation.updateTemporaryParticipation(isVisible: true)
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
             participation.updateTemporaryParticipation(isVisible: false)
@@ -158,8 +155,8 @@ struct MenuBarView: View {
             },
             including: .gesture
         )
-        .onChange(of: historyPresentation.revealRequest) { _, request in
-            participation.receiveHistoryReveal(request)
+        .onChange(of: participation.latestHistoryRevealRequest) { _, _ in
+            participation.receiveHistoryReveal()
         }
     }
 }

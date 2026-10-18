@@ -23,7 +23,6 @@ struct TodoListView: View {
 
     private var store: TodoStore { TodoStore.shared }
     private var selectionManager: SelectionManager { participation.selectionManager }
-    private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
 
     init(year: Int, month: Int, isActiveContext: Bool = true) {
         self.year = year
@@ -141,19 +140,16 @@ struct TodoListView: View {
             participation.updateCommandScope(clipboardScope)
             updateHistoryRevealMatcher()
             participation.appear(isActive: isActiveContext)
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             participation.update(isActive: newValue)
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: clipboardScope) { _, _ in
             participation.updateCommandScope(clipboardScope)
             updateHistoryRevealMatcher()
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
-        .onChange(of: historyPresentation.revealRequest) { _, request in
-            participation.receiveHistoryReveal(request)
+        .onChange(of: participation.latestHistoryRevealRequest) { _, _ in
+            participation.receiveHistoryReveal()
         }
         .onDisappear {
             participation.update(isActive: false)

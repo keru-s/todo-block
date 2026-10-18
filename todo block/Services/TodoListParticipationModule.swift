@@ -75,6 +75,7 @@ final class TodoListParticipationModule {
         isActive: Bool,
         claimsCurrentListWhenActivating: Bool
     ) {
+        defer { receiveHistoryReveal() }
         guard self.isActive != isActive else { return }
         self.isActive = isActive
 
@@ -83,7 +84,6 @@ final class TodoListParticipationModule {
             if claimsCurrentListWhenActivating {
                 _ = commandCoordinator.claim(registration)
             }
-            receiveHistoryReveal(historyRevealRequest)
         } else {
             actionModule.feedbackPresenter.clear()
             if let commandRegistration {
@@ -106,6 +106,7 @@ final class TodoListParticipationModule {
 
     /// 在菜单栏实际打开时临时接管；重复通知不会覆盖原来的临时接管。
     func beginTemporaryParticipation() {
+        defer { receiveHistoryReveal() }
         guard temporaryCommandClaim == nil else { return }
         actionModule.feedbackPresenter.clear()
         let registration = register()
@@ -115,7 +116,6 @@ final class TodoListParticipationModule {
         }
         temporaryCommandClaim = temporaryClaim
         isActive = true
-        receiveHistoryReveal(historyRevealRequest)
     }
 
     /// 声明菜单栏面板是否实际可见。注册、临时接管和释放顺序由模块自行收敛。
@@ -130,6 +130,7 @@ final class TodoListParticipationModule {
 
     /// 在菜单栏关闭时结束临时接管，并恢复此前仍有效的列表。
     func endTemporaryParticipation() {
+        defer { receiveHistoryReveal() }
         actionModule.feedbackPresenter.clear()
         isActive = false
         historyRevealRequest = nil
@@ -149,7 +150,7 @@ final class TodoListParticipationModule {
     /// 更新当前列表可展示的历史结果范围，不改变参与身份或命令归属。
     func updateHistoryRevealMatcher(_ matcher: @escaping HistoryRevealMatcher) {
         historyRevealMatches = matcher
-        receiveHistoryReveal(historyRevealRequest)
+        receiveHistoryReveal()
     }
 
     /// 供列表按钮等直接用户操作使用。接管失败时动作不会执行。
@@ -158,8 +159,12 @@ final class TodoListParticipationModule {
         action(actionModule)
     }
 
-    /// 消费外层已经定位到本列表的历史结果，并恢复相关用户状态。
-    func receiveHistoryReveal(_ request: TodoHistoryRevealRequest?) {
+    /// 读取并处理当前最新历史定位请求。
+    func receiveHistoryReveal() {
+        receiveHistoryReveal(latestHistoryRevealRequest)
+    }
+
+    private func receiveHistoryReveal(_ request: TodoHistoryRevealRequest?) {
         guard let request else {
             historyRevealRequest = nil
             return
@@ -173,8 +178,8 @@ final class TodoListParticipationModule {
             historyRevealRequest = nil
             return
         }
-        guard historyRevealMatches(request) else { return }
         historyRevealRequest = request
+        guard historyRevealMatches(request) else { return }
         guard isActive,
               handledHistoryRevealId != request.id
         else { return }
@@ -188,6 +193,10 @@ final class TodoListParticipationModule {
             itemId: request.itemId,
             sourceHistoryContext: request.sourceHistoryContext
         )
+    }
+
+    var latestHistoryRevealRequest: TodoHistoryRevealRequest? {
+        historyPresentation.revealRequest
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
