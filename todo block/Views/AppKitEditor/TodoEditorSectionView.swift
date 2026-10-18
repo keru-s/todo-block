@@ -77,10 +77,14 @@ final class TodoEditorSectionView: NSView {
         ])
     }
 
-    func apply(snapshot: TodoEditorSectionSnapshot, editorEntry newEditorEntry: TodoEditorEntry? = nil) {
-        if let newEditorEntry {
-            self.editorEntry = newEditorEntry
+    func bind(editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
+        for rowView in rowViewsById.values {
+            rowView.bind(editorEntry: editorEntry)
         }
+    }
+
+    func apply(snapshot: TodoEditorSectionSnapshot) {
         self.snapshot = snapshot
 
         titleButton.title = snapshot.title
@@ -109,7 +113,7 @@ final class TodoEditorSectionView: NSView {
             let rowView = existingRowView
                 ?? TodoEditorRowView(snapshot: item, editorEntry: self.editorEntry)
             configureRow?(rowView)
-            rowView.apply(snapshot: item, editorEntry: self.editorEntry)
+            rowView.apply(snapshot: item)
             moveArrangedSubview(rowView, to: offset + 1)
             if rowWidthConstraintsById[item.id] == nil {
                 let constraint = rowView.widthAnchor.constraint(equalTo: stackView.widthAnchor)

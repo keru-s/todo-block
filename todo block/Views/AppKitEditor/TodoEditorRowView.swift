@@ -206,13 +206,11 @@ final class TodoEditorRowView: NSView {
         ])
     }
 
-    func apply(snapshot: TodoEditorItemSnapshot) {
-        apply(snapshot: snapshot, editorEntry: editorEntry)
+    func bind(editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
     }
 
-    func apply(snapshot: TodoEditorItemSnapshot, editorEntry: TodoEditorEntry) {
-        self.editorEntry = editorEntry
-
+    func apply(snapshot: TodoEditorItemSnapshot) {
         focusUpdateVersion += 1
         let currentFocusUpdateVersion = focusUpdateVersion
         let previousSnapshot = latestSnapshot

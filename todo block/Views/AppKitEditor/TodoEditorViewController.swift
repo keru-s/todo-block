@@ -30,6 +30,8 @@ final class TodoEditorViewController: NSViewController {
     private let continuousInteraction = TodoEditorContinuousInteraction()
     private var itemDragInteractionToken: TodoEditorContinuousInteractionToken?
     private var selectionDragInteractionToken: TodoEditorContinuousInteractionToken?
+    private var itemDragEditorEntry: TodoEditorEntry?
+    private var selectionDragEditorEntry: TodoEditorEntry?
     private var windowObserverTokens: [NSObjectProtocol] = []
     private let dragSession = TodoEditorDragSession.shared
     private var dragSessionObserverId: TodoEditorDragSession.ObserverID?
@@ -65,6 +67,8 @@ final class TodoEditorViewController: NSViewController {
             handleSelectionDragCancelled(token: token)
         }
         continuousInteraction.clear()
+        itemDragEditorEntry = nil
+        selectionDragEditorEntry = nil
         if let observerId = dragSessionObserverId {
             dragSession.removeObserver(observerId)
             dragSessionObserverId = nil
@@ -90,10 +94,14 @@ final class TodoEditorViewController: NSViewController {
         let coordinatedEditorEntry = editorEntry.withBeforeExplicitAction { [weak self] in
             self?.interruptContinuousInteractionBeforeExplicitAction()
         }
+        let accessChanged = editorEntry.access != renderedEditorAccess
         let contentChanged = sections != renderedSections
             || emptyTitle != renderedEmptyTitle
-            || editorEntry.access != renderedEditorAccess
+            || accessChanged
 
+        if accessChanged {
+            interruptContinuousInteractionBeforeExplicitAction()
+        }
         if contentChanged {
             renderedSections = sections
             renderedEmptyTitle = emptyTitle
@@ -102,7 +110,7 @@ final class TodoEditorViewController: NSViewController {
             cleanupSelectionInteractionIfTargetDisappeared()
         }
 
-        self.editorEntry = coordinatedEditorEntry
+        bindEditorEntry(coordinatedEditorEntry)
 
         if contentChanged {
             rebuildContent(sections: sections, emptyTitle: emptyTitle)
@@ -117,6 +125,13 @@ final class TodoEditorViewController: NSViewController {
 
         cleanupItemDragIfTargetDisappeared()
         cleanupSelectionInteractionIfTargetDisappeared()
+    }
+
+    private func bindEditorEntry(_ editorEntry: TodoEditorEntry) {
+        self.editorEntry = editorEntry
+        for sectionView in sectionViewsById.values {
+            sectionView.bind(editorEntry: editorEntry)
+        }
     }
 
     private func configureViewHierarchy() {
@@ -197,7 +212,7 @@ final class TodoEditorViewController: NSViewController {
             sectionView.configureRow = { [weak self] rowView in
                 self?.configureCallbacks(for: rowView)
             }
-            sectionView.apply(snapshot: section, editorEntry: editorEntry)
+            sectionView.apply(snapshot: section)
             moveArrangedSubview(sectionView, to: offset)
             if sectionWidthConstraintsById[section.id] == nil {
                 let constraint = sectionView.widthAnchor.constraint(equalTo: stackView.widthAnchor)
@@ -221,14 +236,16 @@ final class TodoEditorViewController: NSViewController {
         itemId: UUID,
         windowLocation: NSPoint
     ) -> TodoEditorContinuousInteractionToken? {
+        let startingEditorEntry = editorEntry
         guard continuousInteraction.isActive == false,
-              editorEntry.prepareItemDrag(itemId)
+              startingEditorEntry.prepareItemDrag(itemId)
         else { return nil }
         guard let token = continuousInteraction.beginItemDrag(
             itemId: itemId,
             location: windowLocation
         ) else { return nil }
         itemDragInteractionToken = token
+        itemDragEditorEntry = startingEditorEntry
         dragSession.begin(itemId: itemId, screenLocation: screenLocation(from: windowLocation))
         startItemAutoscroll()
         handleDragChanged(
@@ -286,6 +303,10 @@ final class TodoEditorViewController: NSViewController {
               )
         else { return }
 
+        guard let interactionEditorEntry = itemDragEditorEntry else {
+            cancelItemDrag(token: token)
+            return
+        }
         if let sidebarDestination = continuousInteraction.targetSidebarDestination,
            dragSession.isSidebarTargetRegistered(sidebarDestination) == false {
             cancelItemDrag(token: token)
@@ -312,9 +333,9 @@ final class TodoEditorViewController: NSViewController {
         finishItemDrag(token: token)
 
         if let sidebarDestination {
-            editorEntry.moveDraggedItemToSidebar(itemId, sidebarDestination)
+            interactionEditorEntry.moveDraggedItemToSidebar(itemId, sidebarDestination)
         } else if canSubmitResolvedDrop, let resolvedDrop {
-            editorEntry.moveDraggedItem(
+            interactionEditorEntry.moveDraggedItem(
                 itemId,
                 resolvedDrop.destination,
                 resolvedDrop.index,
@@ -328,6 +349,7 @@ final class TodoEditorViewController: NSViewController {
         itemId: UUID,
         windowLocation: NSPoint
     ) -> TodoEditorContinuousInteractionToken? {
+        let startingEditorEntry = editorEntry
         guard let sectionId = sectionSnapshot(containing: itemId)?.id,
               let token = continuousInteraction.beginCrossItemSelection(
                   itemId: itemId,
@@ -338,13 +360,14 @@ final class TodoEditorViewController: NSViewController {
 
         selectionDragInteractionToken = token
         dragSelectionSectionId = sectionId
-        guard editorEntry.beginDragSelection(itemId, nil) else {
-            editorEntry.discardPreparedDragSelection()
+        guard startingEditorEntry.beginDragSelection(itemId, nil) else {
+            startingEditorEntry.discardPreparedDragSelection()
             selectionDragInteractionToken = nil
             dragSelectionSectionId = nil
             _ = continuousInteraction.cancel(token: token)
             return nil
         }
+        selectionDragEditorEntry = startingEditorEntry
         startSelectionAutoscroll()
         handleSelectionDragChanged(
             itemId: itemId,
@@ -393,10 +416,11 @@ final class TodoEditorViewController: NSViewController {
         guard
             let sectionId = dragSelectionSectionId,
             let sectionView = sectionViewsById[sectionId],
+            let interactionEditorEntry = selectionDragEditorEntry,
             let targetId = sectionView.nearestItemId(at: point, documentView: documentView)
         else { return nil }
 
-        editorEntry.updateDragSelection(targetId)
+        interactionEditorEntry.updateDragSelection(targetId)
         return targetId
     }
 
@@ -462,12 +486,14 @@ final class TodoEditorViewController: NSViewController {
                 token: token
             )
         }
+        let interactionEditorEntry = selectionDragEditorEntry
         stopSelectionAutoscroll()
         dragSelectionSectionId = nil
         lastSelectionDragWindowLocation = nil
         selectionDragInteractionToken = nil
+        selectionDragEditorEntry = nil
         _ = continuousInteraction.end(token: token)
-        editorEntry.endDragSelection()
+        interactionEditorEntry?.endDragSelection()
     }
 
     private func handleSelectionDragCancelled(
@@ -479,12 +505,14 @@ final class TodoEditorViewController: NSViewController {
                   kind: .crossItemSelection
               )
         else { return }
+        let interactionEditorEntry = selectionDragEditorEntry
         stopSelectionAutoscroll()
         dragSelectionSectionId = nil
         lastSelectionDragWindowLocation = nil
         selectionDragInteractionToken = nil
+        selectionDragEditorEntry = nil
         _ = continuousInteraction.cancel(token: token)
-        editorEntry.cancelDragSelection()
+        interactionEditorEntry?.cancelDragSelection()
     }
 
     private func startSelectionAutoscroll() {
@@ -601,6 +629,7 @@ final class TodoEditorViewController: NSViewController {
         dragSession.end()
         resetDragHandleStates()
         itemDragInteractionToken = nil
+        itemDragEditorEntry = nil
         _ = continuousInteraction.end(token: token)
     }
 
@@ -618,6 +647,7 @@ final class TodoEditorViewController: NSViewController {
         dragSession.end()
         resetDragHandleStates()
         itemDragInteractionToken = nil
+        itemDragEditorEntry = nil
         _ = continuousInteraction.cancel(token: token)
     }
 
