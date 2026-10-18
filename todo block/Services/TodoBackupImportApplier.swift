@@ -55,8 +55,7 @@ enum TodoBackupImportApplier {
 
         let refreshedPlan = try TodoBackupImportPlanner.makePlan(
             document: plan.sourceDocument,
-            store: store,
-            calendar: calendar
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store, calendar: calendar)
         )
         guard refreshedPlan == plan else {
             throw TodoBackupImportError.stalePreview
