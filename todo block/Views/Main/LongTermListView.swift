@@ -72,9 +72,6 @@ struct LongTermListView: View {
         .onChange(of: isActiveContext) { _, newValue in
             participation.update(isActive: newValue)
         }
-        .onChange(of: participation.latestHistoryRevealRequest) { _, _ in
-            participation.receiveHistoryReveal()
-        }
         .onDisappear {
             participation.update(isActive: false)
         }

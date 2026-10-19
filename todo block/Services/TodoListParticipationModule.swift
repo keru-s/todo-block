@@ -14,6 +14,7 @@ final class TodoListParticipationModule {
     private let commandCoordinator: ActiveListCommandCoordinator
     private let participationIdentity: TodoListParticipationIdentity
     private let historyPresentation: TodoHistoryPresentationCoordinator
+    private var historyPresentationObservation: TodoHistoryPresentationObservation? = nil
     private let claimsCurrentListWhenFirstActivated: Bool
     private let retainsHistoryRevealsWhileInactive: Bool
     private var historyRevealMatches: HistoryRevealMatcher
@@ -50,6 +51,9 @@ final class TodoListParticipationModule {
         self.historyRevealMatches = historyRevealMatches
         editorEntry = actionModule.makeEditorEntry { [weak self] in
             self?.claimCurrentList() ?? false
+        }
+        historyPresentationObservation = self.historyPresentation.observeRevealRequests { [weak self] in
+            self?.receiveHistoryReveal()
         }
     }
 
@@ -159,9 +163,8 @@ final class TodoListParticipationModule {
         action(actionModule)
     }
 
-    /// 读取并处理当前最新历史定位请求。
-    func receiveHistoryReveal() {
-        receiveHistoryReveal(latestHistoryRevealRequest)
+    private func receiveHistoryReveal() {
+        receiveHistoryReveal(historyPresentation.revealRequest)
     }
 
     private func receiveHistoryReveal(_ request: TodoHistoryRevealRequest?) {
@@ -193,10 +196,6 @@ final class TodoListParticipationModule {
             itemId: request.itemId,
             sourceHistoryContext: request.sourceHistoryContext
         )
-    }
-
-    var latestHistoryRevealRequest: TodoHistoryRevealRequest? {
-        historyPresentation.revealRequest
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {

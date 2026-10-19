@@ -155,9 +155,6 @@ struct MenuBarView: View {
             },
             including: .gesture
         )
-        .onChange(of: participation.latestHistoryRevealRequest) { _, _ in
-            participation.receiveHistoryReveal()
-        }
     }
 }
 

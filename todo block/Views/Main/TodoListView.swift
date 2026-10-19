@@ -148,9 +148,6 @@ struct TodoListView: View {
             participation.updateCommandScope(clipboardScope)
             updateHistoryRevealMatcher()
         }
-        .onChange(of: participation.latestHistoryRevealRequest) { _, _ in
-            participation.receiveHistoryReveal()
-        }
         .onDisappear {
             participation.update(isActive: false)
         }
