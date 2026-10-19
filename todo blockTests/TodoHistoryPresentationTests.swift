@@ -73,6 +73,51 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(selection.cursorPosition, 2)
     }
 
+    func testObserverRegisteredDuringNotificationWaitsForNextReveal() {
+        let item = store.createItem(
+            title: "重入观察",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let coordinator = TodoHistoryPresentationCoordinator.shared
+        var firstObservationCount = 0
+        var secondObservationCount = 0
+        var secondObservation: TodoHistoryPresentationObservation?
+        let firstObservation = coordinator.observeRevealRequests {
+            firstObservationCount += 1
+            guard secondObservation == nil else { return }
+            secondObservation = coordinator.observeRevealRequests {
+                secondObservationCount += 1
+            }
+        }
+
+        coordinator.present(
+            TodoHistoryApplicationResult(
+                destination: .longTerm(isUrgent: false),
+                itemId: item.id,
+                sourceHistoryContext: nil,
+                sourceSelectionState: nil
+            )
+        )
+
+        XCTAssertEqual(firstObservationCount, 1)
+        XCTAssertEqual(secondObservationCount, 0)
+
+        coordinator.present(
+            TodoHistoryApplicationResult(
+                destination: .longTerm(isUrgent: false),
+                itemId: item.id,
+                sourceHistoryContext: nil,
+                sourceSelectionState: nil
+            )
+        )
+
+        XCTAssertEqual(firstObservationCount, 2)
+        XCTAssertEqual(secondObservationCount, 1)
+        _ = firstObservation
+        _ = secondObservation
+    }
+
     func testTodayOnlyHistoryExecutionDoesNotSkipRecentOtherListOperation() {
         let today = store.createItem(title: "today", dayDate: .now)
         let future = store.createItem(

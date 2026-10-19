@@ -115,8 +115,9 @@ final class TodoHistoryPresentationCoordinator {
         revealObservations = revealObservations.compactMapValues { box in
             box.observation == nil ? nil : box
         }
-        for box in revealObservations.values {
-            box.observation?.didChange?()
+        let observations = revealObservations.values.compactMap(\.observation)
+        for observation in observations {
+            observation.didChange?()
         }
     }
 
