@@ -24,7 +24,6 @@ Todo Block is a native macOS to-do app with nested tasks, keyboard-first workflo
 ## Download
 
 - Latest release page: [GitHub Releases](https://github.com/keru-s/todo-block/releases/latest)
-- Direct download: [Todo-Block-macOS.dmg](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.dmg)
 
 ### Gatekeeper will block the first launch
 

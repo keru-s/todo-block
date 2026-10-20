@@ -20,8 +20,8 @@
       "blur-material" : null,
       "layers" : [
         {
-          "image-name" : "todo 2.svg",
-          "name" : "todo 2",
+          "image-name" : "app-icon.svg",
+          "name" : "app-icon",
           "position" : {
             "scale" : 4,
             "translation-in-points" : [

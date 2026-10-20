@@ -58,6 +58,14 @@ xcuserdata/
 *.xcuserstate
 *.profraw
 .idea
+buildServer.json
 .codepilot-uploads/
 .learnings/
 .scratch/
+
+# Locally generated video production projects and media
+/promo/
+
+# Local agent config and skills
+/.agents/
+/.codex/

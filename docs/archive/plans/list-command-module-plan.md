@@ -1,5 +1,7 @@
 # 列表动作模块与命令接管计划
 
+> 状态：已完成（代码与测试已落地：`ActiveListCommandCoordinator` / `TodoListActionModule` / `TodoListParticipationModule`）
+
 ## 目标
 
 把“深化编辑器动作模块”和“让当前列表真正拥有命令接管”合并为一次改造。每个可见待办列表拥有一份稳定的动作模块，列表内部动作与应用菜单命令都从这里进入；应用在任何时刻只把命令交给一个当前列表。

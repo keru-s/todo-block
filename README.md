@@ -24,7 +24,6 @@ Todo Block 是一个原生 macOS 待办应用，支持分层任务、键盘优�
 ## 下载
 
 - 最新版本页面：[GitHub Releases](https://github.com/keru-s/todo-block/releases/latest)
-- 直接下载：[Todo-Block-macOS.dmg](https://github.com/keru-s/todo-block/releases/latest/download/Todo-Block-macOS.dmg)
 
 ### 首次打开会被 Gatekeeper 拦截
 

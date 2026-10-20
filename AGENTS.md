@@ -102,7 +102,7 @@ xcodebuild build -project "todo block.xcodeproj" -scheme "todo block" \
 - `./run.sh`：退出旧实例 → 团队签名编译 Debug → 打开 `build/Debug/todo block.app`，不用开 Xcode
 - 必须用团队签名（脚本内已覆盖 `Config/NoSigning.Debug.xcconfig`），否则沙盒不生效，SwiftData 会写到沙盒容器外的孤立目录，和 Xcode 构建的数据不通
 - 签名团队 ID 默认 `4727XHULQX`，可用 `TODO_DEV_TEAM` 环境变量覆盖
-- `buildServer.json` 为 SourceKit-LSP 接入 `xcode-build-server`；在 Xcode 之外编辑时用 `brew install xcode-build-server` 安装
+- 在 Xcode 之外编辑时可选用 SourceKit-LSP：`brew install xcode-build-server` 后运行 `xcode-build-server config` 在本机生成 `buildServer.json`（含本机绝对路径，不入库）
 - **交互会话中每次代码改动后自动跑上面的 Debug 构建**，构建失败先修好再宣布完成；构建成功后杀掉运行中的实例并重启新构建的 `.app`（`pkill -f "todo block.app"` 后打开 `BUILT_PRODUCTS_DIR` 下的 app），让用户立即验证。仅文档/注释改动、用户说自己启动、或只跑了测试时跳过重启
 - **Release 流程**：`git tag v0.1.0 && git push origin main v0.1.0` 触发 `.github/workflows/objective-c-xcode.yml`，按 arm64/x86_64 分别构建 Release，adhoc 签名（沙盒 + `files.user-selected.read-write` 两项 entitlement 缺一不可，缺后者导入/导出面板会静默不弹）后各打一个 DMG（`Todo-Block-macOS-AppleSilicon.dmg` / `Todo-Block-macOS-Intel.dmg`）并附带安装说明发布到 GitHub Release；手动打包见 `PACKAGING.md`
 
