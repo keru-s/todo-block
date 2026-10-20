@@ -98,7 +98,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
                 )
             ]
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         let result = try TodoBackupWorkflow.applyImport(
             plan: plan,
@@ -162,7 +165,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         XCTAssertEqual(
             try TodoBackupWorkflow.applyImport(
@@ -225,7 +231,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         XCTAssertEqual(
             try TodoBackupWorkflow.applyImport(
@@ -270,7 +279,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         XCTAssertThrowsError(
             try TodoBackupWorkflow.applyImport(
@@ -328,7 +340,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         store.saveAction = { _ in throw SimulatedSaveFailure.unavailable }
 
@@ -407,7 +422,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
 
         store.saveAction = { _ in throw SimulatedSaveFailure.unavailable }
 
@@ -478,7 +496,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             ],
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
-        let plan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
         store.saveAction = { _ in throw SimulatedSaveFailure.unavailable }
 
         XCTAssertThrowsError(
@@ -527,7 +548,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
             daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
         )
 
-        let firstPlan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let firstPlan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
         XCTAssertEqual(
             try TodoBackupWorkflow.applyImport(
                 plan: firstPlan,
@@ -539,7 +563,10 @@ final class TodoBackupImportApplyTests: XCTestCase {
         let firstCheckpoint = try recoveryStore.loadRecoveryPoint()
         XCTAssertEqual(firstCheckpoint.items.first?.title, "before")
 
-        let secondPlan = try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        let secondPlan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
         XCTAssertEqual(
             try TodoBackupWorkflow.applyImport(
                 plan: secondPlan,
@@ -551,6 +578,154 @@ final class TodoBackupImportApplyTests: XCTestCase {
         XCTAssertEqual(try recoveryStore.loadRecoveryPoint(), firstCheckpoint)
     }
 
+    func testEmptyBackupApplyIsNoOpAndPreservesLocalOnlyData() throws {
+        let store = TodoStore.shared
+        let recoveryStore = try makeRecoveryStore()
+        let date = TodoBackupCalendarDate(year: 2026, month: 8, day: 26)
+        let localDate = try XCTUnwrap(date.date())
+        let local = store.createItem(title: "keep local", dayDate: localDate)
+        let localSection = try XCTUnwrap(store.validDaySections.first)
+        XCTAssertTrue(store.flushPendingChangesSync())
+
+        let document = TodoBackupDocument(
+            exportedAt: Date(timeIntervalSince1970: 1_787_000_000),
+            items: [],
+            daySections: []
+        )
+        let plan = try TodoBackupWorkflow.previewImport(
+            data: TodoBackupCodec.encode(document),
+            into: store
+        )
+        XCTAssertEqual(plan.localOnlyItemIDs, [local.id])
+        XCTAssertEqual(plan.localOnlyDaySectionDates, [date])
+
+        XCTAssertEqual(
+            try TodoBackupWorkflow.applyImport(
+                plan: plan,
+                into: store,
+                recoveryStore: recoveryStore
+            ),
+            .noChanges
+        )
+        XCTAssertEqual(store.validTodoItems.map(\.id), [local.id])
+        XCTAssertEqual(store.validDaySections.map(\.id), [localSection.id])
+        XCTAssertEqual(local.title, "keep local")
+        XCTAssertFalse(recoveryStore.hasRecoveryPoint)
+    }
+
+    func testWorkflowPreviewAdaptsCurrentStoreSnapshot() throws {
+        let store = TodoStore.shared
+        let date = TodoBackupCalendarDate(year: 2026, month: 8, day: 26)
+        let localDate = try XCTUnwrap(date.date())
+        let baseTime = Date(timeIntervalSince1970: 1_787_000_000)
+        let local = store.createItem(title: "local", dayDate: localDate)
+        local.createdAt = baseTime.addingTimeInterval(-100)
+        local.updatedAt = baseTime
+        XCTAssertTrue(store.flushPendingChangesSync())
+
+        let document = TodoBackupDocument(
+            exportedAt: baseTime.addingTimeInterval(200),
+            items: [
+                TodoBackupItem(
+                    id: local.id,
+                    title: "imported newer",
+                    isCompleted: false,
+                    indentLevel: local.indentLevel,
+                    sortOrder: local.sortOrder,
+                    containerKind: .scheduled,
+                    dayDate: date,
+                    createdAt: local.createdAt,
+                    updatedAt: baseTime.addingTimeInterval(100)
+                )
+            ],
+            daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
+        )
+
+        let plan = try TodoBackupWorkflow.previewImport(
+            data: TodoBackupCodec.encode(document),
+            into: store
+        )
+
+        XCTAssertEqual(plan.updates.map(\.id), [local.id])
+        XCTAssertEqual(plan.updates.first?.local.title, "local")
+        XCTAssertEqual(plan.unchangedDaySectionDates, [date])
+        XCTAssertEqual(local.title, "local")
+    }
+
+    func testApplyReplansAgainstCurrentStoreAndRejectsStalePreview() throws {
+        let store = TodoStore.shared
+        let recoveryStore = try makeRecoveryStore()
+        let date = TodoBackupCalendarDate(year: 2026, month: 8, day: 26)
+        let localDate = try XCTUnwrap(date.date())
+        let baseTime = Date(timeIntervalSince1970: 1_787_000_000)
+        let local = store.createItem(title: "local", dayDate: localDate)
+        local.createdAt = baseTime.addingTimeInterval(-100)
+        local.updatedAt = baseTime
+        XCTAssertTrue(store.flushPendingChangesSync())
+
+        let document = TodoBackupDocument(
+            exportedAt: baseTime.addingTimeInterval(200),
+            items: [
+                TodoBackupItem(
+                    id: local.id,
+                    title: "imported",
+                    isCompleted: false,
+                    indentLevel: local.indentLevel,
+                    sortOrder: local.sortOrder,
+                    containerKind: .scheduled,
+                    dayDate: date,
+                    createdAt: local.createdAt,
+                    updatedAt: baseTime.addingTimeInterval(100)
+                )
+            ],
+            daySections: store.validDaySections.map { TodoBackupWorkflow.snapshot(section: $0) }
+        )
+        let plan = try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
+        XCTAssertEqual(plan.updates.map(\.id), [local.id])
+
+        local.title = "changed after preview"
+        local.updatedAt = baseTime.addingTimeInterval(300)
+
+        XCTAssertThrowsError(
+            try TodoBackupWorkflow.applyImport(
+                plan: plan,
+                into: store,
+                recoveryStore: recoveryStore
+            )
+        ) { error in
+            guard let importError = error as? TodoBackupImportError else {
+                XCTFail("Unexpected error: \(error)")
+                return
+            }
+            guard case .stalePreview = importError else {
+                XCTFail("Unexpected import error: \(importError)")
+                return
+            }
+        }
+        XCTAssertEqual(local.title, "changed after preview")
+        XCTAssertFalse(recoveryStore.hasRecoveryPoint)
+    }
+
+    func testMalformedFileIsRejectedWithoutMutation() throws {
+        let store = TodoStore.shared
+        let date = TodoBackupCalendarDate(year: 2026, month: 8, day: 26)
+        let localDate = try XCTUnwrap(date.date())
+        let local = store.createItem(title: "keep local", dayDate: localDate)
+        XCTAssertTrue(store.flushPendingChangesSync())
+
+        XCTAssertThrowsError(
+            try TodoBackupWorkflow.previewImport(
+                data: Data(#"{"format":"todo-block-backup","version":1,"items":["#.utf8),
+                into: store
+            )
+        )
+        XCTAssertEqual(store.validTodoItems.map(\.id), [local.id])
+        XCTAssertEqual(local.title, "keep local")
+    }
+
     private func makeRecoveryStore() throws -> TodoBackupRecoveryStore {
         let root = try XCTUnwrap(temporaryDirectory)
         return TodoBackupRecoveryStore(
@@ -560,6 +735,9 @@ final class TodoBackupImportApplyTests: XCTestCase {
 
     private func emptyPlan(store: TodoStore) throws -> TodoBackupMergePlan {
         let document = TodoBackupWorkflow.makeExportDocument(from: store)
-        return try TodoBackupImportPlanner.makePlan(document: document, store: store)
+        return try TodoBackupImportPlanner.makePlan(
+            document: document,
+            localSnapshot: TodoBackupWorkflow.makeLocalSnapshot(from: store)
+        )
     }
 }

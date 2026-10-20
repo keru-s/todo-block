@@ -7,6 +7,11 @@
 
 import Foundation
 
+nonisolated struct TodoBackupLocalSnapshot: Equatable, Sendable {
+    let items: [TodoBackupItem]
+    let daySections: [TodoBackupDaySection]
+}
+
 enum TodoBackupMergeReason: Equatable, Sendable {
     case importedNewer
     case localNewer
