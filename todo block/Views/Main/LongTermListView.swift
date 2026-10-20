@@ -15,7 +15,6 @@ struct LongTermListView: View {
 
     private var store: TodoStore { TodoStore.shared }
     private var selectionManager: SelectionManager { participation.selectionManager }
-    private var historyPresentation: TodoHistoryPresentationCoordinator { .shared }
     private let urgentSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
     private let importantSectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
 
@@ -69,14 +68,9 @@ struct LongTermListView: View {
         }
         .onAppear {
             participation.appear(isActive: isActiveContext)
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
         }
         .onChange(of: isActiveContext) { _, newValue in
             participation.update(isActive: newValue)
-            participation.receiveHistoryReveal(historyPresentation.revealRequest)
-        }
-        .onChange(of: historyPresentation.revealRequest) { _, request in
-            participation.receiveHistoryReveal(request)
         }
         .onDisappear {
             participation.update(isActive: false)

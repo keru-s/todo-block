@@ -40,6 +40,84 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertNil(TodoHistoryPresentationCoordinator.shared.revealRequest)
     }
 
+    func testPublishedHistoryRevealReachesActiveParticipationWithoutViewCallbacks() {
+        let item = store.createItem(
+            title: "long",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let selection = SelectionManager(historyContext: .longTerm)
+        let participation = makeParticipation(
+            selectionManager: selection,
+            participationIdentity: .longTerm,
+            commandScope: .longTerm,
+            historyRevealMatches: { $0.destination == .longTerm }
+        )
+        participation.update(isActive: true)
+
+        TodoHistoryPresentationCoordinator.shared.present(
+            TodoHistoryApplicationResult(
+                destination: .longTerm(isUrgent: false),
+                itemId: item.id,
+                sourceHistoryContext: nil,
+                sourceSelectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+            )
+        )
+
+        XCTAssertEqual(
+            participation.visibleHistoryRevealRequest?.id,
+            TodoHistoryPresentationCoordinator.shared.revealRequest?.id
+        )
+        XCTAssertEqual(selection.focusedItemId, item.id)
+        XCTAssertEqual(selection.selectedItemIds, [item.id])
+        XCTAssertEqual(selection.cursorPosition, 2)
+    }
+
+    func testObserverRegisteredDuringNotificationWaitsForNextReveal() {
+        let item = store.createItem(
+            title: "重入观察",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let coordinator = TodoHistoryPresentationCoordinator.shared
+        var firstObservationCount = 0
+        var secondObservationCount = 0
+        var secondObservation: TodoHistoryPresentationObservation?
+        let firstObservation = coordinator.observeRevealRequests {
+            firstObservationCount += 1
+            guard secondObservation == nil else { return }
+            secondObservation = coordinator.observeRevealRequests {
+                secondObservationCount += 1
+            }
+        }
+
+        coordinator.present(
+            TodoHistoryApplicationResult(
+                destination: .longTerm(isUrgent: false),
+                itemId: item.id,
+                sourceHistoryContext: nil,
+                sourceSelectionState: nil
+            )
+        )
+
+        XCTAssertEqual(firstObservationCount, 1)
+        XCTAssertEqual(secondObservationCount, 0)
+
+        coordinator.present(
+            TodoHistoryApplicationResult(
+                destination: .longTerm(isUrgent: false),
+                itemId: item.id,
+                sourceHistoryContext: nil,
+                sourceSelectionState: nil
+            )
+        )
+
+        XCTAssertEqual(firstObservationCount, 2)
+        XCTAssertEqual(secondObservationCount, 1)
+        _ = firstObservation
+        _ = secondObservation
+    }
+
     func testTodayOnlyHistoryExecutionDoesNotSkipRecentOtherListOperation() {
         let today = store.createItem(title: "today", dayDate: .now)
         let future = store.createItem(
@@ -118,10 +196,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             .performed
         )
 
-        let request = try? XCTUnwrap(
-            TodoHistoryPresentationCoordinator.shared.revealRequest
-        )
-        menu.receiveHistoryReveal(request)
+        XCTAssertNotNil(TodoHistoryPresentationCoordinator.shared.revealRequest)
 
         XCTAssertEqual(originalSelection.focusedItemId, item.id)
         XCTAssertEqual(originalSelection.cursorPosition, 1)
@@ -169,10 +244,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         recordMainWindowOperation()
 
         XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.undo), .performed)
-        let request = try? XCTUnwrap(
-            TodoHistoryPresentationCoordinator.shared.revealRequest
-        )
-        menu.receiveHistoryReveal(request)
+        XCTAssertNotNil(TodoHistoryPresentationCoordinator.shared.revealRequest)
         XCTAssertFalse(item.isCompleted)
         XCTAssertEqual(menuSelection.focusedItemId, item.id)
 

@@ -21,12 +21,35 @@ struct TodoHistoryRevealRequest: Equatable {
 }
 
 @MainActor
+final class TodoHistoryPresentationObservation {
+    let id = UUID()
+    fileprivate var didChange: (@MainActor () -> Void)?
+
+    fileprivate init(didChange: @escaping @MainActor () -> Void) {
+        self.didChange = didChange
+    }
+
+    fileprivate func invalidate() {
+        didChange = nil
+    }
+}
+
+private final class TodoHistoryPresentationObservationBox {
+    weak var observation: TodoHistoryPresentationObservation?
+
+    init(observation: TodoHistoryPresentationObservation) {
+        self.observation = observation
+    }
+}
+
+@MainActor
 @Observable
 final class TodoHistoryPresentationCoordinator {
     static let shared = TodoHistoryPresentationCoordinator()
 
     private(set) var revealRequest: TodoHistoryRevealRequest?
     private var handledParticipationIdentities: [UUID: Set<TodoListParticipationIdentity>] = [:]
+    @ObservationIgnored private var revealObservations: [UUID: TodoHistoryPresentationObservationBox] = [:]
 
     private init() {}
 
@@ -45,6 +68,18 @@ final class TodoHistoryPresentationCoordinator {
         )
         revealRequest = request
         handledParticipationIdentities = [request.id: []]
+        notifyRevealRequestDidChange()
+    }
+
+    /// 返回由调用方持有的观察令牌。协调器只弱持有令牌，令牌随调用方释放后不再接收变化。
+    func observeRevealRequests(
+        _ didChange: @escaping @MainActor () -> Void
+    ) -> TodoHistoryPresentationObservation {
+        let observation = TodoHistoryPresentationObservation(didChange: didChange)
+        revealObservations[observation.id] = TodoHistoryPresentationObservationBox(
+            observation: observation
+        )
+        return observation
     }
 
     /// 标记一个可见逻辑列表已处理当前定位请求。
@@ -68,8 +103,22 @@ final class TodoHistoryPresentationCoordinator {
     }
 
     func resetForTesting() {
+        for box in revealObservations.values {
+            box.observation?.invalidate()
+        }
+        revealObservations.removeAll()
         revealRequest = nil
         handledParticipationIdentities.removeAll()
+    }
+
+    private func notifyRevealRequestDidChange() {
+        revealObservations = revealObservations.compactMapValues { box in
+            box.observation == nil ? nil : box
+        }
+        let observations = revealObservations.values.compactMap(\.observation)
+        for observation in observations {
+            observation.didChange?()
+        }
     }
 
     private static func sidebarDestination(

@@ -43,15 +43,12 @@ enum TodoBackupValidationError: LocalizedError {
 enum TodoBackupImportPlanner {
     static func makePlan(
         document: TodoBackupDocument,
-        store: TodoStore,
-        calendar: Calendar = .current
+        localSnapshot: TodoBackupLocalSnapshot
     ) throws -> TodoBackupMergePlan {
         try validate(document)
 
         let localItems = Dictionary(
-            uniqueKeysWithValues: store.validTodoItems.map {
-                ($0.id, TodoBackupWorkflow.snapshot(item: $0, calendar: calendar))
-            }
+            uniqueKeysWithValues: localSnapshot.items.map { ($0.id, $0) }
         )
 
         var additions: [TodoBackupItem] = []
@@ -84,8 +81,7 @@ enum TodoBackupImportPlanner {
             .sorted { $0.uuidString < $1.uuidString }
 
         var localSectionsByDate: [TodoBackupCalendarDate: TodoBackupDaySection] = [:]
-        for section in store.validDaySections {
-            let snapshot = TodoBackupWorkflow.snapshot(section: section, calendar: calendar)
+        for snapshot in localSnapshot.daySections {
             if let existing = localSectionsByDate[snapshot.date] {
                 if snapshot.updatedAt > existing.updatedAt
                     || (

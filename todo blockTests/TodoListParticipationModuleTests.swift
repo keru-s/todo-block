@@ -159,15 +159,119 @@ final class TodoListParticipationModuleTests: XCTestCase {
             selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
         )
 
-        participation.receiveHistoryReveal(request)
         participation.update(isActive: true)
-        participation.receiveHistoryReveal(request)
-        participation.receiveHistoryReveal(request)
+        participation.update(isActive: true)
 
         XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
         XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
         XCTAssertEqual(participation.selectionManager.selectedItemIds, [item.id])
         XCTAssertEqual(participation.selectionManager.cursorPosition, 2)
+    }
+
+    func testAppearReceivesAnExistingHistoryRevealWithoutViewForwarding() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "出现时定位",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let participation = makeParticipation()
+        let request = presentHistoryReveal(
+            destination: .longTerm(isUrgent: false),
+            itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+        )
+
+        participation.appear(isActive: true)
+
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
+        XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
+        XCTAssertEqual(participation.selectionManager.selectedItemIds, [item.id])
+        XCTAssertEqual(participation.selectionManager.cursorPosition, 2)
+    }
+
+    func testMatcherUpdateProcessesLatestPreviouslyUnmatchedHistoryReveal() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "八月定位",
+            dayDate: date(year: 2026, month: 8, day: 1)
+        )
+        let participation = makeParticipation(
+            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+        )
+        let request = presentHistoryReveal(
+            destination: .scheduled(date: date(year: 2026, month: 8, day: 1)),
+            itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+        )
+        participation.appear(isActive: true)
+
+        XCTAssertNil(participation.visibleHistoryRevealRequest)
+        XCTAssertNil(participation.selectionManager.focusedItemId)
+
+        participation.updateHistoryRevealMatcher {
+            $0.destination == .month(year: 2026, month: 8)
+        }
+
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
+        XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
+        XCTAssertEqual(participation.selectionManager.selectedItemIds, [item.id])
+        XCTAssertEqual(participation.selectionManager.cursorPosition, 2)
+    }
+
+    func testRepeatedSynchronizationDoesNotRestoreHistorySelectionTwice() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "只恢复一次",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let participation = makeParticipation()
+        let request = presentHistoryReveal(
+            destination: .longTerm(isUrgent: false),
+            itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+        )
+        participation.appear(isActive: true)
+        XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
+
+        participation.selectionManager.focusedItemId = nil
+        participation.selectionManager.selectedItemIds = []
+        participation.selectionManager.cursorPosition = 0
+        participation.update(isActive: true)
+        participation.updateHistoryRevealMatcher { $0.destination == .longTerm }
+
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
+        XCTAssertNil(participation.selectionManager.focusedItemId)
+        XCTAssertTrue(participation.selectionManager.selectedItemIds.isEmpty)
+        XCTAssertEqual(participation.selectionManager.cursorPosition, 0)
+    }
+
+    func testReleasedParticipationStopsObservingHistoryReveals() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "释放后忽略",
+            dayDate: .now,
+            containerKind: .longTermImportant
+        )
+        let selection = SelectionManager(historyContext: .longTerm)
+        weak var releasedParticipation: TodoListParticipationModule?
+
+        do {
+            let participation = makeParticipation(selectionManager: selection)
+            releasedParticipation = participation
+            participation.update(isActive: true)
+        }
+
+        XCTAssertNil(releasedParticipation)
+        _ = presentHistoryReveal(
+            destination: .longTerm(isUrgent: false),
+            itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+        )
+
+        XCTAssertNil(selection.focusedItemId)
+        XCTAssertTrue(selection.selectedItemIds.isEmpty)
     }
 
     func testActiveDateListImmediatelyClaimsWhenItFirstAppears() {
@@ -643,13 +747,12 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let participation = makeParticipation(
             historyRevealMatches: { $0.destination == .month(year: 2026, month: 8) }
         )
-        let otherMonthRequest = presentHistoryReveal(
+        _ = presentHistoryReveal(
             destination: .scheduled(date: date(year: 2026, month: 7, day: 1)),
             itemId: item.id,
             selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 1)
         )
 
-        participation.receiveHistoryReveal(otherMonthRequest)
         participation.appear(isActive: true)
 
         XCTAssertNil(participation.visibleHistoryRevealRequest)
@@ -660,8 +763,6 @@ final class TodoListParticipationModuleTests: XCTestCase {
             itemId: item.id,
             selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
         )
-        participation.receiveHistoryReveal(targetRequest)
-        participation.receiveHistoryReveal(targetRequest)
 
         XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, targetRequest?.id)
         XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
@@ -699,16 +800,14 @@ final class TodoListParticipationModuleTests: XCTestCase {
             retainsHistoryRevealsWhileInactive: false,
             historyRevealMatches: { _ in true }
         )
-        let request = presentHistoryReveal(
+        _ = presentHistoryReveal(
             destination: .scheduled(date: .now),
             itemId: item.id,
             selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 3)
         )
 
-        menuBar.register()
-        menuBar.receiveHistoryReveal(request)
-        menuBar.beginTemporaryParticipation()
-        menuBar.receiveHistoryReveal(request)
+        menuBar.updateTemporaryParticipation(isVisible: false)
+        menuBar.updateTemporaryParticipation(isVisible: true)
 
         XCTAssertNil(menuBar.visibleHistoryRevealRequest)
         XCTAssertNil(menuBar.selectionManager.focusedItemId)
@@ -752,11 +851,9 @@ final class TodoListParticipationModuleTests: XCTestCase {
 
         let original = makeParticipation()
         original.update(isActive: true)
-        original.receiveHistoryReveal(request)
 
         let rebuilt = makeParticipation()
         rebuilt.update(isActive: true)
-        rebuilt.receiveHistoryReveal(request)
 
         XCTAssertEqual(original.visibleHistoryRevealRequest?.id, request?.id)
         XCTAssertNil(rebuilt.visibleHistoryRevealRequest)
@@ -785,8 +882,6 @@ final class TodoListParticipationModuleTests: XCTestCase {
                 sourceSelectionState: TodoSelectionState(focusing: firstItem.id)
             )
         )
-        let firstRequest = try? XCTUnwrap(coordinator.revealRequest)
-        participation.receiveHistoryReveal(firstRequest)
 
         coordinator.present(
             TodoHistoryApplicationResult(
@@ -797,7 +892,6 @@ final class TodoListParticipationModuleTests: XCTestCase {
             )
         )
         let latestRequest = try? XCTUnwrap(coordinator.revealRequest)
-        participation.receiveHistoryReveal(latestRequest)
         participation.update(isActive: true)
 
         XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, latestRequest?.id)
@@ -805,7 +899,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         XCTAssertEqual(participation.selectionManager.cursorPosition, 0)
     }
 
-    func testSupersededHistoryRevealIsNotVisibleBeforeTheNextCallbackArrives() {
+    func testSupersededHistoryRevealIsImmediatelyReplacedByLatestRequest() {
         let store = TodoStore.shared
         let firstItem = store.createItem(
             title: "第一个",
@@ -829,8 +923,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
                 sourceSelectionState: nil
             )
         )
-        participation.receiveHistoryReveal(coordinator.revealRequest)
-        XCTAssertNotNil(participation.visibleHistoryRevealRequest)
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.itemId, firstItem.id)
 
         coordinator.present(
             TodoHistoryApplicationResult(
@@ -841,7 +934,11 @@ final class TodoListParticipationModuleTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(participation.visibleHistoryRevealRequest)
+        XCTAssertEqual(
+            participation.visibleHistoryRevealRequest?.id,
+            coordinator.revealRequest?.id
+        )
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.itemId, secondItem.id)
     }
 
     func testCrossEntryUndoRestoresTheSourceWithoutChangingOtherLists() {
@@ -886,9 +983,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         )
 
         XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.undo), .performed)
-        let request = try? XCTUnwrap(TodoHistoryPresentationCoordinator.shared.revealRequest)
-        destination.receiveHistoryReveal(request)
-        other.receiveHistoryReveal(request)
+        XCTAssertNotNil(TodoHistoryPresentationCoordinator.shared.revealRequest)
 
         XCTAssertEqual(item.title, "日期待办")
         XCTAssertEqual(sourceSelection.focusedItemId, item.id)

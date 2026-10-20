@@ -31,18 +31,12 @@ enum TodoBackupWorkflow {
         // 与普通用户动作一样，先结束当前连续输入段，确保导出的就是界面此刻的最新状态。
         store.flushPendingTextEdit()
 
-        let items = store.validTodoItems
-            .map { snapshot(item: $0, calendar: calendar) }
-            .sorted(by: backupItemPrecedes)
-
-        let daySections = store.validDaySections
-            .map { snapshot(section: $0, calendar: calendar) }
-            .sorted(by: backupSectionPrecedes)
+        let localSnapshot = makeLocalSnapshot(from: store, calendar: calendar)
 
         return TodoBackupDocument(
             exportedAt: exportedAt,
-            items: items,
-            daySections: daySections
+            items: localSnapshot.items.sorted(by: backupItemPrecedes),
+            daySections: localSnapshot.daySections.sorted(by: backupSectionPrecedes)
         )
     }
 
@@ -54,8 +48,17 @@ enum TodoBackupWorkflow {
         let document = try TodoBackupCodec.decode(data)
         return try TodoBackupImportPlanner.makePlan(
             document: document,
-            store: store,
-            calendar: calendar
+            localSnapshot: makeLocalSnapshot(from: store, calendar: calendar)
+        )
+    }
+
+    static func makeLocalSnapshot(
+        from store: TodoStore,
+        calendar: Calendar = .current
+    ) -> TodoBackupLocalSnapshot {
+        TodoBackupLocalSnapshot(
+            items: store.validTodoItems.map { snapshot(item: $0, calendar: calendar) },
+            daySections: store.validDaySections.map { snapshot(section: $0, calendar: calendar) }
         )
     }
 
