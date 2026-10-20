@@ -250,6 +250,76 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertEqual(movedByB, [])
     }
 
+    func testControllerAccessChangeInterruptsItemDragAndIgnoresLateEnd() throws {
+        let item = TodoItem(title: "权限中断")
+        let section = TodoEditorSectionSnapshot(
+            id: UUID(),
+            title: "分组",
+            destination: .longTerm(isUrgent: false),
+            items: [TodoEditorItemSnapshot(item: item, selectionManager: SelectionManager())]
+        )
+        var preparedByA: [UUID] = []
+        var preparedByB: [UUID] = []
+        var movedByA: [UUID] = []
+        var movedByB: [UUID] = []
+        let entryA = makeEntry(
+            prepareItemDrag: { itemId in
+                preparedByA.append(itemId)
+                return true
+            },
+            moveDraggedItem: { itemId, _, _, _ in
+                movedByA.append(itemId)
+            }
+        )
+        let entryB = makeEntry(
+            access: .readOnly,
+            prepareItemDrag: { itemId in
+                preparedByB.append(itemId)
+                return true
+            },
+            moveDraggedItem: { itemId, _, _, _ in
+                movedByB.append(itemId)
+            }
+        )
+        let controller = TodoEditorViewController()
+        controller.update(
+            sections: [section],
+            emptyTitle: "暂无待办",
+            editorEntry: entryA
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 160),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = controller.view
+        controller.view.layoutSubtreeIfNeeded()
+        let rowView = try XCTUnwrap(firstSubview(of: TodoEditorRowView.self, in: controller.view))
+        let dragHandle = try XCTUnwrap(firstSubview(of: TodoEditorDragHandleView.self, in: rowView))
+        guard dragHandle.bounds.isEmpty == false else {
+            return XCTFail("Expected the drag handle to be laid out")
+        }
+        let location = dragHandle.convert(
+            NSPoint(x: dragHandle.bounds.midX, y: dragHandle.bounds.midY),
+            to: nil
+        )
+        dragHandle.mouseDown(with: try mouseEvent(type: .leftMouseDown, location: location))
+        dragHandle.mouseDragged(with: try mouseEvent(type: .leftMouseDragged, location: location))
+        XCTAssertEqual(preparedByA, [item.id])
+
+        controller.update(
+            sections: [section],
+            emptyTitle: "暂无待办",
+            editorEntry: entryB
+        )
+        dragHandle.mouseUp(with: try mouseEvent(type: .leftMouseUp, location: location))
+
+        XCTAssertEqual(preparedByB, [])
+        XCTAssertEqual(movedByA, [])
+        XCTAssertEqual(movedByB, [])
+    }
+
     func testTextInputRoutesThroughEditorEntry() throws {
         let item = TodoItem(title: "a")
         var editedItemId: UUID?
@@ -926,6 +996,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     }
 
     private func makeEntry(
+        access: TodoEditorAccess = .editable,
         claimCurrentList: @escaping () -> Bool = { true },
         beforeExplicitAction: @escaping () -> Void = {},
         titleChanged: @escaping (UUID, TodoTextEditEvent) -> Void = { _, _ in },
@@ -954,7 +1025,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         sectionDateChanged: @escaping (UUID, Date) -> Void = { _, _ in }
     ) -> TodoEditorEntry {
         TodoEditorEntry(
-            access: .editable,
+            access: access,
             claimCurrentList: claimCurrentList,
             titleChanged: titleChanged,
             textSelectionChanged: textSelectionChanged,
