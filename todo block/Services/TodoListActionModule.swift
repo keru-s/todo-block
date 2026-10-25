@@ -246,6 +246,8 @@ final class TodoListActionModule {
     }
 
     func updateCommandScope(_ scope: TodoClipboardScope) {
+        guard commandScope != scope else { return }
+        selectionManager.clearAllSelection()
         commandScope = scope
     }
 
