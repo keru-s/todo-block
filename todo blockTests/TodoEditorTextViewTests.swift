@@ -102,4 +102,38 @@ final class TodoEditorTextViewTests: XCTestCase {
         XCTAssertEqual(textView.string, "abcde")
     }
 
+    func testCommandReturnDuringCompositionDoesNotToggleCompletion() throws {
+        let textView = TodoEditorTextView()
+        var didToggle = false
+        textView.onCommand = { command in
+            if case .toggleCompleted = command {
+                didToggle = true
+                return true
+            }
+            return false
+        }
+        textView.setMarkedText(
+            "中",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\r",
+            charactersIgnoringModifiers: "\r",
+            isARepeat: false,
+            keyCode: 36
+        ))
+
+        textView.keyDown(with: event)
+
+        XCTAssertFalse(didToggle)
+        XCTAssertTrue(textView.hasMarkedText())
+    }
+
 }

@@ -219,6 +219,12 @@ final class TodoEditorTextView: NSTextView {
         if event.keyCode == 53, onEscapePressed?() == true {
             return
         }
+        if isComposingText == false,
+           event.isCommandReturnShortcut,
+           onCommand?(.toggleCompleted) == true
+        {
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -636,4 +642,5 @@ enum TodoEditorTextCommand {
     case moveDown(Int, CGFloat?)
     case moveItemUp
     case moveItemDown
+    case toggleCompleted
 }

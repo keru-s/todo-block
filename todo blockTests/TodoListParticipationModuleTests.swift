@@ -720,6 +720,42 @@ final class TodoListParticipationModuleTests: XCTestCase {
         XCTAssertTrue(store.canUndo)
     }
 
+    func testChangingMonthScopeDoesNotToggleHiddenPreviousMonthItem() {
+        let store = TodoStore.shared
+        let aprilItem = store.createItem(
+            title: "四月待办",
+            dayDate: date(year: 2026, month: 4, day: 2)
+        )
+        let selection = SelectionManager(historyContext: .mainWindow)
+        selection.focusedItemId = aprilItem.id
+        selection.selectedItemIds = [aprilItem.id]
+        let actionModule = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .scheduledMonth(year: 2026, month: 4),
+            activeTextViewProvider: { nil }
+        )
+        let participation = TodoListParticipationModule(
+            actionModule: actionModule,
+            participationIdentity: .mainWindow
+        )
+        participation.appear(isActive: true)
+        store.undoManager.clear()
+
+        participation.updateCommandScope(.scheduledMonth(year: 2026, month: 5))
+
+        XCTAssertEqual(
+            ActiveListCommandCoordinator.shared.availability(of: .toggleCompletion),
+            .unavailable(nil)
+        )
+        XCTAssertEqual(
+            ActiveListCommandCoordinator.shared.perform(.toggleCompletion),
+            .noChange
+        )
+        XCTAssertFalse(aprilItem.isCompleted)
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testUpdatingDateScopeDoesNotClaimWhileTemporaryListIsActive() {
         let date = makeParticipation(
             historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
