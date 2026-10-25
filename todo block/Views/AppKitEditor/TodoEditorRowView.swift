@@ -163,6 +163,8 @@ final class TodoEditorRowView: NSView {
                 editorEntry.moveItemByKeyboard(itemId: itemId, direction: .up)
             case .moveItemDown:
                 editorEntry.moveItemByKeyboard(itemId: itemId, direction: .down)
+            case .toggleCompleted:
+                editorEntry.toggleCompleted(itemId)
             }
             return true
         }
@@ -417,6 +419,11 @@ final class TodoEditorRowView: NSView {
 
         if event.modifierFlags.contains(.command), event.keyCode == 125 {
             editorEntry.moveItemByKeyboard(itemId: itemId, direction: .down)
+            return
+        }
+
+        if event.isCommandReturnShortcut {
+            editorEntry.toggleCompleted(itemId)
             return
         }
 

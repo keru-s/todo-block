@@ -7,6 +7,7 @@ enum TodoListCommand: Equatable {
     case cut
     case paste
     case selectAll
+    case toggleCompletion
     case moveUp
     case moveDown
     case undo

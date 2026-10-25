@@ -417,6 +417,59 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(store.items(for: day).map(\.id), [first.id, focused.id])
     }
 
+    func testToggleCompletionCommandUsesSelectionAndPreservesTextState() {
+        let store = TodoStore.shared
+        let focused = store.createItem(title: "focused", dayDate: .now)
+        let selected = store.createItem(title: "selected", dayDate: .now)
+        selected.isCompleted = true
+        let selection = SelectionManager()
+        let textView = TodoEditorTextView()
+        textView.string = "focused"
+        textView.synchronizeReportedText("focused")
+        textView.setSelectedRange(NSRange(location: 2, length: 3))
+        let module = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .today,
+            activeTextViewProvider: { textView }
+        )
+        XCTAssertTrue(coordinator.claim(coordinator.register(module)))
+        store.undoManager.clear()
+
+        XCTAssertEqual(coordinator.availability(of: .toggleCompletion), .unavailable(nil))
+        XCTAssertEqual(coordinator.perform(.toggleCompletion), .noChange)
+
+        selection.focusedItemId = focused.id
+        selection.selectedItemIds = [focused.id, selected.id]
+        selection.cursorPosition = 2
+        selection.textSelectionLength = 3
+
+        XCTAssertEqual(coordinator.availability(of: .toggleCompletion), .available)
+        XCTAssertEqual(coordinator.perform(.toggleCompletion), .performed)
+        XCTAssertTrue(focused.isCompleted)
+        XCTAssertTrue(selected.isCompleted)
+        XCTAssertEqual(selection.focusedItemId, focused.id)
+        XCTAssertEqual(selection.selectedItemIds, [focused.id, selected.id])
+        XCTAssertTrue(selection.focusesText)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 2, length: 3))
+
+        XCTAssertTrue(store.undo())
+        XCTAssertFalse(focused.isCompleted)
+        XCTAssertTrue(selected.isCompleted)
+        XCTAssertFalse(store.canUndo)
+
+        textView.setMarkedText(
+            "中",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertEqual(coordinator.availability(of: .toggleCompletion), .unavailable(nil))
+        XCTAssertEqual(coordinator.perform(.toggleCompletion), .noChange)
+        XCTAssertFalse(focused.isCompleted)
+        XCTAssertTrue(selected.isCompleted)
+        XCTAssertTrue(textView.hasMarkedText())
+    }
+
     func testCommandWithoutCurrentListDoesNotChangeUserStateOrHistory() {
         let store = TodoStore.shared
         let item = store.createItem(title: "unchanged", dayDate: .now)

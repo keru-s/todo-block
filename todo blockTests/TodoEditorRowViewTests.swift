@@ -78,6 +78,95 @@ final class TodoEditorRowViewTests: XCTestCase {
         XCTAssertEqual(toggledItemId, item.id)
     }
 
+    func testCommandReturnWithRowFocusTogglesCompletion() throws {
+        let item = TodoItem(title: "整行完成")
+        var toggledItemId: UUID?
+        let entry = makeEntry(toggleCompleted: { itemId in
+            toggledItemId = itemId
+        })
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: SelectionManager()),
+            editorEntry: entry
+        )
+
+        rowView.keyDown(with: try keyEvent(keyCode: 36, modifierFlags: .command))
+
+        XCTAssertEqual(toggledItemId, item.id)
+    }
+
+    func testSpaceWithRowFocusStillTogglesCompletion() throws {
+        let item = TodoItem(title: "空格完成")
+        var toggledItemId: UUID?
+        let entry = makeEntry(toggleCompleted: { itemId in
+            toggledItemId = itemId
+        })
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: SelectionManager()),
+            editorEntry: entry
+        )
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            isARepeat: false,
+            keyCode: 49
+        ))
+
+        rowView.keyDown(with: event)
+
+        XCTAssertEqual(toggledItemId, item.id)
+    }
+
+    func testCommandReturnWhileEditingTogglesCompletionWithoutChangingTextFocus() throws {
+        let item = TodoItem(title: "编辑中完成")
+        let selectionManager = SelectionManager()
+        selectionManager.focusedItemId = item.id
+        selectionManager.selectedItemIds = [item.id]
+        selectionManager.cursorPosition = 2
+        selectionManager.textSelectionLength = 3
+        var toggledItemId: UUID?
+        var enteredItemId: UUID?
+        let entry = makeEntry(
+            enterPressed: { itemId, _ in
+                enteredItemId = itemId
+                return true
+            },
+            toggleCompleted: { itemId in
+                toggledItemId = itemId
+            }
+        )
+        let rowView = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
+            editorEntry: entry
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        window.contentView = contentView
+        rowView.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        contentView.addSubview(rowView)
+        contentView.layoutSubtreeIfNeeded()
+        let textView = try XCTUnwrap(firstSubview(of: TodoEditorTextView.self, in: rowView))
+        window.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: 2, length: 3))
+
+        textView.keyDown(with: try keyEvent(keyCode: 36, modifierFlags: .command))
+
+        XCTAssertEqual(toggledItemId, item.id)
+        XCTAssertNil(enteredItemId)
+        XCTAssertTrue(window.firstResponder === textView)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 2, length: 3))
+    }
+
     func testControllerUpdateRebindsReusedRowToLatestEditorEntry() throws {
         let item = TodoItem(title: "重新绑定")
         let section = TodoEditorSectionSnapshot(

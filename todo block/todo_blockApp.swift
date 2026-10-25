@@ -119,6 +119,18 @@ struct todo_blockApp: App {
                 )
             }
 
+            CommandGroup(after: .pasteboard) {
+                Button("切换完成状态") {
+                    ActiveListCommandCoordinator.shared.perform(.toggleCompletion)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(
+                    !ActiveListCommandCoordinator.shared.availability(
+                        of: .toggleCompletion
+                    ).allowsAttempt
+                )
+            }
+
             CommandGroup(after: .saveItem) {
                 Divider()
 

@@ -306,6 +306,14 @@ final class TodoListActionModule {
             return store.commandItems(in: commandScope).isEmpty
                 ? .unavailable(nil)
                 : .available
+        case .toggleCompletion:
+            if activeTextView?.isComposingText == true {
+                return .unavailable(nil)
+            }
+            guard let focusedItemId = selectionManager.focusedItemId,
+                  store.todoItemsCache[focusedItemId] != nil
+            else { return .unavailable(nil) }
+            return .available
         case .moveUp:
             if activeTextView?.isComposingText == true {
                 return .unavailable(nil)
@@ -468,6 +476,9 @@ final class TodoListActionModule {
             selectionManager.lastSelectedId = firstItem.id
             selectionManager.textSelectionLength = 0
             return .performed
+        case .toggleCompletion:
+            guard let focusedItemId = selectionManager.focusedItemId else { return .noChange }
+            return toggleCompleted(itemId: focusedItemId)
         case .moveUp:
             prepareForExternalAction()
             return parentChildGroupMoveModule.execute(

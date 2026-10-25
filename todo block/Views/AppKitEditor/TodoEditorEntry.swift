@@ -3,8 +3,16 @@
 //  todo block
 //
 
+import AppKit
 import CoreGraphics
 import Foundation
+
+extension NSEvent {
+    var isCommandReturnShortcut: Bool {
+        let modifiers = modifierFlags.intersection([.command, .control, .option, .shift])
+        return modifiers == .command && (keyCode == 36 || keyCode == 76)
+    }
+}
 
 /// 编辑器表面的访问权限。
 enum TodoEditorAccess: Equatable {
