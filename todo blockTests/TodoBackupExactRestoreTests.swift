@@ -266,9 +266,7 @@ final class TodoBackupExactRestoreTests: XCTestCase {
             [.posixPermissions: 0o700],
             ofItemAtPath: recoveryStore.directoryURL.path()
         )
-        try recoveryStore.reconcileInterruptedConsumption(
-            modelContext: try XCTUnwrap(store.modelContext)
-        )
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recoveryStore))
         XCTAssertTrue(recoveryStore.hasRecoveryPoint)
         XCTAssertEqual(try recoveryStore.loadRecoveryPoint(), checkpoint)
     }
@@ -336,10 +334,7 @@ final class TodoBackupExactRestoreTests: XCTestCase {
             "ordinary edit after completed restore"
         )
 
-        let modelContext = try XCTUnwrap(store.modelContext)
-        try recoveryStore.reconcileInterruptedConsumption(
-            modelContext: modelContext
-        )
+        XCTAssertFalse(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recoveryStore))
         XCTAssertFalse(recoveryStore.hasRecoveryPoint)
     }
 
@@ -413,9 +408,7 @@ final class TodoBackupExactRestoreTests: XCTestCase {
         TodoStore.shared.reset()
         let reopenedContainer = try makePersistentContainer()
         TodoStore.shared.initialize(with: reopenedContainer.mainContext)
-        try recoveryStore.reconcileInterruptedConsumption(
-            modelContext: reopenedContainer.mainContext
-        )
+        XCTAssertFalse(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recoveryStore))
 
         XCTAssertFalse(recoveryStore.hasRecoveryPoint)
         XCTAssertEqual(
@@ -446,9 +439,7 @@ final class TodoBackupExactRestoreTests: XCTestCase {
         TodoStore.shared.reset()
         let reopenedContainer = try makePersistentContainer()
         TodoStore.shared.initialize(with: reopenedContainer.mainContext)
-        try recoveryStore.reconcileInterruptedConsumption(
-            modelContext: reopenedContainer.mainContext
-        )
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recoveryStore))
 
         XCTAssertTrue(recoveryStore.hasRecoveryPoint)
         XCTAssertEqual(try recoveryStore.loadRecoveryPoint(), checkpoint)

@@ -251,6 +251,70 @@ final class TodoBackupWorkflowTests: XCTestCase {
         )
     }
 
+    func testInterruptedImportReconciliationKeepsPreviousCheckpointAndCurrentData() throws {
+        let store = TodoStore.shared
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recovery = TodoBackupRecoveryStore(directoryURL: root)
+        let item = store.createItem(title: "原来的恢复点", dayDate: .now)
+        let previous = TodoBackupWorkflow.makeExportDocument(from: store)
+        try recovery.stage(previous)
+        try recovery.promoteStaged()
+        item.title = "当前数据"
+        XCTAssertTrue(store.flushPendingChangesSync())
+        let interrupted = TodoBackupWorkflow.makeExportDocument(from: store)
+        try recovery.stage(interrupted)
+        let reopened = TodoBackupRecoveryStore(directoryURL: root)
+
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: reopened))
+        XCTAssertEqual(try reopened.loadRecoveryPoint(), previous)
+        XCTAssertEqual(item.title, "当前数据")
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: reopened))
+        XCTAssertEqual(try reopened.loadRecoveryPoint(), previous)
+        XCTAssertEqual(item.title, "当前数据")
+    }
+
+    func testReconciliationWithoutCheckpointDoesNotChangeDataOrHistory() {
+        let store = TodoStore.shared
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recovery = TodoBackupRecoveryStore(directoryURL: root)
+        let item = store.createItem(title: "保持原样", dayDate: .now)
+        XCTAssertTrue(store.canUndo)
+
+        XCTAssertFalse(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recovery))
+        XCTAssertEqual(store.validTodoItems.map(\.id), [item.id])
+        XCTAssertEqual(item.title, "保持原样")
+        XCTAssertTrue(store.canUndo)
+    }
+
+    func testFailedPromotionStillOffersReadableCheckpointAndCanFinishLater() throws {
+        let store = TodoStore.shared
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recovery = TodoBackupRecoveryStore(directoryURL: root)
+        let item = store.createItem(title: "导入之前", dayDate: .now)
+        let checkpoint = TodoBackupWorkflow.makeExportDocument(from: store)
+        try recovery.stage(checkpoint)
+        item.title = "导入之后"
+        XCTAssertTrue(store.flushPendingChangesSync())
+        let blocker = root.appending(path: "ImportRecoveryPoint.json")
+        try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+        try Data("blocker".utf8).write(to: blocker.appending(path: "child"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path())
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path()) }
+        XCTAssertThrowsError(try recovery.promoteStaged())
+
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recovery))
+        XCTAssertEqual(try recovery.loadRecoveryPoint(), checkpoint)
+        XCTAssertEqual(item.title, "导入之后")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path())
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(in: store, recoveryStore: recovery))
+        XCTAssertEqual(try recovery.loadRecoveryPoint(), checkpoint)
+        XCTAssertEqual(item.title, "导入之后")
+    }
+
     private func makeDate(year: Int, month: Int, day: Int, hour: Int) throws -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Singapore"))
