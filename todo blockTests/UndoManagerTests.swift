@@ -521,7 +521,7 @@ final class UndoManagerTests: XCTestCase {
         let item = store.createItem(title: "v1", dayDate: Date())
         let selectionManager = SelectionManager()
         selectionManager.restoreFocus(to: item.id)
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(cursorPosition: 2)
         let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager

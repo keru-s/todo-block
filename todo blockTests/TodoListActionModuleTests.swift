@@ -474,6 +474,54 @@ final class TodoListActionModuleTests: XCTestCase {
         )
         XCTAssertEqual(listModule.perform(.selectAll), .performed)
         XCTAssertEqual(selectionManager.selectedItemIds, [today.id])
+        XCTAssertEqual(selectionManager.focusedItemId, today.id)
+        XCTAssertEqual(selectionManager.lastSelectedId, today.id)
+        XCTAssertEqual(selectionManager.cursorPosition, 0)
+        XCTAssertEqual(selectionManager.textSelectionLength, 0)
+        XCTAssertTrue(selectionManager.focusesText)
+    }
+
+    func testSelectDeleteUndoAndContinueTypingPreservesCompleteSelectionState() throws {
+        let store = TodoStore.shared
+        let first = store.createItem(title: "first", dayDate: .now)
+        let second = store.createItem(title: "second", dayDate: .now, afterItem: first)
+        selectionManager.restore(TodoSelectionState(
+            focusedItemId: second.id, selectedItemIds: [second.id], lastSelectedId: second.id,
+            cursorPosition: 6, textSelectionLength: 0, focusesText: true
+        ))
+        let module = TodoListActionModule(
+            store: store, selectionManager: selectionManager, commandScope: .today,
+            activeTextViewProvider: { nil }
+        )
+        store.undoManager.clear()
+
+        XCTAssertEqual(module.perform(.selectAll), .performed)
+        let expected = TodoSelectionState(
+            focusedItemId: second.id, selectedItemIds: [first.id, second.id], lastSelectedId: first.id,
+            cursorPosition: 6, textSelectionLength: 0, focusesText: true
+        )
+        XCTAssertEqual(TodoSelectionState(selectionManager: selectionManager), expected)
+        XCTAssertTrue(module.editorEntry.deletePressed(first.id))
+        XCTAssertTrue(store.validTodoItems.isEmpty)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(TodoSelectionState(selectionManager: selectionManager), expected)
+        XCTAssertEqual(store.validTodoItems.count, 2)
+
+        module.editorEntry.selectItem(second.id, shiftPressed: false, cursorPosition: 6)
+        module.editorEntry.titleChanged(second.id, TodoTextEditEvent(
+            beforeText: "second", afterText: "second!",
+            beforeSelection: TodoTextSelection(location: 6, length: 0),
+            afterSelection: TodoTextSelection(location: 7, length: 0), kind: .insertion
+        ))
+        module.editorEntry.inputSessionEnded()
+        XCTAssertEqual(store.todoItemsCache[second.id]?.title, "second!")
+        XCTAssertEqual(selectionManager.selectedItemIds, [second.id])
+        XCTAssertEqual(selectionManager.cursorPosition, 7)
+        XCTAssertFalse(store.canRedo)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.todoItemsCache[second.id]?.title, "second")
+        XCTAssertEqual(selectionManager.cursorPosition, 6)
+        XCTAssertFalse(store.canUndo)
     }
 
     func testChangingSectionDateThroughModuleMovesWholeParentChildGroupAndCanUndo() throws {
@@ -556,9 +604,7 @@ final class TodoListActionModuleTests: XCTestCase {
         let otherSelected = store.createItem(title: "other", dayDate: day, afterItem: child)
         focused.isCompleted = true
         child.isCompleted = true
-        selectionManager.selectedItemIds = [focused.id, otherSelected.id]
-        selectionManager.focusedItemId = focused.id
-        selectionManager.lastSelectedId = otherSelected.id
+        selectionManager.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id, otherSelected.id], lastSelectedId: .some(otherSelected.id))
         let module = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
@@ -597,8 +643,7 @@ final class TodoListActionModuleTests: XCTestCase {
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
         let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: independent)
-        selectionManager.selectedItemIds = [parent.id, child.id, independent.id]
-        selectionManager.focusedItemId = child.id
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id, independent.id])
         let module = TodoListActionModule(
             store: store,
             selectionManager: selectionManager,
@@ -631,8 +676,7 @@ final class TodoListActionModuleTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: focused)
-        selectionManager.selectedItemIds = [first.id, focused.id]
-        selectionManager.focusedItemId = focused.id
+        selectionManager.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [first.id, focused.id])
         let textView = TodoEditorTextView()
         let module = TodoListActionModule(
             store: store,

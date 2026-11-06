@@ -33,8 +33,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let selection = SelectionManager(historyContext: .longTerm)
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let participation = makeParticipation(selectionManager: selection)
 
         participation.update(isActive: true)
@@ -83,8 +82,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let firstSelection = SelectionManager(historyContext: .longTerm)
-        firstSelection.focusedItemId = item.id
-        firstSelection.selectedItemIds = [item.id, secondItem.id]
+        firstSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id, secondItem.id])
         let first = makeParticipation(selectionManager: firstSelection)
         let second = makeParticipation()
         first.update(isActive: true)
@@ -131,8 +129,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let selection = SelectionManager(historyContext: .longTerm)
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let participation = makeParticipation(selectionManager: selection)
         let actions = participation.editorEntry
         store.undoManager.clear()
@@ -260,9 +257,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         participation.appear(isActive: true)
         XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
 
-        participation.selectionManager.focusedItemId = nil
-        participation.selectionManager.selectedItemIds = []
-        participation.selectionManager.cursorPosition = 0
+        participation.selectionManager.configureSelection(focusedItemId: .some(nil), selectedItemIds: [], cursorPosition: 0)
         participation.update(isActive: true)
         participation.updateScope(.longTerm)
 
@@ -695,8 +690,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let firstItem = store.createItem(title: "第一个", dayDate: day)
         let secondItem = store.createItem(title: "第二个", dayDate: day, afterItem: firstItem)
         let selection = SelectionManager(historyContext: .mainWindow)
-        selection.focusedItemId = firstItem.id
-        selection.selectedItemIds = [firstItem.id, secondItem.id]
+        selection.configureSelection(focusedItemId: .some(firstItem.id), selectedItemIds: [firstItem.id, secondItem.id])
         let first = makeParticipation(
             selectionManager: selection,
             participationIdentity: .mainWindow
@@ -739,8 +733,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             dayDate: date(year: 2026, month: 4, day: 2)
         )
         let selection = SelectionManager(historyContext: .mainWindow)
-        selection.focusedItemId = aprilItem.id
-        selection.selectedItemIds = [aprilItem.id]
+        selection.configureSelection(focusedItemId: .some(aprilItem.id), selectedItemIds: [aprilItem.id])
         let actionModule = TodoListActionModule(
             store: store,
             selectionManager: selection,
@@ -1146,11 +1139,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "日期待办", dayDate: .now)
         let sourceSelection = SelectionManager(historyContext: .longTerm)
-        sourceSelection.focusedItemId = item.id
-        sourceSelection.selectedItemIds = [item.id]
-        sourceSelection.lastSelectedId = item.id
-        sourceSelection.cursorPosition = 1
-        sourceSelection.textSelectionLength = 1
+        sourceSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: 1, textSelectionLength: 1)
         let source = makeParticipation(selectionManager: sourceSelection)
         let destinationSelection = SelectionManager(historyContext: .mainWindow)
         let destination = makeParticipation(
@@ -1159,7 +1148,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         )
         let otherSelection = SelectionManager(historyContext: .menuBar)
         let otherFocusedItemId = UUID()
-        otherSelection.focusedItemId = otherFocusedItemId
+        otherSelection.configureSelection(focusedItemId: .some(otherFocusedItemId))
         let other = makeParticipation(
             selectionManager: otherSelection,
             participationIdentity: .menuBar,

@@ -45,8 +45,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let second = store.createItem(title: "second", dayDate: day, afterItem: first)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [first.id, second.id]
-        selectionManager.focusedItemId = first.id
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, second.id])
 
         actions.toggleCompleted(first.id)
 
@@ -68,10 +67,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let child = store.createItem(title: "child", dayDate: day, afterItem: moving, indentLevel: 1)
         let next = store.createItem(title: "next", dayDate: day, afterItem: child, indentLevel: 0)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [moving.id, next.id]
-        selectionManager.focusedItemId = next.id
-        selectionManager.lastSelectedId = next.id
-        selectionManager.cursorPosition = 3
+        selectionManager.configureSelection(focusedItemId: .some(next.id), selectedItemIds: [moving.id, next.id], lastSelectedId: .some(next.id), cursorPosition: 3)
         store.undoManager.clear()
 
         actions.moveItemByKeyboard(moving.id, .down)
@@ -98,10 +94,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let second = store.createItem(title: "second", dayDate: day, afterItem: first)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [first.id, second.id]
-        selectionManager.focusedItemId = second.id
-        selectionManager.lastSelectedId = second.id
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(second.id), selectedItemIds: [first.id, second.id], lastSelectedId: .some(second.id), cursorPosition: 2)
         store.undoManager.clear()
 
         actions.moveItemByKeyboard(first.id, .up)
@@ -134,10 +127,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 31)
         let item = store.createItem(title: "abcde", dayDate: day, indentLevel: 1)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.focusedItemId = item.id
-        selectionManager.lastSelectedId = item.id
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: 2)
         store.undoManager.clear()
 
         _ = actions.enterPressed(
@@ -180,10 +170,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
             indentLevel: 1
         )
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
-        selectionManager.cursorPosition = parent.title.count
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id), cursorPosition: parent.title.count)
         store.undoManager.clear()
 
         _ = actions.enterPressed(parent.id, .insertSiblingBelow)
@@ -202,9 +189,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let parent = store.createItem(title: "parent", dayDate: day, afterItem: root, indentLevel: 1)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id))
         store.undoManager.clear()
 
         _ = actions.enterPressed(parent.id, .insertSiblingBelow)
@@ -224,9 +209,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let parent = store.createItem(dayDate: day, indentLevel: 0)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id))
         store.undoManager.clear()
 
         _ = actions.enterPressed(parent.id, .insertSiblingBelow)
@@ -246,11 +229,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 0)
         _ = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
-        selectionManager.cursorPosition = 2
-        selectionManager.textSelectionLength = 4
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id), cursorPosition: 2, textSelectionLength: 4)
         store.undoManager.clear()
 
         _ = actions.enterPressed(
@@ -282,10 +261,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 1)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id, child.id]
-        selectionManager.focusedItemId = child.id
-        selectionManager.lastSelectedId = child.id
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id], lastSelectedId: .some(child.id), cursorPosition: 2)
         store.undoManager.clear()
 
         actions.moveDraggedItemToSidebar(parent.id, .longTerm)
@@ -334,10 +310,7 @@ final class TodoListActionModuleEditorActionsTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let actions = makeModule(store: store).editorEntry
-        selectionManager.selectedItemIds = [parent.id, target.id]
-        selectionManager.focusedItemId = target.id
-        selectionManager.lastSelectedId = target.id
-        selectionManager.cursorPosition = 4
+        selectionManager.configureSelection(focusedItemId: .some(target.id), selectedItemIds: [parent.id, target.id], lastSelectedId: .some(target.id), cursorPosition: 4)
         store.undoManager.clear()
 
         actions.moveDraggedItem(parent.id, .longTerm(isUrgent: false), 1, 1)

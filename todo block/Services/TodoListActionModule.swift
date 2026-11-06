@@ -275,7 +275,7 @@ final class TodoListActionModule {
     ) {
         if let state,
            sourceHistoryContext == nil || sourceHistoryContext == selectionManager.historyContext {
-            state.apply(to: selectionManager)
+            selectionManager.restore(state)
         } else if let itemId, store.todoItemsCache[itemId] != nil {
             selectionManager.restoreFocus(to: itemId)
         }
@@ -485,13 +485,8 @@ final class TodoListActionModule {
             }
             guard let commandScope else { return .noChange }
             let items = store.commandItems(in: commandScope)
-            guard let firstItem = items.first else { return .noChange }
-            selectionManager.selectedItemIds = Set(items.map(\.id))
-            if selectionManager.focusedItemId.map(selectionManager.selectedItemIds.contains) != true {
-                selectionManager.focusedItemId = firstItem.id
-            }
-            selectionManager.lastSelectedId = firstItem.id
-            selectionManager.textSelectionLength = 0
+            guard items.isEmpty == false else { return .noChange }
+            selectionManager.selectAll(orderedItemIds: items.map(\.id))
             return .performed
         case .toggleCompletion:
             guard let focusedItemId = selectionManager.focusedItemId else { return .noChange }

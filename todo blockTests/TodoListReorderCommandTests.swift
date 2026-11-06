@@ -34,8 +34,7 @@ final class TodoListReorderCommandTests: XCTestCase {
             afterItem: parent,
             indentLevel: 1
         )
-        selectionManager.selectedItemIds = [parent.id, child.id]
-        selectionManager.focusedItemId = child.id
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id])
         let module = TodoListActionModule(
             store: store,
             selectionManager: selectionManager,
@@ -55,8 +54,7 @@ final class TodoListReorderCommandTests: XCTestCase {
         let b = store.createItem(title: "b", dayDate: day, afterItem: a)
         let c = store.createItem(title: "c", dayDate: day, afterItem: b)
         let d = store.createItem(title: "d", dayDate: day, afterItem: c)
-        selectionManager.selectedItemIds = [b.id, d.id]
-        selectionManager.focusedItemId = b.id
+        selectionManager.configureSelection(focusedItemId: .some(b.id), selectedItemIds: [b.id, d.id])
         store.undoManager.clear()
         let module = TodoListActionModule(
             store: store,
@@ -83,8 +81,7 @@ final class TodoListReorderCommandTests: XCTestCase {
         let b = store.createItem(title: "b", dayDate: day, afterItem: a)
         let c = store.createItem(title: "c", dayDate: day, afterItem: b)
         _ = store.createItem(title: "d", dayDate: day, afterItem: c)
-        selectionManager.selectedItemIds = [a.id, c.id]
-        selectionManager.focusedItemId = a.id
+        selectionManager.configureSelection(focusedItemId: .some(a.id), selectedItemIds: [a.id, c.id])
         store.undoManager.clear()
         let module = TodoListActionModule(
             store: store,

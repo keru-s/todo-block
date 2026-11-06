@@ -39,26 +39,26 @@ final class SelectionManager {
 
     // MARK: - 状态属性
 
-    var focusedItemId: UUID?
-    var selectedItemIds: Set<UUID> = []
+    private(set) var focusedItemId: UUID?
+    private(set) var selectedItemIds: Set<UUID> = []
 
     // Shift多选时的锚点
-    var lastSelectedId: UUID?
+    private(set) var lastSelectedId: UUID?
     private var dragAnchorId: UUID?
     private var dragSelectionBefore: TodoSelectionState?
     private(set) var isDragSelecting: Bool = false
 
     // 光标位置
-    var cursorPosition: Int = 0
-    var textSelectionLength: Int = 0
-    var preferredHorizontalOffset: CGFloat?
-    var verticalMoveDirection: VerticalMoveDirection?
+    private(set) var cursorPosition: Int = 0
+    private(set) var textSelectionLength: Int = 0
+    private(set) var preferredHorizontalOffset: CGFloat?
+    private(set) var verticalMoveDirection: VerticalMoveDirection?
 
     /// 焦点是否为文字编辑焦点。条目级操作（如多选删除）的承接态置为
     /// false：焦点行持有行级焦点、不进入文字编辑（见 CONTEXT.md
     /// 「文字编辑状态」）。任何文字编辑意图（点击标题、键盘移动焦点、
     /// 撤销恢复到文字状态）都会将其置回 true。
-    var focusesText: Bool = true
+    private(set) var focusesText: Bool = true
 
     init(historyContext: TodoSelectionHistoryContext = .ephemeral(UUID())) {
         self.historyContext = historyContext
@@ -68,7 +68,7 @@ final class SelectionManager {
         Self.historyManagers = Self.historyManagers.filter { $0.value.value != nil }
         Self.historyManagers[historyContext] = WeakSelectionManager(self)
         if let deferredState = Self.deferredHistoryStates.removeValue(forKey: historyContext) {
-            deferredState.apply(to: self)
+            restore(deferredState)
         }
     }
 
@@ -81,7 +81,7 @@ final class SelectionManager {
         for context: TodoSelectionHistoryContext
     ) {
         if let selectionManager = activeManager(for: context) {
-            state.apply(to: selectionManager)
+            selectionManager.restore(state)
         } else if context.canRestoreDeferredState {
             deferredHistoryStates[context] = state
         }
@@ -89,6 +89,41 @@ final class SelectionManager {
 
     static func clearDeferredHistoryStates() {
         deferredHistoryStates.removeAll()
+    }
+
+    /// 历史与规则结果交付完整状态；不归一化合法的多选/文字焦点组合。
+    func restore(_ state: TodoSelectionState) {
+        focusedItemId = state.focusedItemId
+        selectedItemIds = state.selectedItemIds
+        lastSelectedId = state.lastSelectedId
+        cursorPosition = state.cursorPosition
+        textSelectionLength = state.textSelectionLength
+        focusesText = state.focusesText
+        preferredHorizontalOffset = nil
+        verticalMoveDirection = nil
+    }
+
+    func selectAll(orderedItemIds: [UUID]) {
+        guard let first = orderedItemIds.first else { return }
+        selectedItemIds = Set(orderedItemIds)
+        if focusedItemId.map(selectedItemIds.contains) != true {
+            focusedItemId = first
+        }
+        lastSelectedId = first
+        textSelectionLength = 0
+    }
+
+    func recordTextEdit(itemId: UUID, selection: TodoTextSelection) {
+        focusedItemId = itemId
+        selectedItemIds = [itemId]
+        lastSelectedId = itemId
+        updateTextSelection(selection)
+    }
+
+    /// 被动选区变化不接管列表，也不改变选择的待办或焦点模式。
+    func updateTextSelection(_ selection: TodoTextSelection) {
+        cursorPosition = selection.location
+        textSelectionLength = selection.length
     }
 
     // MARK: - 选择逻辑
@@ -186,7 +221,7 @@ final class SelectionManager {
 
     func cancelDragSelection() {
         if let dragSelectionBefore {
-            dragSelectionBefore.apply(to: self)
+            restore(dragSelectionBefore)
         }
         isDragSelecting = false
         dragAnchorId = nil

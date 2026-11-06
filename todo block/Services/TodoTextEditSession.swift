@@ -108,11 +108,7 @@ final class TodoTextEditSession {
 
         item.title = event.afterText
         item.updatedAt = .now
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.lastSelectedId = item.id
-        selectionManager.cursorPosition = event.afterSelection.location
-        selectionManager.textSelectionLength = event.afterSelection.length
+        selectionManager.recordTextEdit(itemId: item.id, selection: event.afterSelection)
         store.scheduleSave()
 
         if var segment = pending, continuesCurrentSegment {
@@ -161,8 +157,7 @@ final class TodoTextEditSession {
            pending.itemId != itemId || pending.afterTextSelection != selection {
             flush(store: store)
         }
-        selectionManager.cursorPosition = selection.location
-        selectionManager.textSelectionLength = selection.length
+        selectionManager.updateTextSelection(selection)
     }
 
     @discardableResult

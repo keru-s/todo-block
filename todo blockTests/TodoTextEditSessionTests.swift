@@ -143,11 +143,7 @@ final class TodoTextEditSessionTests: XCTestCase {
     func testUndoRestoresOriginalListSelectionAlongsideText() {
         let first = store.createItem(title: "first", dayDate: .now)
         let edited = store.createItem(title: "second", dayDate: .now, afterItem: first)
-        selectionManager.focusedItemId = edited.id
-        selectionManager.selectedItemIds = [first.id, edited.id]
-        selectionManager.lastSelectedId = first.id
-        selectionManager.cursorPosition = 6
-        selectionManager.textSelectionLength = 0
+        selectionManager.configureSelection(focusedItemId: .some(edited.id), selectedItemIds: [first.id, edited.id], lastSelectedId: .some(first.id), cursorPosition: 6, textSelectionLength: 0)
         store.undoManager.clear()
 
         actions.titleChanged(
@@ -236,11 +232,7 @@ final class TodoTextEditSessionTests: XCTestCase {
         selectionLength: Int = 0
     ) -> TodoItem {
         let item = store.createItem(title: title, dayDate: .now)
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.lastSelectedId = item.id
-        selectionManager.cursorPosition = cursor
-        selectionManager.textSelectionLength = selectionLength
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: cursor, textSelectionLength: selectionLength)
         store.undoManager.clear()
         return item
     }

@@ -25,9 +25,7 @@ final class TodoListClipboardCommandTests: XCTestCase {
         let day = Date()
         let parent = store.createItem(title: "parent", dayDate: day)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 1)
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id))
         let module = TodoListActionModule(
             store: store,
             selectionManager: selectionManager,
