@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import XCTest
 @testable import todo_block
@@ -32,8 +33,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let selection = SelectionManager(historyContext: .longTerm)
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let participation = makeParticipation(selectionManager: selection)
 
         participation.update(isActive: true)
@@ -82,8 +82,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let firstSelection = SelectionManager(historyContext: .longTerm)
-        firstSelection.focusedItemId = item.id
-        firstSelection.selectedItemIds = [item.id, secondItem.id]
+        firstSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id, secondItem.id])
         let first = makeParticipation(selectionManager: firstSelection)
         let second = makeParticipation()
         first.update(isActive: true)
@@ -130,8 +129,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let selection = SelectionManager(historyContext: .longTerm)
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let participation = makeParticipation(selectionManager: selection)
         let actions = participation.editorEntry
         store.undoManager.clear()
@@ -190,14 +188,14 @@ final class TodoListParticipationModuleTests: XCTestCase {
         XCTAssertEqual(participation.selectionManager.cursorPosition, 2)
     }
 
-    func testMatcherUpdateProcessesLatestPreviouslyUnmatchedHistoryReveal() {
+    func testScopeUpdateProcessesLatestPreviouslyUnmatchedHistoryReveal() {
         let store = TodoStore.shared
         let item = store.createItem(
             title: "八月定位",
             dayDate: date(year: 2026, month: 8, day: 1)
         )
         let participation = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+            scope: .scheduledMonth(year: 2026, month: 7)
         )
         let request = presentHistoryReveal(
             destination: .scheduled(date: date(year: 2026, month: 8, day: 1)),
@@ -209,14 +207,38 @@ final class TodoListParticipationModuleTests: XCTestCase {
         XCTAssertNil(participation.visibleHistoryRevealRequest)
         XCTAssertNil(participation.selectionManager.focusedItemId)
 
-        participation.updateHistoryRevealMatcher {
-            $0.destination == .month(year: 2026, month: 8)
-        }
+        participation.updateScope(.scheduledMonth(year: 2026, month: 8))
 
         XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
         XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
         XCTAssertEqual(participation.selectionManager.selectedItemIds, [item.id])
         XCTAssertEqual(participation.selectionManager.cursorPosition, 2)
+    }
+
+    func testScopeChangeUpdatesCommandsAndPendingHistoryTogetherWithoutClearingRepeatedSelection() {
+        let store = TodoStore.shared
+        let item = store.createItem(
+            title: "八月定位",
+            dayDate: date(year: 2026, month: 8, day: 1)
+        )
+        let participation = makeParticipation()
+        participation.updateScope(.scheduledMonth(year: 2026, month: 7))
+        participation.appear(isActive: true)
+        let request = presentHistoryReveal(
+            destination: .scheduled(date: item.dayDate),
+            itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id, cursorPosition: 2)
+        )
+        XCTAssertNil(participation.visibleHistoryRevealRequest)
+
+        participation.updateScope(.scheduledMonth(year: 2026, month: 8))
+
+        XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
+        XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
+        XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.toggleCompletion), .performed)
+        XCTAssertTrue(item.isCompleted)
+        participation.updateScope(.scheduledMonth(year: 2026, month: 8))
+        XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
     }
 
     func testRepeatedSynchronizationDoesNotRestoreHistorySelectionTwice() {
@@ -235,11 +257,9 @@ final class TodoListParticipationModuleTests: XCTestCase {
         participation.appear(isActive: true)
         XCTAssertEqual(participation.selectionManager.focusedItemId, item.id)
 
-        participation.selectionManager.focusedItemId = nil
-        participation.selectionManager.selectedItemIds = []
-        participation.selectionManager.cursorPosition = 0
+        participation.selectionManager.configureSelection(focusedItemId: .some(nil), selectedItemIds: [], cursorPosition: 0)
         participation.update(isActive: true)
-        participation.updateHistoryRevealMatcher { $0.destination == .longTerm }
+        participation.updateScope(.longTerm)
 
         XCTAssertEqual(participation.visibleHistoryRevealRequest?.id, request?.id)
         XCTAssertNil(participation.selectionManager.focusedItemId)
@@ -277,7 +297,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
     func testActiveDateListImmediatelyClaimsWhenItFirstAppears() {
         let longTerm = makeParticipation()
         let date = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+            scope: .scheduledMonth(year: 2026, month: 7)
         )
 
         longTerm.update(isActive: true)
@@ -296,7 +316,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
     func testDateListFirstAppearingInactiveClaimsWhenItLaterBecomesActive() {
         let longTerm = makeParticipation()
         let date = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+            scope: .scheduledMonth(year: 2026, month: 7)
         )
 
         longTerm.update(isActive: true)
@@ -312,7 +332,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let item = store.createItem(title: "日期待办", dayDate: .now)
         let longTerm = makeParticipation()
         let date = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+            scope: .scheduledMonth(year: 2026, month: 7)
         )
 
         longTerm.update(isActive: true)
@@ -328,12 +348,10 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "入口待办", dayDate: .now)
         let first = makeParticipation(
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let second = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
 
         first.update(isActive: true)
@@ -361,12 +379,10 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "原文", dayDate: .now)
         let first = makeParticipation(
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let second = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
 
         first.update(isActive: true)
@@ -423,12 +439,10 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "原文", dayDate: .now)
         let first = makeParticipation(
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let second = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
         first.update(isActive: true)
         second.update(isActive: true)
@@ -469,8 +483,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "原文", dayDate: .now)
         let participation = makeParticipation(
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         participation.update(isActive: true)
         participation.selectionManager.handleSelect(
@@ -605,12 +618,10 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let selection = SelectionManager(historyContext: .mainWindow)
         let first = makeParticipation(
             selectionManager: selection,
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let other = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
 
         first.update(isActive: true)
@@ -641,12 +652,10 @@ final class TodoListParticipationModuleTests: XCTestCase {
         )
         let first = makeParticipation(
             selectionManager: selection,
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let other = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
 
         first.update(isActive: true)
@@ -681,16 +690,13 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let firstItem = store.createItem(title: "第一个", dayDate: day)
         let secondItem = store.createItem(title: "第二个", dayDate: day, afterItem: firstItem)
         let selection = SelectionManager(historyContext: .mainWindow)
-        selection.selectedItemIds = [firstItem.id, secondItem.id]
-        selection.focusedItemId = firstItem.id
+        selection.configureSelection(focusedItemId: .some(firstItem.id), selectedItemIds: [firstItem.id, secondItem.id])
         let first = makeParticipation(
             selectionManager: selection,
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let other = makeParticipation(
-            participationIdentity: .longTerm,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .longTerm
         )
 
         first.update(isActive: true)
@@ -727,8 +733,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
             dayDate: date(year: 2026, month: 4, day: 2)
         )
         let selection = SelectionManager(historyContext: .mainWindow)
-        selection.focusedItemId = aprilItem.id
-        selection.selectedItemIds = [aprilItem.id]
+        selection.configureSelection(focusedItemId: .some(aprilItem.id), selectedItemIds: [aprilItem.id])
         let actionModule = TodoListActionModule(
             store: store,
             selectionManager: selection,
@@ -742,7 +747,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         participation.appear(isActive: true)
         store.undoManager.clear()
 
-        participation.updateCommandScope(.scheduledMonth(year: 2026, month: 5))
+        participation.updateScope(.scheduledMonth(year: 2026, month: 5))
 
         XCTAssertEqual(
             ActiveListCommandCoordinator.shared.availability(of: .toggleCompletion),
@@ -756,22 +761,178 @@ final class TodoListParticipationModuleTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testMenuBarRejectsOldCommandsAndCallbacksAcrossMidnightUntilReopened() throws {
+        let store = TodoStore.shared
+        var now = Date.now
+        let openedDay = Calendar.current.startOfDay(for: now)
+        let nextDay = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: openedDay))
+        let item = store.createItem(title: "旧面板待办", dayDate: openedDay)
+        let main = makeParticipation()
+        main.update(isActive: true)
+        let selection = SelectionManager(historyContext: .menuBar)
+        selection.handleSelect(item: item, allItems: [item], shiftPressed: false)
+        let action = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .today,
+            todayProvider: { now },
+            activeTextViewProvider: { nil }
+        )
+        let menu = TodoListParticipationModule(
+            actionModule: action,
+            participationIdentity: .menuBar,
+            retainsHistoryRevealsWhileInactive: false
+        )
+        menu.beginTemporaryParticipation()
+        let oldEntry = menu.editorEntry
+        store.undoManager.clear()
+        now = nextDay
+
+        XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.toggleCompletion), .noChange)
+        oldEntry.toggleCompleted(item.id)
+        oldEntry.addItem(.scheduled(date: nextDay))
+        XCTAssertFalse(item.isCompleted)
+        XCTAssertEqual(store.validTodoItems.count, 1)
+        XCTAssertFalse(store.canUndo)
+        XCTAssertTrue(menu.isCurrentList)
+        XCTAssertFalse(main.isCurrentList)
+
+        now = openedDay
+        menu.beginTemporaryParticipation()
+        oldEntry.toggleCompleted(item.id)
+        XCTAssertFalse(item.isCompleted, "改回时间或重复打开通知都不能解除停用")
+        menu.endTemporaryParticipation()
+        XCTAssertTrue(main.isCurrentList)
+        menu.beginTemporaryParticipation()
+        menu.editorEntry.toggleCompleted(item.id)
+        XCTAssertTrue(item.isCompleted)
+    }
+
+    func testLateNativeInputPreservesExistingCompositionButRejectsNewTextAcrossMidnight() throws {
+        let store = TodoStore.shared
+        var now = Date.now
+        let item = store.createItem(title: "原", dayDate: now)
+        let selection = SelectionManager(historyContext: .menuBar)
+        selection.handleSelect(item: item, allItems: [item], shiftPressed: false, cursorPosition: 1)
+        var activeTextView: TodoEditorTextView?
+        let action = TodoListActionModule(
+            store: store,
+            selectionManager: selection,
+            commandScope: .today,
+            todayProvider: { now },
+            activeTextViewProvider: { activeTextView }
+        )
+        let menu = TodoListParticipationModule(actionModule: action, participationIdentity: .menuBar)
+        menu.beginTemporaryParticipation()
+        let row = TodoEditorRowView(
+            snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selection),
+            editorEntry: menu.editorEntry
+        )
+        let text = try XCTUnwrap(editorTextView(in: row))
+        activeTextView = text
+        text.setSelectedRange(NSRange(location: 1, length: 0))
+        store.undoManager.clear()
+        text.setMarkedText("文", selectedRange: NSRange(location: 1, length: 0),
+                           replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(item.title, "原")
+        now = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: now))
+
+        text.insertText("新的输入", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertTrue(menu.requiresReopening)
+        XCTAssertEqual(item.title, "原文")
+        XCTAssertEqual(text.string, "原文")
+        XCTAssertFalse(text.hasMarkedText())
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(item.title, "原")
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testReopeningCapturesNewDayForDisplayAndCommandsAndRejectsPreviousEntry() throws {
+        let store = TodoStore.shared
+        var now = date(year: 2026, month: 12, day: 31)
+        let tomorrow = date(year: 2027, month: 1, day: 1)
+        let yesterdayItem = store.createItem(title: "旧日期", dayDate: now)
+        let newItem = store.createItem(title: "新日期", dayDate: tomorrow)
+        let selection = SelectionManager(historyContext: .menuBar)
+        let action = TodoListActionModule(
+            store: store, selectionManager: selection, commandScope: .today,
+            todayProvider: { now }, activeTextViewProvider: { nil }
+        )
+        let menu = TodoListParticipationModule(actionModule: action, participationIdentity: .menuBar)
+        menu.beginTemporaryParticipation()
+        let oldEntry = menu.editorEntry
+        XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.selectAll), .performed)
+        XCTAssertEqual(selection.selectedItemIds, [yesterdayItem.id])
+
+        now = tomorrow
+        XCTAssertFalse(menu.validateDisplayedDate())
+        XCTAssertEqual(menu.displayedDate, yesterdayItem.dayDate)
+        XCTAssertEqual(menu.editorEntry.access, .readOnly)
+        for command: TodoListCommand in [.copy, .cut, .paste, .selectAll, .toggleCompletion,
+                                         .moveUp, .moveDown, .undo, .redo] {
+            XCTAssertEqual(ActiveListCommandCoordinator.shared.availability(of: command), .unavailable(nil))
+            XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(command), .noChange)
+        }
+        menu.endTemporaryParticipation()
+        menu.beginTemporaryParticipation()
+        XCTAssertEqual(menu.displayedDate, tomorrow)
+        XCTAssertFalse(menu.requiresReopening)
+        XCTAssertTrue(selection.selectedItemIds.isEmpty)
+        XCTAssertEqual(ActiveListCommandCoordinator.shared.perform(.selectAll), .performed)
+        XCTAssertEqual(selection.selectedItemIds, [newItem.id])
+        oldEntry.toggleCompleted(yesterdayItem.id)
+        XCTAssertFalse(yesterdayItem.isCompleted)
+    }
+
+    private func editorTextView(in view: NSView) -> TodoEditorTextView? {
+        if let text = view as? TodoEditorTextView { return text }
+        return view.subviews.lazy.compactMap { self.editorTextView(in: $0) }.first
+    }
+
+    func testExpiredClosedPanelDoesNotConsumeHistoryProducedWhileHiddenWhenReopened() throws {
+        let store = TodoStore.shared
+        var now = Date.now
+        let nextDay = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: now))
+        let item = store.createItem(title: "主窗口的定位", dayDate: nextDay)
+        let action = TodoListActionModule(
+            store: store, selectionManager: SelectionManager(historyContext: .menuBar),
+            commandScope: .today, todayProvider: { now }, activeTextViewProvider: { nil }
+        )
+        let menu = TodoListParticipationModule(
+            actionModule: action, participationIdentity: .menuBar,
+            retainsHistoryRevealsWhileInactive: false
+        )
+        menu.beginTemporaryParticipation()
+        now = nextDay
+        menu.validateDisplayedDate()
+        menu.endTemporaryParticipation()
+        _ = presentHistoryReveal(
+            destination: .scheduled(date: nextDay), itemId: item.id,
+            selectionState: TodoSelectionState(focusing: item.id)
+        )
+
+        menu.beginTemporaryParticipation()
+
+        XCTAssertNil(menu.visibleHistoryRevealRequest)
+        XCTAssertNil(menu.selectionManager.focusedItemId)
+    }
+
     func testUpdatingDateScopeDoesNotClaimWhileTemporaryListIsActive() {
         let date = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 7) }
+            scope: .scheduledMonth(year: 2026, month: 7)
         )
         let menuBar = makeParticipation(
             selectionManager: SelectionManager(historyContext: .menuBar),
             participationIdentity: .menuBar,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
 
         date.appear(isActive: true)
         menuBar.register()
         menuBar.beginTemporaryParticipation()
 
-        date.updateCommandScope(.scheduledMonth(year: 2026, month: 8))
+        date.updateScope(.scheduledMonth(year: 2026, month: 8))
 
         XCTAssertTrue(menuBar.isCurrentList)
         XCTAssertFalse(date.isCurrentList)
@@ -781,7 +942,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "八月待办", dayDate: .now)
         let participation = makeParticipation(
-            historyRevealMatches: { $0.destination == .month(year: 2026, month: 8) }
+            scope: .scheduledMonth(year: 2026, month: 8)
         )
         _ = presentHistoryReveal(
             destination: .scheduled(date: date(year: 2026, month: 7, day: 1)),
@@ -809,8 +970,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let longTerm = makeParticipation()
         let menuBar = makeParticipation(
             selectionManager: SelectionManager(historyContext: .menuBar),
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
 
         longTerm.update(isActive: true)
@@ -833,8 +993,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let item = store.createItem(title: "今日待办", dayDate: .now)
         let menuBar = makeParticipation(
             selectionManager: SelectionManager(historyContext: .menuBar),
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         _ = presentHistoryReveal(
             destination: .scheduled(date: .now),
@@ -854,8 +1013,7 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let item = store.createItem(title: "今日待办", dayDate: .now)
         let menuBar = makeParticipation(
             selectionManager: SelectionManager(historyContext: .menuBar),
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         let actions = menuBar.editorEntry
         store.undoManager.clear()
@@ -981,26 +1139,20 @@ final class TodoListParticipationModuleTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "日期待办", dayDate: .now)
         let sourceSelection = SelectionManager(historyContext: .longTerm)
-        sourceSelection.focusedItemId = item.id
-        sourceSelection.selectedItemIds = [item.id]
-        sourceSelection.lastSelectedId = item.id
-        sourceSelection.cursorPosition = 1
-        sourceSelection.textSelectionLength = 1
+        sourceSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: 1, textSelectionLength: 1)
         let source = makeParticipation(selectionManager: sourceSelection)
         let destinationSelection = SelectionManager(historyContext: .mainWindow)
         let destination = makeParticipation(
             selectionManager: destinationSelection,
-            participationIdentity: .mainWindow,
-            historyRevealMatches: { _ in true }
+            participationIdentity: .mainWindow
         )
         let otherSelection = SelectionManager(historyContext: .menuBar)
         let otherFocusedItemId = UUID()
-        otherSelection.focusedItemId = otherFocusedItemId
+        otherSelection.configureSelection(focusedItemId: .some(otherFocusedItemId))
         let other = makeParticipation(
             selectionManager: otherSelection,
             participationIdentity: .menuBar,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         store.undoManager.clear()
 
@@ -1035,22 +1187,30 @@ final class TodoListParticipationModuleTests: XCTestCase {
         participationIdentity: TodoListParticipationIdentity = .longTerm,
         claimsCurrentListWhenFirstActivated: Bool = true,
         retainsHistoryRevealsWhileInactive: Bool = true,
-        historyRevealMatches: @escaping TodoListParticipationModule.HistoryRevealMatcher = {
-            $0.destination == .longTerm
-        }
+        scope: TodoClipboardScope? = nil
     ) -> TodoListParticipationModule {
         let selectionManager = selectionManager ?? SelectionManager(historyContext: .longTerm)
+        let resolvedScope: TodoClipboardScope
+        if let scope {
+            resolvedScope = scope
+        } else if participationIdentity == .menuBar || selectionManager.historyContext == .menuBar {
+            resolvedScope = .today
+        } else if participationIdentity == .mainWindow {
+            let parts = Calendar.current.dateComponents([.year, .month], from: .now)
+            resolvedScope = .scheduledMonth(year: parts.year ?? 2026, month: parts.month ?? 1)
+        } else {
+            resolvedScope = .longTerm
+        }
         let actionModule = TodoListActionModule(
             store: .shared,
             selectionManager: selectionManager,
-            commandScope: .longTerm
+            commandScope: resolvedScope
         )
         return TodoListParticipationModule(
             actionModule: actionModule,
             participationIdentity: participationIdentity,
             claimsCurrentListWhenFirstActivated: claimsCurrentListWhenFirstActivated,
-            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive,
-            historyRevealMatches: historyRevealMatches
+            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive
         )
     }
 

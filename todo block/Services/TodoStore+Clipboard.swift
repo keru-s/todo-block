@@ -249,7 +249,7 @@ private extension TodoStore {
                 insertAtBeginning: false
             )
 
-        case .today:
+        case .day(let date):
             let candidates = sortItemsForClipboard(
                 copyCandidates(scope: scope, selection: selection),
                 scope: scope
@@ -275,9 +275,9 @@ private extension TodoStore {
                 )
             }
             return ClipboardPasteTarget(
-                dayDate: Date(),
+                dayDate: date,
                 containerKind: .scheduled,
-                afterItem: todayItems().last,
+                afterItem: items(for: date).last,
                 baseIndentLevel: 0,
                 insertAtBeginning: false
             )
@@ -350,8 +350,8 @@ private extension TodoStore {
         case .longTerm:
             return longTermItems(isUrgent: true) + longTermItems(isUrgent: false)
 
-        case .today:
-            return todayItems().filter { $0.containerKind == .scheduled }
+        case .day(let date):
+            return items(for: date).filter { $0.containerKind == .scheduled }
         }
     }
 
@@ -373,7 +373,7 @@ private extension TodoStore {
                 return lhs.containerKindRaw < rhs.containerKindRaw
             }
 
-        case .today:
+        case .day:
             return items.sorted { $0.sortOrder < $1.sortOrder }
         }
     }

@@ -50,8 +50,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let participation = makeParticipation(
             selectionManager: selection,
             participationIdentity: .longTerm,
-            commandScope: .longTerm,
-            historyRevealMatches: { $0.destination == .longTerm }
+            commandScope: .longTerm
         )
         participation.update(isActive: true)
 
@@ -159,18 +158,13 @@ final class TodoHistoryPresentationTests: XCTestCase {
     func testOtherEntryFocusesResultWithoutOverwritingOriginalListTextSelection() {
         let item = store.createItem(title: "abc", dayDate: .now)
         let originalSelection = SelectionManager(historyContext: .mainWindow)
-        originalSelection.focusedItemId = item.id
-        originalSelection.selectedItemIds = [item.id]
-        originalSelection.lastSelectedId = item.id
-        originalSelection.cursorPosition = 1
-        originalSelection.textSelectionLength = 1
+        originalSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: 1, textSelectionLength: 1)
         let menuSelection = SelectionManager(historyContext: .menuBar)
         let menu = makeParticipation(
             selectionManager: menuSelection,
             participationIdentity: .menuBar,
             commandScope: .today,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         menu.update(isActive: true)
         store.undoManager.clear()
@@ -212,18 +206,14 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: menuSelection,
             participationIdentity: .menuBar,
             commandScope: .today,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         menu.update(isActive: true)
         store.undoManager.clear()
 
         func recordMainWindowOperation() {
             let mainSelection = SelectionManager(historyContext: .mainWindow)
-            mainSelection.focusedItemId = item.id
-            mainSelection.selectedItemIds = [item.id]
-            mainSelection.cursorPosition = 3
-            mainSelection.textSelectionLength = 1
+            mainSelection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 3, textSelectionLength: 1)
             let before = TodoItemSnapshot(from: item)
             let operation = TodoOperationUnit(
                 actionName: "完成",
@@ -326,17 +316,12 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let targetDate = date(year: 2027, month: 4, day: 8)
         let item = store.createItem(title: "abc", dayDate: targetDate)
         let selectionManager = SelectionManager(historyContext: .mainWindow)
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.lastSelectedId = item.id
-        selectionManager.cursorPosition = 1
-        selectionManager.textSelectionLength = 1
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], lastSelectedId: .some(item.id), cursorPosition: 1, textSelectionLength: 1)
         let participation = makeParticipation(
             selectionManager: selectionManager,
             participationIdentity: .mainWindow,
             commandScope: .scheduledMonth(year: 2027, month: 4),
-            claimsCurrentListWhenFirstActivated: true,
-            historyRevealMatches: { $0.destination == .month(year: 2027, month: 4) }
+            claimsCurrentListWhenFirstActivated: true
         )
         participation.update(isActive: true)
         let actions = participation.editorEntry
@@ -368,7 +353,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(restoredSelection?.textSelectionLength, 1)
 
         let replacementManager = SelectionManager(historyContext: .mainWindow)
-        restoredSelection?.apply(to: replacementManager)
+        if let restoredSelection { replacementManager.restore(restoredSelection) }
         XCTAssertEqual(replacementManager.focusedItemId, item.id)
         XCTAssertEqual(replacementManager.selectedItemIds, [item.id])
         XCTAssertEqual(replacementManager.textSelectionLength, 1)
@@ -439,8 +424,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
     func testUndoAvailabilityUpdatesAsSoonAsTextEditingStarts() {
         let item = store.createItem(title: "a", dayDate: .now)
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let actions = TodoListActionModule(
             store: store,
             selectionManager: selectionManager
@@ -477,8 +461,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         participationIdentity: TodoListParticipationIdentity,
         commandScope: TodoClipboardScope,
         claimsCurrentListWhenFirstActivated: Bool = true,
-        retainsHistoryRevealsWhileInactive: Bool = true,
-        historyRevealMatches: @escaping TodoListParticipationModule.HistoryRevealMatcher
+        retainsHistoryRevealsWhileInactive: Bool = true
     ) -> TodoListParticipationModule {
         let actionModule = TodoListActionModule(
             store: store,
@@ -489,8 +472,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             actionModule: actionModule,
             participationIdentity: participationIdentity,
             claimsCurrentListWhenFirstActivated: claimsCurrentListWhenFirstActivated,
-            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive,
-            historyRevealMatches: historyRevealMatches
+            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive
         )
         participations.append(participation)
         return participation
@@ -502,8 +484,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: selectionManager,
             participationIdentity: .ephemeral(UUID()),
             commandScope: scope,
-            claimsCurrentListWhenFirstActivated: true,
-            historyRevealMatches: { _ in true }
+            claimsCurrentListWhenFirstActivated: true
         )
         participation.update(isActive: true)
     }

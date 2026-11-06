@@ -484,10 +484,7 @@ final class TodoStoreTests: XCTestCase {
         let anchor = store.createItem(title: "anchor", dayDate: targetDate)
         _ = store.createItem(title: "next", dayDate: targetDate, afterItem: anchor)
         let selectionManager = SelectionManager()
-        selectionManager.selectedItemIds = [anchor.id]
-        selectionManager.focusedItemId = anchor.id
-        selectionManager.lastSelectedId = anchor.id
-        selectionManager.cursorPosition = 3
+        selectionManager.configureSelection(focusedItemId: .some(anchor.id), selectedItemIds: [anchor.id], lastSelectedId: .some(anchor.id), cursorPosition: 3)
         store.undoManager.clear()
 
         let result = store.importMarkdown(

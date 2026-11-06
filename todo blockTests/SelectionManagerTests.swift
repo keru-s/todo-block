@@ -103,11 +103,7 @@ final class SelectionManagerTests: XCTestCase {
 
     @MainActor
     func testCancelDragSelectionRestoresStateCapturedBeforeTheClick() {
-        selectionManager.selectedItemIds = [items[0].id, items[1].id]
-        selectionManager.focusedItemId = items[1].id
-        selectionManager.lastSelectedId = items[1].id
-        selectionManager.cursorPosition = 4
-        selectionManager.textSelectionLength = 2
+        selectionManager.configureSelection(focusedItemId: .some(items[1].id), selectedItemIds: [items[0].id, items[1].id], lastSelectedId: .some(items[1].id), cursorPosition: 4, textSelectionLength: 2)
 
         selectionManager.captureDragSelectionBefore()
         selectionManager.handleSelect(item: items[3], allItems: items, shiftPressed: false)
@@ -148,7 +144,7 @@ final class SelectionManagerTests: XCTestCase {
         XCTAssertEqual(selectionManager.selectedItemIds.count, 1) // Should still be 1 if implementaiton is count > 1
         
         // Test multi select clear
-        selectionManager.selectedItemIds = [items[0].id, items[1].id]
+        selectionManager.configureSelection(selectedItemIds: [items[0].id, items[1].id])
         selectionManager.clearSelection()
         XCTAssertTrue(selectionManager.selectedItemIds.isEmpty)
     }
@@ -213,9 +209,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let items = (0..<3).map { store.createItem(title: "i\($0)", dayDate: day) }
         store.undoManager.clear()
 
-        selectionManager.selectedItemIds = Set(items.map(\.id))
-        selectionManager.focusedItemId = items[0].id
-        selectionManager.lastSelectedId = items[0].id
+        selectionManager.configureSelection(focusedItemId: .some(items[0].id), selectedItemIds: Set(items.map(\.id)), lastSelectedId: .some(items[0].id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
 
         XCTAssertTrue(store.canUndo, "批量删除后应可撤销")
@@ -238,9 +232,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let originalIds = items.map(\.id)
         store.undoManager.clear()
 
-        selectionManager.selectedItemIds = Set(items.map(\.id))
-        selectionManager.focusedItemId = items[0].id
-        selectionManager.lastSelectedId = items[0].id
+        selectionManager.configureSelection(focusedItemId: .some(items[0].id), selectedItemIds: Set(items.map(\.id)), lastSelectedId: .some(items[0].id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
 
         XCTAssertEqual(store.items(for: day).count, 0, "前置:全部删除")
@@ -258,9 +250,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let items = (0..<3).map { store.createItem(title: "i\($0)", dayDate: day) }
         store.undoManager.clear()
 
-        selectionManager.selectedItemIds = Set(items.map(\.id))
-        selectionManager.focusedItemId = items[0].id
-        selectionManager.lastSelectedId = items[0].id
+        selectionManager.configureSelection(focusedItemId: .some(items[0].id), selectedItemIds: Set(items.map(\.id)), lastSelectedId: .some(items[0].id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
 
         store.undo()
@@ -281,17 +271,13 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let i3 = store.createItem(title: "3", dayDate: day)
 
         // Step A: 选 {i1,i2}（焦点 i1），删除后焦点应向上回退到 i0
-        selectionManager.selectedItemIds = [i1.id, i2.id]
-        selectionManager.focusedItemId = i1.id
-        selectionManager.lastSelectedId = i1.id
+        selectionManager.configureSelection(focusedItemId: .some(i1.id), selectedItemIds: [i1.id, i2.id], lastSelectedId: .some(i1.id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
         XCTAssertEqual(selectionManager.focusedItemId, i0.id, "上方有未删项，焦点向上")
         XCTAssertEqual(selectionManager.selectedItemIds, [i0.id])
 
         // Step B: 现在剩 {i0, i3}。选 i0 删除后，上方为空 → 焦点应向下回退到 i3
-        selectionManager.selectedItemIds = [i0.id]
-        selectionManager.focusedItemId = i0.id
-        selectionManager.lastSelectedId = i0.id
+        selectionManager.configureSelection(focusedItemId: .some(i0.id), selectedItemIds: [i0.id], lastSelectedId: .some(i0.id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
         XCTAssertEqual(selectionManager.focusedItemId, i3.id, "上方无项，焦点向下")
     }
@@ -313,9 +299,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
             indentLevel: 0
         )
 
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id))
         selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
 
         XCTAssertEqual(store.items(for: day).map(\.id), [tail.id])
@@ -336,9 +320,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: child)
         store.undoManager.clear()
 
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.focusedItemId = parent.id
-        selectionManager.lastSelectedId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id))
         selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
 
         XCTAssertEqual(store.items(for: day).map(\.id), [tail.id])
@@ -363,9 +345,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         store.undoManager.clear()
 
         let missingId = UUID()
-        selectionManager.selectedItemIds = [first.id, missingId]
-        selectionManager.focusedItemId = first.id
-        selectionManager.lastSelectedId = first.id
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, missingId], lastSelectedId: .some(first.id))
         selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
 
         XCTAssertEqual(store.items(for: day).map(\.id), [first.id, second.id])
@@ -381,9 +361,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         store.undoManager.clear()
 
         selectionManager = SelectionManager(historyContext: .mainWindow)
-        selectionManager.selectedItemIds = [first.id, second.id]
-        selectionManager.focusedItemId = first.id
-        selectionManager.lastSelectedId = first.id
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, second.id], lastSelectedId: .some(first.id))
         selectionManager.deleteSelectedItems(store: store) { date in store.items(for: date) }
 
         let replacement = SelectionManager(historyContext: .mainWindow)
@@ -404,9 +382,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let i1 = store.createItem(title: "1", dayDate: day)
         let i2 = store.createItem(title: "2", dayDate: day)
 
-        selectionManager.selectedItemIds = [i1.id, i2.id]
-        selectionManager.focusedItemId = i1.id
-        selectionManager.lastSelectedId = i1.id
+        selectionManager.configureSelection(focusedItemId: .some(i1.id), selectedItemIds: [i1.id, i2.id], lastSelectedId: .some(i1.id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
 
         XCTAssertEqual(selectionManager.focusedItemId, i0.id, "焦点回退到上方保留项")
@@ -423,9 +399,7 @@ final class SelectionManagerDeleteTests: XCTestCase {
         let i0 = store.createItem(title: "0", dayDate: day)
         let i1 = store.createItem(title: "", dayDate: day)
 
-        selectionManager.selectedItemIds = [i1.id]
-        selectionManager.focusedItemId = i1.id
-        selectionManager.lastSelectedId = i1.id
+        selectionManager.configureSelection(focusedItemId: .some(i1.id), selectedItemIds: [i1.id], lastSelectedId: .some(i1.id))
         selectionManager.deleteSelectedItems(store: store) { d in store.items(for: d) }
 
         XCTAssertEqual(selectionManager.focusedItemId, i0.id, "焦点回退到上方保留项")

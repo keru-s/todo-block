@@ -75,6 +75,19 @@ struct TodoEditorEntry {
     private let moveDraggedItemToSidebarAction: (UUID, SidebarDestination) -> Void
     private let sectionDateChangedAction: (UUID, Date) -> Void
     private var beforeExplicitAction: () -> Void = {}
+    private var allowsAction: () -> Bool = { true }
+    private var allowsInput: () -> Bool = { true }
+
+    /// 复制出来的旧入口也必须复核当前资格；输入收尾有独立的受控通道。
+    func validating(
+        actions: @escaping () -> Bool,
+        input: @escaping () -> Bool
+    ) -> TodoEditorEntry {
+        var copy = self
+        copy.allowsAction = actions
+        copy.allowsInput = input
+        return copy
+    }
 
     init(
         access: TodoEditorAccess,
@@ -172,22 +185,22 @@ struct TodoEditorEntry {
 
     @discardableResult
     func claimCurrentList() -> Bool {
-        guard access.isEditable else { return false }
+        guard access.isEditable, allowsAction() else { return false }
         return claimCurrentListAction()
     }
 
     func titleChanged(_ itemId: UUID, _ event: TodoTextEditEvent) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsInput() else { return }
         titleChangedAction(itemId, event)
     }
 
     func textSelectionChanged(_ itemId: UUID, _ selection: TodoTextSelection) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsInput() else { return }
         textSelectionChangedAction(itemId, selection)
     }
 
     func inputSessionEnded() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsInput() else { return }
         inputSessionEndedAction()
     }
 
@@ -196,7 +209,7 @@ struct TodoEditorEntry {
         shiftPressed: Bool,
         cursorPosition: Int?
     ) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         selectItemAction(itemId, shiftPressed, cursorPosition)
     }
@@ -210,24 +223,24 @@ struct TodoEditorEntry {
     }
 
     func clearSelection() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         clearSelectionAction()
     }
 
     func captureDragSelectionBefore() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         captureDragSelectionBeforeAction()
     }
 
     func discardPreparedDragSelection() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         discardPreparedDragSelectionAction()
     }
 
     @discardableResult
     func beginDragSelection(_ itemId: UUID, _ cursorPosition: Int?) -> Bool {
-        guard access.isEditable else { return false }
+        guard access.isEditable, allowsAction() else { return false }
         return beginDragSelectionAction(itemId, cursorPosition)
     }
 
@@ -237,7 +250,7 @@ struct TodoEditorEntry {
     }
 
     func updateDragSelection(_ itemId: UUID) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         updateDragSelectionAction(itemId)
     }
 
@@ -246,28 +259,28 @@ struct TodoEditorEntry {
     }
 
     func endDragSelection() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         endDragSelectionAction()
     }
 
     func cancelDragSelection() {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         cancelDragSelectionAction()
     }
 
     var hasMultipleSelection: Bool {
-        access.isEditable && hasMultipleSelectionAction()
+        access.isEditable && allowsAction() && hasMultipleSelectionAction()
     }
 
     func addItem(_ destination: TodoDropDestination) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         addItemAction(destination)
     }
 
     @discardableResult
     func enterPressed(_ itemId: UUID, _ action: EnterAction) -> Bool {
-        guard access.isEditable else { return false }
+        guard access.isEditable, allowsAction() else { return false }
         beforeExplicitAction()
         return enterPressedAction(itemId, action)
     }
@@ -277,7 +290,7 @@ struct TodoEditorEntry {
         _ itemId: UUID,
         textSelection: TodoTextSelection
     ) -> Bool {
-        guard access.isEditable else { return false }
+        guard access.isEditable, allowsAction() else { return false }
         beforeExplicitAction()
         return deletePressedAction(itemId, textSelection)
     }
@@ -294,24 +307,24 @@ struct TodoEditorEntry {
 
     @discardableResult
     func prepareItemDrag(_ itemId: UUID) -> Bool {
-        guard access.isEditable else { return false }
+        guard access.isEditable, allowsAction() else { return false }
         return prepareItemDragAction(itemId)
     }
 
     func toggleCompleted(_ itemId: UUID) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         toggleCompletedAction(itemId)
     }
 
     func indent(_ itemId: UUID) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         indentAction(itemId)
     }
 
     func outdent(_ itemId: UUID) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         outdentAction(itemId)
     }
@@ -322,7 +335,7 @@ struct TodoEditorEntry {
         cursorPosition: Int,
         horizontalOffset: CGFloat?
     ) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         moveFocusAction(itemId, direction, cursorPosition, horizontalOffset)
     }
@@ -345,7 +358,7 @@ struct TodoEditorEntry {
         itemId: UUID,
         direction: TodoParentChildGroupMoveDirection
     ) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         moveItemByKeyboardAction(itemId, direction)
     }
@@ -363,7 +376,7 @@ struct TodoEditorEntry {
         _ insertionIndex: Int,
         _ indentLevel: Int
     ) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         moveDraggedItemAction(itemId, destination, insertionIndex, indentLevel)
     }
@@ -381,7 +394,7 @@ struct TodoEditorEntry {
         _ itemId: UUID,
         _ destination: SidebarDestination
     ) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         moveDraggedItemToSidebarAction(itemId, destination)
     }
@@ -394,14 +407,14 @@ struct TodoEditorEntry {
     }
 
     func sectionDateChanged(_ sectionId: UUID, _ date: Date) {
-        guard access.isEditable else { return }
+        guard access.isEditable, allowsAction() else { return }
         beforeExplicitAction()
         sectionDateChangedAction(sectionId, date)
     }
 
     @discardableResult
     func escapePressed() -> Bool {
-        guard access.isEditable, hasMultipleSelection else { return false }
+        guard access.isEditable, allowsAction(), hasMultipleSelection else { return false }
         clearSelectionAction()
         return true
     }

@@ -30,10 +30,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             indentLevel: 1
         )
         let other = store.createItem(title: "other", dayDate: day, afterItem: child)
-        selectionManager.focusedItemId = parent.id
-        selectionManager.selectedItemIds = [parent.id, other.id]
-        selectionManager.lastSelectedId = other.id
-        selectionManager.cursorPosition = 3
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id, other.id], lastSelectedId: .some(other.id), cursorPosition: 3)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -82,8 +79,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
         let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: independent)
-        selectionManager.selectedItemIds = [parent.id, child.id, independent.id]
-        selectionManager.focusedItemId = child.id
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id, independent.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -116,8 +112,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: first)
         let last = store.createItem(title: "last", dayDate: day, afterItem: middle)
-        selectionManager.selectedItemIds = [first.id, last.id]
-        selectionManager.focusedItemId = first.id
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, last.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -148,10 +143,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         XCTAssertTrue(store.canRedo, "预置的操作应保留为可恢复记录")
 
         let staleItemId = UUID()
-        selectionManager.focusedItemId = first.id
-        selectionManager.selectedItemIds = [first.id, staleItemId]
-        selectionManager.lastSelectedId = staleItemId
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, staleItemId], lastSelectedId: .some(staleItemId), cursorPosition: 2)
         let intent = TodoParentChildGroupMoveIntent.moveSelectedGroups(direction: .down)
 
         XCTAssertEqual(
@@ -194,8 +186,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             afterItem: descendant,
             indentLevel: 1
         )
-        selectionManager.focusedItemId = moving.id
-        selectionManager.selectedItemIds = [moving.id]
+        selectionManager.configureSelection(focusedItemId: .some(moving.id), selectedItemIds: [moving.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -250,10 +241,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             indentLevel: 1
         )
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: existingChild)
-        selectionManager.focusedItemId = tail.id
-        selectionManager.selectedItemIds = [moving.id, tail.id]
-        selectionManager.lastSelectedId = tail.id
-        selectionManager.cursorPosition = 6
+        selectionManager.configureSelection(focusedItemId: .some(tail.id), selectedItemIds: [moving.id, tail.id], lastSelectedId: .some(tail.id), cursorPosition: 6)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -314,10 +302,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             indentLevel: 1
         )
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: followingChild)
-        selectionManager.focusedItemId = tail.id
-        selectionManager.selectedItemIds = [moving.id, tail.id]
-        selectionManager.lastSelectedId = tail.id
-        selectionManager.cursorPosition = 3
+        selectionManager.configureSelection(focusedItemId: .some(tail.id), selectedItemIds: [moving.id, tail.id], lastSelectedId: .some(tail.id), cursorPosition: 3)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -385,10 +370,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             afterItem: moving,
             indentLevel: 2
         )
-        selectionManager.focusedItemId = moving.id
-        selectionManager.selectedItemIds = [moving.id]
-        selectionManager.lastSelectedId = moving.id
-        selectionManager.cursorPosition = 1
+        selectionManager.configureSelection(focusedItemId: .some(moving.id), selectedItemIds: [moving.id], lastSelectedId: .some(moving.id), cursorPosition: 1)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -452,10 +434,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             afterItem: moving,
             indentLevel: 1
         )
-        selectionManager.focusedItemId = moving.id
-        selectionManager.selectedItemIds = [moving.id]
-        selectionManager.lastSelectedId = moving.id
-        selectionManager.cursorPosition = 4
+        selectionManager.configureSelection(focusedItemId: .some(moving.id), selectedItemIds: [moving.id], lastSelectedId: .some(moving.id), cursorPosition: 4)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -522,9 +501,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
         let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: independent)
-        selectionManager.selectedItemIds = [parent.id, child.id, independent.id]
-        selectionManager.focusedItemId = child.id
-        selectionManager.lastSelectedId = independent.id
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id, independent.id], lastSelectedId: .some(independent.id))
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -561,8 +538,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: first)
         let last = store.createItem(title: "last", dayDate: day, afterItem: middle)
-        selectionManager.selectedItemIds = [first.id, last.id]
-        selectionManager.focusedItemId = first.id
+        selectionManager.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, last.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -598,10 +574,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         )
         let tail = store.createItem(title: "tail", dayDate: sourceDay, afterItem: child)
         let unrelated = store.createItem(title: "unrelated", dayDate: otherDay)
-        selectionManager.selectedItemIds = [parent.id, unrelated.id]
-        selectionManager.focusedItemId = unrelated.id
-        selectionManager.lastSelectedId = unrelated.id
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(unrelated.id), selectedItemIds: [parent.id, unrelated.id], lastSelectedId: .some(unrelated.id), cursorPosition: 2)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -635,10 +608,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         )
         let unrelated = store.createItem(title: "unrelated", dayDate: unrelatedDay)
         let anchor = store.createItem(title: "anchor", dayDate: destinationDay)
-        selectionManager.focusedItemId = unrelated.id
-        selectionManager.selectedItemIds = [parent.id, unrelated.id]
-        selectionManager.lastSelectedId = unrelated.id
-        selectionManager.cursorPosition = 4
+        selectionManager.configureSelection(focusedItemId: .some(unrelated.id), selectedItemIds: [parent.id, unrelated.id], lastSelectedId: .some(unrelated.id), cursorPosition: 4)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -782,10 +752,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             afterItem: parent,
             indentLevel: 1
         )
-        selectionManager.focusedItemId = parent.id
-        selectionManager.selectedItemIds = [parent.id]
-        selectionManager.lastSelectedId = parent.id
-        selectionManager.cursorPosition = 5
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id], lastSelectedId: .some(parent.id), cursorPosition: 5)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -833,8 +800,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
         )
         let middle = store.createItem(title: "middle", dayDate: day, afterItem: child)
         let independent = store.createItem(title: "independent", dayDate: day, afterItem: middle)
-        selectionManager.selectedItemIds = [parent.id, independent.id]
-        selectionManager.focusedItemId = parent.id
+        selectionManager.configureSelection(focusedItemId: .some(parent.id), selectedItemIds: [parent.id, independent.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -943,8 +909,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             dayDate: day,
             afterItem: firstMovingGroup
         )
-        selectionManager.selectedItemIds = [firstMovingGroup.id, secondMovingGroup.id]
-        selectionManager.focusedItemId = firstMovingGroup.id
+        selectionManager.configureSelection(focusedItemId: .some(firstMovingGroup.id), selectedItemIds: [firstMovingGroup.id, secondMovingGroup.id])
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,
@@ -997,10 +962,7 @@ final class TodoParentChildGroupMoveModuleTests: XCTestCase {
             afterItem: child,
             containerKind: .longTermImportant
         )
-        selectionManager.selectedItemIds = [parent.id, child.id, independent.id]
-        selectionManager.focusedItemId = child.id
-        selectionManager.lastSelectedId = independent.id
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(child.id), selectedItemIds: [parent.id, child.id, independent.id], lastSelectedId: .some(independent.id), cursorPosition: 2)
         store.undoManager.clear()
         let moveModule = TodoParentChildGroupMoveModule(
             store: store,

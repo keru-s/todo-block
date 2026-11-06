@@ -9,6 +9,26 @@ import Foundation
 
 @MainActor
 enum TodoBackupWorkflow {
+    /// 尽力完成上次中断的导入/消费，再判断恢复资格。这个入口可能整理文件，
+    /// 不代表一次精确恢复；真正导入和恢复仍由各自严格的执行入口报告失败。
+    static func reconcileRecoveryPoint(
+        in store: TodoStore,
+        recoveryStore: TodoBackupRecoveryStore,
+        calendar: Calendar = .current
+    ) -> Bool {
+        do {
+            let currentDocument = makeExportDocument(from: store, calendar: calendar)
+            if let modelContext = store.modelContext {
+                try recoveryStore.reconcileInterruptedConsumption(modelContext: modelContext)
+            }
+            try recoveryStore.reconcileInterruptedImport(currentDocument: currentDocument)
+        } catch {
+            // 整理失败不等于恢复点不可用；未晋升但仍可读取的 pending 必须保留。
+            // 消费及失败标记的保护规则仍由 recoveryStore 统一判断。
+        }
+        return recoveryStore.hasRecoveryPoint
+    }
+
     static func exportData(
         from store: TodoStore,
         exportedAt: Date = .now,

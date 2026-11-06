@@ -12,9 +12,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testApplySnapshotPreservesInsertionPointWhileEditing() throws {
         let item = TodoItem(title: "12")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2)
 
         let rowView = TodoEditorRowView(
             snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
@@ -125,10 +123,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testCommandReturnWhileEditingTogglesCompletionWithoutChangingTextFocus() throws {
         let item = TodoItem(title: "编辑中完成")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
-        selectionManager.textSelectionLength = 3
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2, textSelectionLength: 3)
         var toggledItemId: UUID?
         var enteredItemId: UUID?
         let entry = makeEntry(
@@ -478,7 +473,7 @@ final class TodoEditorRowViewTests: XCTestCase {
             }
         )
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
+        selectionManager.configureSelection(focusedItemId: .some(item.id))
         let rowView = TodoEditorRowView(
             snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
             editorEntry: entry
@@ -541,9 +536,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testMiddleReturnImmediatelyClearsTailFromCurrentTextView() throws {
         let item = TodoItem(title: "abcde")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2)
 
         var capturedAction: EnterAction?
         let entry = makeEntry(enterPressed: { _, action in
@@ -585,10 +578,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testSuffixReturnEmitsReplacementAction() throws {
         let item = TodoItem(title: "abcde")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
-        selectionManager.textSelectionLength = 3
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2, textSelectionLength: 3)
 
         var capturedAction: EnterAction?
         let entry = makeEntry(enterPressed: { _, action in
@@ -635,9 +625,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testApplySnapshotRestoresTextSelectionAfterUndo() throws {
         let item = TodoItem(title: "aXc")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2)
 
         let rowView = TodoEditorRowView(
             snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
@@ -660,8 +648,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 2, length: 0))
 
         item.title = "abc"
-        selectionManager.cursorPosition = 1
-        selectionManager.textSelectionLength = 1
+        selectionManager.configureSelection(cursorPosition: 1, textSelectionLength: 1)
         rowView.apply(snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager))
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
 
@@ -672,9 +659,7 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testApplySnapshotRestoresChangedSelectionWhenTitleIsUnchanged() throws {
         let item = TodoItem(title: "abc")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
-        selectionManager.cursorPosition = 2
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id], cursorPosition: 2)
 
         let rowView = TodoEditorRowView(
             snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),
@@ -696,8 +681,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         window.makeFirstResponder(textView)
         textView.setSelectedRange(NSRange(location: 2, length: 0))
 
-        selectionManager.cursorPosition = 1
-        selectionManager.textSelectionLength = 1
+        selectionManager.configureSelection(cursorPosition: 1, textSelectionLength: 1)
         rowView.apply(snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager))
 
         XCTAssertEqual(textView.string, "abc")
@@ -708,11 +692,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         let item = TodoItem(title: "abc")
         let previouslySelectedItem = TodoItem(title: "previous")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = previouslySelectedItem.id
-        selectionManager.selectedItemIds = [previouslySelectedItem.id]
-        selectionManager.lastSelectedId = previouslySelectedItem.id
-        selectionManager.cursorPosition = 3
-        selectionManager.textSelectionLength = 2
+        selectionManager.configureSelection(focusedItemId: .some(previouslySelectedItem.id), selectedItemIds: [previouslySelectedItem.id], lastSelectedId: .some(previouslySelectedItem.id), cursorPosition: 3, textSelectionLength: 2)
 
         let entry = makeEntry(
             selectItem: { itemId, shiftPressed, cursorPosition in
@@ -890,8 +870,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         let item = TodoItem(title: "first")
         let otherItem = TodoItem(title: "second")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id, otherItem.id]
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id, otherItem.id])
 
         var clearSelectionCount = 0
         let entry = makeEntry(
@@ -931,8 +910,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         let item = TodoItem(title: "focused")
         let otherItem = TodoItem(title: "other")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id, otherItem.id]
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id, otherItem.id])
 
         let entry = makeEntry(
             hasMultipleSelection: { selectionManager.selectedItemIds.count > 1 }
@@ -970,9 +948,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         let item = TodoItem(title: "abc")
         let otherItem = TodoItem(title: "other")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = otherItem.id
-        selectionManager.selectedItemIds = [otherItem.id]
-        selectionManager.lastSelectedId = otherItem.id
+        selectionManager.configureSelection(focusedItemId: .some(otherItem.id), selectedItemIds: [otherItem.id], lastSelectedId: .some(otherItem.id))
 
         let entry = makeEntry(
             selectItem: { itemId, shiftPressed, cursorPosition in
@@ -1022,8 +998,7 @@ final class TodoEditorRowViewTests: XCTestCase {
         let item = TodoItem(title: "first")
         let otherItem = TodoItem(title: "second")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id, otherItem.id]
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id, otherItem.id])
 
         var deletedItemIds: [UUID] = []
         let entry = makeEntry(
@@ -1051,10 +1026,9 @@ final class TodoEditorRowViewTests: XCTestCase {
     func testItemLevelFocusKeepsRowAsFirstResponder() throws {
         let item = TodoItem(title: "survivor")
         let selectionManager = SelectionManager()
-        selectionManager.focusedItemId = item.id
-        selectionManager.selectedItemIds = [item.id]
+        selectionManager.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         // 条目级焦点（如多选删除后的承接态）：单选也不进入文字编辑。
-        selectionManager.focusesText = false
+        selectionManager.configureSelection(focusesText: false)
 
         let rowView = TodoEditorRowView(
             snapshot: TodoEditorItemSnapshot(item: item, selectionManager: selectionManager),

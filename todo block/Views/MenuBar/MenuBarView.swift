@@ -5,6 +5,7 @@
 //  Created by Claude on 2026/1/17.
 //
 
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -18,7 +19,7 @@ struct MenuBarView: View {
     private let todaySectionId = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
 
     private var todayItems: [TodoItem] {
-        store.todayItems()
+        store.items(for: participation.displayedDate)
     }
 
     private var editorSections: [TodoEditorSectionSnapshot] {
@@ -26,7 +27,7 @@ struct MenuBarView: View {
             TodoEditorSectionSnapshot(
                 id: todaySectionId,
                 title: "待办",
-                destination: .scheduled(date: Date()),
+                destination: .scheduled(date: participation.displayedDate),
                 items: todayItems.map {
                     TodoEditorItemSnapshot(item: $0, selectionManager: selectionManager)
                 }
@@ -34,11 +35,6 @@ struct MenuBarView: View {
         ]
     }
 
-    private var formattedToday: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd"
-        return formatter.string(from: Date())
-    }
 
     init(onOpenMainWindow: @escaping () -> Void = {}) {
         self.onOpenMainWindow = onOpenMainWindow
@@ -52,13 +48,7 @@ struct MenuBarView: View {
             initialValue: TodoListParticipationModule(
                 actionModule: actionModule,
                 participationIdentity: .menuBar,
-                retainsHistoryRevealsWhileInactive: false,
-                historyRevealMatches: { request in
-                    guard case .scheduled(let date) = request.resultDestination.normalized else {
-                        return false
-                    }
-                    return Calendar.current.isDateInToday(date)
-                }
+                retainsHistoryRevealsWhileInactive: false
             )
         )
     }
@@ -70,7 +60,7 @@ struct MenuBarView: View {
                 Text("今日待办")
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Text(formattedToday)
+                Text(participation.displayedDate, format: .dateTime.month(.twoDigits).day(.twoDigits))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -84,6 +74,14 @@ struct MenuBarView: View {
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
+            }
+
+            if participation.requiresReopening {
+                Label("日期已变化，请关闭后重新打开", systemImage: "calendar.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(12)
+                    .accessibilityIdentifier("menuBarReopenNotice")
             }
 
             Divider()
@@ -112,6 +110,7 @@ struct MenuBarView: View {
                     .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
+                .disabled(participation.requiresReopening)
                 .foregroundStyle(Color.accentColor)
 
                 Spacer()
@@ -146,6 +145,27 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .menuBarPopoverDidClose)) { _ in
             participation.updateTemporaryParticipation(isVisible: false)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            participation.validateDisplayedDate()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemClockDidChange)) { _ in
+            participation.validateDisplayedDate()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            participation.validateDisplayedDate()
+        }
+        .task(id: participation.isActive) {
+            guard participation.isActive else { return }
+            while Task.isCancelled == false, participation.validateDisplayedDate() {
+                let now = Date.now
+                guard let end = Calendar.current.dateInterval(of: .day, for: now)?.end else { return }
+                do {
+                    try await Task.sleep(for: .seconds(max(1, end.timeIntervalSince(now))))
+                } catch {
+                    return
+                }
+            }
+        }
         .onDisappear {
             participation.updateTemporaryParticipation(isVisible: false)
         }
@@ -162,7 +182,7 @@ struct MenuBarView: View {
 
 private extension MenuBarView {
     func addTodayItem() {
-        participation.editorEntry.addItem(.scheduled(date: .now))
+        participation.editorEntry.addItem(.scheduled(date: participation.displayedDate))
     }
 
     func handleBackgroundTap() {

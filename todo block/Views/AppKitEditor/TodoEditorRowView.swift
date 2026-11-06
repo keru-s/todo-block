@@ -77,6 +77,9 @@ final class TodoEditorRowView: NSView {
         titleTextView.textContainer?.widthTracksTextView = true
         titleTextView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleTextView.allowsUndo = false
+        titleTextView.shouldAcceptUserInput = { [weak self] in
+            self?.editorEntry.claimCurrentList() ?? false
+        }
         titleTextView.onTextDidChange = { [weak self] event in
             guard let self, let itemId, isApplyingSnapshot == false else { return }
             editorEntry.titleChanged(itemId, event)

@@ -21,14 +21,10 @@ final class TodoBackupRecoveryCoordinator {
     func refreshAvailability(store: TodoStore) {
         do {
             let recoveryStore = try TodoBackupRecoveryStore.applicationSupportStore()
-            let currentDocument = TodoBackupWorkflow.makeExportDocument(from: store)
-            if let modelContext = store.modelContext {
-                try recoveryStore.reconcileInterruptedConsumption(
-                    modelContext: modelContext
-                )
-            }
-            try recoveryStore.reconcileInterruptedImport(currentDocument: currentDocument)
-            hasRecoveryPoint = recoveryStore.hasRecoveryPoint
+            hasRecoveryPoint = TodoBackupWorkflow.reconcileRecoveryPoint(
+                in: store,
+                recoveryStore: recoveryStore
+            )
         } catch {
             do {
                 let recoveryStore = try TodoBackupRecoveryStore.applicationSupportStore()

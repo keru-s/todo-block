@@ -50,11 +50,9 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let firstItem = store.createItem(title: "April", dayDate: firstDay)
         let secondItem = store.createItem(title: "May", dayDate: secondDay)
         let firstSelection = SelectionManager()
-        firstSelection.focusedItemId = firstItem.id
-        firstSelection.selectedItemIds = [firstItem.id]
+        firstSelection.configureSelection(focusedItemId: .some(firstItem.id), selectedItemIds: [firstItem.id])
         let secondSelection = SelectionManager()
-        secondSelection.focusedItemId = secondItem.id
-        secondSelection.selectedItemIds = [secondItem.id]
+        secondSelection.configureSelection(focusedItemId: .some(secondItem.id), selectedItemIds: [secondItem.id])
         let firstModule = TodoListActionModule(
             store: store,
             selectionManager: firstSelection,
@@ -87,14 +85,9 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
             containerKind: .longTermImportant
         )
         let dateSelection = SelectionManager(historyContext: .mainWindow)
-        dateSelection.focusedItemId = dateItem.id
-        dateSelection.selectedItemIds = [dateItem.id]
-        dateSelection.cursorPosition = 2
-        dateSelection.textSelectionLength = 1
+        dateSelection.configureSelection(focusedItemId: .some(dateItem.id), selectedItemIds: [dateItem.id], cursorPosition: 2, textSelectionLength: 1)
         let longTermSelection = SelectionManager(historyContext: .longTerm)
-        longTermSelection.focusedItemId = longTermItem.id
-        longTermSelection.selectedItemIds = [longTermItem.id]
-        longTermSelection.cursorPosition = 4
+        longTermSelection.configureSelection(focusedItemId: .some(longTermItem.id), selectedItemIds: [longTermItem.id], cursorPosition: 4)
         let dateModule = TodoListActionModule(
             store: store,
             selectionManager: dateSelection,
@@ -126,8 +119,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "whole item", dayDate: .now)
         let selection = SelectionManager()
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let textView = TodoEditorTextView()
         textView.string = "selected title"
         textView.setSelectedRange(NSRange(location: 0, length: 8))
@@ -153,8 +145,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let store = TodoStore.shared
         let item = store.createItem(title: "whole item", dayDate: .now)
         let selection = SelectionManager()
-        selection.focusedItemId = item.id
-        selection.selectedItemIds = [item.id]
+        selection.configureSelection(focusedItemId: .some(item.id), selectedItemIds: [item.id])
         let textView = TodoEditorTextView()
         textView.string = "selected title"
         textView.synchronizeReportedText("selected title")
@@ -194,8 +185,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let selected = store.createItem(title: "selected", dayDate: day, afterItem: focused)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: selected)
         let selection = SelectionManager()
-        selection.focusedItemId = focused.id
-        selection.selectedItemIds = [focused.id, selected.id]
+        selection.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id, selected.id])
         let textView = TodoEditorTextView()
         let module = TodoListActionModule(
             store: store,
@@ -261,8 +251,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         )
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: otherSelected)
         let selection = SelectionManager()
-        selection.focusedItemId = focused.id
-        selection.selectedItemIds = [focused.id, otherSelected.id]
+        selection.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id, otherSelected.id])
         let module = TodoListActionModule(
             store: store,
             selectionManager: selection,
@@ -308,15 +297,13 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.claim(coordinator.register(module)))
         store.undoManager.clear()
 
-        selection.focusedItemId = first.id
-        selection.selectedItemIds = [first.id, middle.id]
+        selection.configureSelection(focusedItemId: .some(first.id), selectedItemIds: [first.id, middle.id])
         XCTAssertEqual(
             coordinator.perform(.moveUp, event: try moveKeyEvent(direction: .up)),
             .noChange
         )
 
-        selection.focusedItemId = last.id
-        selection.selectedItemIds = [middle.id, last.id]
+        selection.configureSelection(focusedItemId: .some(last.id), selectedItemIds: [middle.id, last.id])
         XCTAssertEqual(
             coordinator.perform(.moveDown, event: try moveKeyEvent(direction: .down)),
             .noChange
@@ -333,8 +320,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let selected = store.createItem(title: "selected", dayDate: day, afterItem: focused)
         let tail = store.createItem(title: "tail", dayDate: day, afterItem: selected)
         let selection = SelectionManager()
-        selection.focusedItemId = focused.id
-        selection.selectedItemIds = [focused.id, selected.id]
+        selection.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id, selected.id])
         let module = TodoListActionModule(
             store: store,
             selectionManager: selection,
@@ -369,8 +355,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         let first = store.createItem(title: "first", dayDate: day)
         let focused = store.createItem(title: "focused", dayDate: day, afterItem: first)
         let selection = SelectionManager()
-        selection.focusedItemId = focused.id
-        selection.selectedItemIds = [focused.id]
+        selection.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id])
         let textView = TodoEditorTextView()
         textView.setMarkedText(
             "中",
@@ -439,10 +424,7 @@ final class ActiveListCommandCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.availability(of: .toggleCompletion), .unavailable(nil))
         XCTAssertEqual(coordinator.perform(.toggleCompletion), .noChange)
 
-        selection.focusedItemId = focused.id
-        selection.selectedItemIds = [focused.id, selected.id]
-        selection.cursorPosition = 2
-        selection.textSelectionLength = 3
+        selection.configureSelection(focusedItemId: .some(focused.id), selectedItemIds: [focused.id, selected.id], cursorPosition: 2, textSelectionLength: 3)
 
         XCTAssertEqual(coordinator.availability(of: .toggleCompletion), .available)
         XCTAssertEqual(coordinator.perform(.toggleCompletion), .performed)

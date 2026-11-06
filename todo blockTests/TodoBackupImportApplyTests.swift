@@ -448,8 +448,9 @@ final class TodoBackupImportApplyTests: XCTestCase {
         XCTAssertEqual(ordinary.title, "ordinary edit")
 
         let restartedRecoveryStore = TodoBackupRecoveryStore(directoryURL: recoveryDirectory)
-        let currentDocument = TodoBackupWorkflow.makeExportDocument(from: store)
-        try restartedRecoveryStore.reconcileInterruptedImport(currentDocument: currentDocument)
+        XCTAssertTrue(TodoBackupWorkflow.reconcileRecoveryPoint(
+            in: store, recoveryStore: restartedRecoveryStore
+        ))
 
         XCTAssertEqual(
             try restartedRecoveryStore.loadRecoveryPoint(),
