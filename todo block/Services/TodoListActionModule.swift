@@ -43,7 +43,20 @@ final class TodoListActionModule {
     private let todayProvider: () -> Date
     private let allowsSidebarMoves: Bool
     private let parentChildGroupMoveModule: TodoParentChildGroupMoveModule
-    private var commandScope: TodoClipboardScope?
+    private(set) var commandScope: TodoClipboardScope?
+    private var permitsCommands: () -> Bool = { true }
+
+    var currentDate: Date { todayProvider() }
+
+    func validateCommands(using validation: @escaping () -> Bool) {
+        permitsCommands = validation
+    }
+
+    func finishInputBeforeSuspending() {
+        commitPendingTextInput()
+        selectionManager.endDragSelection()
+        notifyExternalAction()
+    }
 
     /// 未绑定列表参与的编辑器入口，供动作模块行为测试使用。
     /// 可见列表应通过 `makeEditorEntry(claimCurrentList:)` 建立自己的稳定入口。
@@ -274,6 +287,7 @@ final class TodoListActionModule {
     }
 
     func commandAvailability(_ command: TodoListCommand) -> TodoListCommandAvailability {
+        guard permitsCommands() else { return .unavailable(nil) }
         switch command {
         case .copy, .cut:
             if let activeTextView {
@@ -359,7 +373,7 @@ final class TodoListActionModule {
             return .available
         }
         guard canExecute else {
-            return commandScope == .today
+            return commandScope?.isDaily == true
                 ? .unavailable(.openMainWindowForHistory)
                 : .unavailable(nil)
         }
@@ -386,6 +400,7 @@ final class TodoListActionModule {
         invocation: TodoListCommandInvocation,
         event: NSEvent?
     ) -> TodoListActionResult {
+        guard permitsCommands() else { return .noChange }
         if invocation == .keyboardShortcut,
            let direction = keyboardMoveDirection(for: command)
         {
@@ -533,7 +548,7 @@ final class TodoListActionModule {
     }
 
     private var historyDisplayScope: TodoHistoryDisplayScope {
-        commandScope == .today
+        commandScope?.isDaily == true
             ? .today(on: todayProvider())
             : .all
     }
@@ -541,7 +556,7 @@ final class TodoListActionModule {
     private func historyExecutionFailure(
         for command: TodoListCommand
     ) -> TodoListActionResult {
-        guard commandScope == .today else { return .noChange }
+        guard commandScope?.isDaily == true else { return .noChange }
         switch command {
         case .undo, .redo:
             return .rejected(.openMainWindowForHistory)

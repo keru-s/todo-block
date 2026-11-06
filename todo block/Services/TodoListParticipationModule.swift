@@ -8,8 +8,6 @@ import Observation
 @MainActor
 @Observable
 final class TodoListParticipationModule {
-    typealias HistoryRevealMatcher = @MainActor (TodoHistoryRevealRequest) -> Bool
-
     private let actionModule: TodoListActionModule
     private let commandCoordinator: ActiveListCommandCoordinator
     private let participationIdentity: TodoListParticipationIdentity
@@ -17,13 +15,17 @@ final class TodoListParticipationModule {
     private var historyPresentationObservation: TodoHistoryPresentationObservation? = nil
     private let claimsCurrentListWhenFirstActivated: Bool
     private let retainsHistoryRevealsWhileInactive: Bool
-    private var historyRevealMatches: HistoryRevealMatcher
     private var commandRegistration: TodoListCommandRegistration?
     private var temporaryCommandClaim: TodoListTemporaryCommandClaim?
     private var handledHistoryRevealId: UUID?
     private var ignoredHistoryRevealId: UUID?
     private var historyRevealRequest: TodoHistoryRevealRequest?
     private var hasAppeared = false
+    private var editorGeneration = 0
+    private var isFinishingInput = false
+
+    private(set) var displayedDate: Date
+    private(set) var requiresReopening = false
 
     private(set) var isActive = false
     /// 当前列表专用的编辑器入口。所有编辑器动作都从这里进入，并在动作前接管列表。
@@ -39,8 +41,7 @@ final class TodoListParticipationModule {
         participationIdentity: TodoListParticipationIdentity? = nil,
         historyPresentation: TodoHistoryPresentationCoordinator? = nil,
         claimsCurrentListWhenFirstActivated: Bool = true,
-        retainsHistoryRevealsWhileInactive: Bool = true,
-        historyRevealMatches: @escaping HistoryRevealMatcher = { $0.destination == .longTerm }
+        retainsHistoryRevealsWhileInactive: Bool = true
     ) {
         self.actionModule = actionModule
         self.commandCoordinator = commandCoordinator ?? .shared
@@ -48,9 +49,13 @@ final class TodoListParticipationModule {
         self.historyPresentation = historyPresentation ?? .shared
         self.claimsCurrentListWhenFirstActivated = claimsCurrentListWhenFirstActivated
         self.retainsHistoryRevealsWhileInactive = retainsHistoryRevealsWhileInactive
-        self.historyRevealMatches = historyRevealMatches
-        editorEntry = actionModule.makeEditorEntry { [weak self] in
-            self?.claimCurrentList() ?? false
+        displayedDate = Calendar.current.startOfDay(for: actionModule.currentDate)
+        if actionModule.commandScope?.isDaily == true {
+            actionModule.updateCommandScope(.day(displayedDate))
+        }
+        rebuildEditorEntry()
+        actionModule.validateCommands { [weak self] in
+            self?.validateDisplayedDate() ?? false
         }
         historyPresentationObservation = self.historyPresentation.observeRevealRequests { [weak self] in
             self?.receiveHistoryReveal()
@@ -112,6 +117,13 @@ final class TodoListParticipationModule {
     func beginTemporaryParticipation() {
         defer { receiveHistoryReveal() }
         guard temporaryCommandClaim == nil else { return }
+        if actionModule.commandScope?.isDaily == true {
+            displayedDate = Calendar.current.startOfDay(for: actionModule.currentDate)
+            actionModule.updateCommandScope(.day(displayedDate))
+            requiresReopening = false
+            editorGeneration += 1
+            rebuildEditorEntry()
+        }
         actionModule.feedbackPresenter.clear()
         let registration = register()
         guard let temporaryClaim = commandCoordinator.beginTemporaryClaim(registration) else {
@@ -146,15 +158,27 @@ final class TodoListParticipationModule {
         self.temporaryCommandClaim = nil
     }
 
-    /// 更新列表可响应命令的范围，不改变注册或当前列表归属。
-    func updateCommandScope(_ scope: TodoClipboardScope) {
+    /// 命令范围与历史定位从同一份范围推导；先清理旧选择，再处理新范围的定位。
+    func updateScope(_ scope: TodoClipboardScope) {
         actionModule.updateCommandScope(scope)
+        receiveHistoryReveal()
     }
 
-    /// 更新当前列表可展示的历史结果范围，不改变参与身份或命令归属。
-    func updateHistoryRevealMatcher(_ matcher: @escaping HistoryRevealMatcher) {
-        historyRevealMatches = matcher
-        receiveHistoryReveal()
+    private func historyRevealMatches(_ request: TodoHistoryRevealRequest) -> Bool {
+        switch actionModule.commandScope {
+        case .scheduledMonth(let year, let month):
+            request.destination == .month(year: year, month: month)
+        case .longTerm:
+            request.destination == .longTerm
+        case .day(let displayedDay):
+            if case .scheduled(let date) = request.resultDestination.normalized {
+                Calendar.current.isDate(date, inSameDayAs: displayedDay)
+            } else {
+                false
+            }
+        case nil:
+            false
+        }
     }
 
     /// 供列表按钮等直接用户操作使用。接管失败时动作不会执行。
@@ -175,6 +199,10 @@ final class TodoListParticipationModule {
         guard isActive || retainsHistoryRevealsWhileInactive else {
             ignoredHistoryRevealId = request.id
             historyRevealRequest = nil
+            return
+        }
+        guard validateDisplayedDate() else {
+            ignoredHistoryRevealId = request.id
             return
         }
         guard ignoredHistoryRevealId != request.id else {
@@ -199,7 +227,7 @@ final class TodoListParticipationModule {
     }
 
     var visibleHistoryRevealRequest: TodoHistoryRevealRequest? {
-        guard isActive,
+        guard isActive, !requiresReopening,
               let request = historyRevealRequest,
               historyPresentation.isCurrent(request),
               historyRevealMatches(request)
@@ -207,7 +235,43 @@ final class TodoListParticipationModule {
         return request
     }
 
+    /// 通知用于及时更新画面；动作前同样复核，避免睡眠、改时间或迟到通知漏过。
+    @discardableResult
+    func validateDisplayedDate() -> Bool {
+        guard requiresReopening == false else { return false }
+        guard isActive, actionModule.commandScope?.isDaily == true else { return true }
+        guard Calendar.current.isDate(displayedDate, inSameDayAs: actionModule.currentDate) else {
+            requiresReopening = true
+            historyRevealRequest = nil
+            isFinishingInput = true
+            actionModule.finishInputBeforeSuspending()
+            isFinishingInput = false
+            editorGeneration += 1
+            editorEntry = .readOnly
+            return false
+        }
+        return true
+    }
+
+    private func rebuildEditorEntry() {
+        let generation = editorGeneration
+        editorEntry = actionModule.makeEditorEntry { [weak self] in
+            self?.claimCurrentList() ?? false
+        }.validating(
+            actions: { [weak self] in
+                guard let self, self.editorGeneration == generation, self.isActive else { return false }
+                return self.validateDisplayedDate()
+            },
+            input: { [weak self] in
+                guard let self, self.editorGeneration == generation else { return false }
+                return self.isFinishingInput || self.validateDisplayedDate()
+            }
+        )
+    }
+
     private func claimCurrentList() -> Bool {
+        if isFinishingInput { return true }
+        guard validateDisplayedDate() else { return false }
         guard isActive else {
             actionModule.feedbackPresenter.present(message: "请在当前列表中重试")
             return false

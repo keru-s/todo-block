@@ -50,8 +50,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         let participation = makeParticipation(
             selectionManager: selection,
             participationIdentity: .longTerm,
-            commandScope: .longTerm,
-            historyRevealMatches: { $0.destination == .longTerm }
+            commandScope: .longTerm
         )
         participation.update(isActive: true)
 
@@ -169,8 +168,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: menuSelection,
             participationIdentity: .menuBar,
             commandScope: .today,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         menu.update(isActive: true)
         store.undoManager.clear()
@@ -212,8 +210,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: menuSelection,
             participationIdentity: .menuBar,
             commandScope: .today,
-            retainsHistoryRevealsWhileInactive: false,
-            historyRevealMatches: { _ in true }
+            retainsHistoryRevealsWhileInactive: false
         )
         menu.update(isActive: true)
         store.undoManager.clear()
@@ -335,8 +332,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: selectionManager,
             participationIdentity: .mainWindow,
             commandScope: .scheduledMonth(year: 2027, month: 4),
-            claimsCurrentListWhenFirstActivated: true,
-            historyRevealMatches: { $0.destination == .month(year: 2027, month: 4) }
+            claimsCurrentListWhenFirstActivated: true
         )
         participation.update(isActive: true)
         let actions = participation.editorEntry
@@ -477,8 +473,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
         participationIdentity: TodoListParticipationIdentity,
         commandScope: TodoClipboardScope,
         claimsCurrentListWhenFirstActivated: Bool = true,
-        retainsHistoryRevealsWhileInactive: Bool = true,
-        historyRevealMatches: @escaping TodoListParticipationModule.HistoryRevealMatcher
+        retainsHistoryRevealsWhileInactive: Bool = true
     ) -> TodoListParticipationModule {
         let actionModule = TodoListActionModule(
             store: store,
@@ -489,8 +484,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             actionModule: actionModule,
             participationIdentity: participationIdentity,
             claimsCurrentListWhenFirstActivated: claimsCurrentListWhenFirstActivated,
-            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive,
-            historyRevealMatches: historyRevealMatches
+            retainsHistoryRevealsWhileInactive: retainsHistoryRevealsWhileInactive
         )
         participations.append(participation)
         return participation
@@ -502,8 +496,7 @@ final class TodoHistoryPresentationTests: XCTestCase {
             selectionManager: selectionManager,
             participationIdentity: .ephemeral(UUID()),
             commandScope: scope,
-            claimsCurrentListWhenFirstActivated: true,
-            historyRevealMatches: { _ in true }
+            claimsCurrentListWhenFirstActivated: true
         )
         participation.update(isActive: true)
     }

@@ -36,10 +36,7 @@ struct TodoListView: View {
         _participation = State(
             initialValue: TodoListParticipationModule(
                 actionModule: actionModule,
-                participationIdentity: .mainWindow,
-                historyRevealMatches: { request in
-                    request.destination == .month(year: year, month: month)
-                }
+                participationIdentity: .mainWindow
             )
         )
     }
@@ -137,16 +134,14 @@ struct TodoListView: View {
             .background(TodoDesignTokens.windowBackground)
         }
         .onAppear {
-            participation.updateCommandScope(clipboardScope)
-            updateHistoryRevealMatcher()
+            participation.updateScope(clipboardScope)
             participation.appear(isActive: isActiveContext)
         }
         .onChange(of: isActiveContext) { _, newValue in
             participation.update(isActive: newValue)
         }
         .onChange(of: clipboardScope) { _, _ in
-            participation.updateCommandScope(clipboardScope)
-            updateHistoryRevealMatcher()
+            participation.updateScope(clipboardScope)
         }
         .onDisappear {
             participation.update(isActive: false)
@@ -225,12 +220,6 @@ struct TodoListView: View {
         participation.performDirectAction { $0.addToday(mode: addTodayMode) }
     }
 
-    private func updateHistoryRevealMatcher() {
-        let destination = SidebarDestination.month(year: year, month: month)
-        participation.updateHistoryRevealMatcher { request in
-            request.destination == destination
-        }
-    }
 
 }
 

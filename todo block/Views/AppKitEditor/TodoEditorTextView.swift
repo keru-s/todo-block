@@ -7,6 +7,7 @@ import AppKit
 
 @MainActor
 final class TodoEditorTextView: NSTextView {
+    var shouldAcceptUserInput: (() -> Bool)?
     var onTextDidChange: ((TodoTextEditEvent) -> Void)?
     var onSelectionDidChange: ((TodoTextSelection) -> Void)?
     var onMouseFocus: ((Bool, Int?) -> Void)?
@@ -22,6 +23,7 @@ final class TodoEditorTextView: NSTextView {
     var onMouseInteractionEnded: ((Bool) -> Void)?
     var onEscapePressed: (() -> Bool)?
     private var isApplyingHandledCommandText = false
+    private var isFinalizingPendingInput = false
     private var lastReportedText = ""
     private var pendingBeforeSelection: TodoTextSelection?
     private var pendingEditKind: TodoTextEditKind?
@@ -82,6 +84,7 @@ final class TodoEditorTextView: NSTextView {
         in affectedCharRange: NSRange,
         replacementString: String?
     ) -> Bool {
+        guard isApplyingHandledCommandText || isFinalizingPendingInput || shouldAcceptUserInput?() != false else { return false }
         if isApplyingHandledCommandText == false, pendingBeforeSelection == nil {
             pendingBeforeSelection = TodoTextSelection(selectedRange())
             let replacementLength = ((replacementString ?? "") as NSString).length
@@ -215,6 +218,7 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        guard isFinalizingPendingInput || shouldAcceptUserInput?() != false else { return }
         endCurrentInputSession()
         if event.keyCode == 53, onEscapePressed?() == true {
             return
@@ -233,11 +237,13 @@ final class TodoEditorTextView: NSTextView {
         selectedRange: NSRange,
         replacementRange: NSRange
     ) {
+        guard isFinalizingPendingInput || shouldAcceptUserInput?() != false else { return }
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         onCompositionChange?(true)
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        guard isFinalizingPendingInput || shouldAcceptUserInput?() != false else { return }
         let detectedInputSession = inputSession(from: string)
         if detectedInputSession == nil {
             endCurrentInputSession()
@@ -259,6 +265,7 @@ final class TodoEditorTextView: NSTextView {
     }
 
     override func doCommand(by commandSelector: Selector) {
+        guard isFinalizingPendingInput || shouldAcceptUserInput?() != false else { return }
         if handleCommand(commandSelector) {
             return
         }
@@ -297,6 +304,9 @@ final class TodoEditorTextView: NSTextView {
     }
 
     func commitPendingTextInput() {
+        // 只允许本次同步收尾完成已有候选；返回后仍拒绝新的原生输入。
+        isFinalizingPendingInput = true
+        defer { isFinalizingPendingInput = false }
         if isComposingText {
             unmarkText()
         } else {
