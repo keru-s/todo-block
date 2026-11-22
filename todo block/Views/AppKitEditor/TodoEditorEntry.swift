@@ -74,6 +74,7 @@ struct TodoEditorEntry {
     private let moveDraggedItemAction: (UUID, TodoDropDestination, Int, Int) -> Void
     private let moveDraggedItemToSidebarAction: (UUID, SidebarDestination) -> Void
     private let sectionDateChangedAction: (UUID, Date) -> Void
+    let canChangeSectionDate: (Date, Date) -> Bool
     private var beforeExplicitAction: () -> Void = {}
     private var allowsAction: () -> Bool = { true }
     private var allowsInput: () -> Bool = { true }
@@ -116,6 +117,7 @@ struct TodoEditorEntry {
         moveDraggedItem: @escaping (UUID, TodoDropDestination, Int, Int) -> Void,
         moveDraggedItemToSidebar: @escaping (UUID, SidebarDestination) -> Void,
         sectionDateChanged: @escaping (UUID, Date) -> Void,
+        canChangeSectionDate: @escaping (Date, Date) -> Bool = { _, _ in false },
         beforeExplicitAction: @escaping () -> Void = {}
     ) {
         self.access = access
@@ -144,6 +146,7 @@ struct TodoEditorEntry {
         self.moveDraggedItemAction = moveDraggedItem
         self.moveDraggedItemToSidebarAction = moveDraggedItemToSidebar
         self.sectionDateChangedAction = sectionDateChanged
+        self.canChangeSectionDate = canChangeSectionDate
         self.beforeExplicitAction = beforeExplicitAction
     }
 

@@ -17,7 +17,6 @@ final class TodoEditorSectionView: NSView {
     private var rowViewsById: [UUID: TodoEditorRowView] = [:]
     private var rowWidthConstraintsById: [UUID: NSLayoutConstraint] = [:]
     private var popover: NSPopover?
-    private var activeDatePicker: NSDatePicker?
 
     /// 控制器直接为每个行视图接入原生识别回调；分区本身不再转发动作。
     var configureRow: ((TodoEditorRowView) -> Void)?
@@ -190,59 +189,35 @@ final class TodoEditorSectionView: NSView {
         else { return }
         guard editorEntry.claimCurrentList() else { return }
 
-        let picker = NSDatePicker()
-        picker.datePickerStyle = .clockAndCalendar
-        picker.datePickerElements = .yearMonthDay
-        picker.dateValue = editableDate
-
-        let confirmButton = NSButton(title: "确认", target: nil, action: nil)
-        let cancelButton = NSButton(title: "取消", target: nil, action: nil)
-        let buttonStack = NSStackView(views: [cancelButton, NSView(), confirmButton])
-        buttonStack.orientation = .horizontal
-        buttonStack.distribution = .fill
-
-        let contentStack = NSStackView(views: [picker, buttonStack])
-        contentStack.orientation = .vertical
-        contentStack.spacing = 12
-        contentStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-
-        let controller = NSViewController()
-        controller.view = contentStack
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            contentStack.widthAnchor.constraint(equalToConstant: 300),
-            contentStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 260)
-        ])
+        closeDatePicker()
+        let sectionId = snapshot.id
+        let controller = NSHostingController(rootView: TodoEditorDatePicker(
+            date: editableDate,
+            canConfirm: { [weak self] date in
+                guard let self, self.snapshot?.id == sectionId else { return false }
+                return self.editorEntry.canChangeSectionDate(editableDate, date)
+            },
+            onCancel: { [weak self] in self?.closeDatePicker() },
+            onConfirm: { [weak self] date in
+                guard let self else { return }
+                self.closeDatePicker()
+                guard self.snapshot?.id == sectionId else { return }
+                self.editorEntry.sectionDateChanged(sectionId, date)
+            }
+        ))
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = controller
-
-        cancelButton.target = self
-        cancelButton.action = #selector(closeDatePicker)
-        confirmButton.target = self
-        confirmButton.action = #selector(confirmDatePicker(_:))
-        activeDatePicker = picker
+        popover.contentSize = controller.view.fittingSize
 
         self.popover = popover
         popover.show(relativeTo: titleButton.bounds, of: titleButton, preferredEdge: .maxY)
     }
 
-    @objc private func closeDatePicker() {
+    private func closeDatePicker() {
         popover?.close()
         popover = nil
-        activeDatePicker = nil
-    }
-
-    @objc private func confirmDatePicker(_ sender: NSButton) {
-        guard
-            editorEntry.access.isEditable,
-            let snapshot,
-            let picker = activeDatePicker
-        else { return }
-
-        editorEntry.sectionDateChanged(snapshot.id, picker.dateValue)
-        closeDatePicker()
     }
 
     private func moveArrangedSubview(_ subview: NSView, to index: Int) {

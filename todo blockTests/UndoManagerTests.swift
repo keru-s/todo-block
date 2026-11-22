@@ -180,9 +180,10 @@ final class UndoManagerTests: XCTestCase {
     func testStaleCompletionUndoSynchronouslySkipsToPreviousValidOperation() {
         let store = TodoStore.shared
         let date = Date()
-        let first = store.createItem(title: "First", dayDate: date)
         let parent = store.createItem(title: "Parent", dayDate: date)
         let child = store.createItem(title: "Child", dayDate: date, indentLevel: 1)
+        // 勾选末尾项不会重排父子组，因此第一步的撤销不依赖 child。
+        let first = store.createItem(title: "First", dayDate: date)
         store.undoManager.clear()
 
         store.toggleComplete(first)

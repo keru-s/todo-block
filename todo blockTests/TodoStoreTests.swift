@@ -719,25 +719,68 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(Calendar.current.isDateInToday(created.dayDate))
     }
 
-    func testUpdateSectionDateMergesIntoExistingSection() {
+    func testUpdateSectionDateMovesIntoExistingEmptySection() {
         let store = TodoStore.shared
         let sourceDate = date(year: 2026, month: 2, day: 15)
         let targetDate = date(year: 2026, month: 2, day: 18)
 
         let sourceSection = store.getOrCreateSection(for: sourceDate)
-        _ = store.getOrCreateSection(for: targetDate)
+        let targetSection = store.getOrCreateSection(for: targetDate)
         let moved = store.createItem(title: "to-move", dayDate: sourceDate)
+        store.undoManager.clear()
 
-        store.updateSectionDate(sourceSection, to: targetDate)
+        XCTAssertTrue(store.canChangeSectionDate(from: sourceDate, to: targetDate))
+        XCTAssertEqual(store.updateSectionDate(sourceSection, to: targetDate), .changed)
 
         XCTAssertTrue(Calendar.current.isDate(moved.dayDate, inSameDayAs: targetDate))
         XCTAssertNil(store.daySectionsCache[sourceSection.id])
+        XCTAssertNotNil(store.daySectionsCache[targetSection.id])
         XCTAssertEqual(
             store.sections(year: 2026, month: 2)
                 .filter { Calendar.current.isDate($0.date, inSameDayAs: targetDate) }
                 .count,
             1
         )
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: sourceDate).map(\.id), [moved.id])
+        XCTAssertTrue(store.items(for: targetDate).isEmpty)
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: targetDate).map(\.id), [moved.id])
+    }
+
+    func testUpdateSectionDateRejectsOccupiedDateEvenWhenItsItemsAreCompleted() {
+        let store = TodoStore.shared
+        let sourceDate = date(year: 2026, month: 2, day: 15)
+        let targetDate = date(year: 2026, month: 2, day: 18)
+        let section = store.getOrCreateSection(for: sourceDate)
+        let parent = store.createItem(title: "parent", dayDate: sourceDate)
+        let child = store.createItem(title: "child", dayDate: sourceDate, indentLevel: 1)
+        let existing = store.createItem(title: "completed", isCompleted: true, dayDate: targetDate)
+        store.undoManager.clear()
+
+        XCTAssertFalse(store.canChangeSectionDate(from: sourceDate, to: targetDate))
+        XCTAssertEqual(store.updateSectionDate(section, to: targetDate), .targetDateOccupied)
+        XCTAssertEqual(store.items(for: sourceDate).map(\.id), [parent.id, child.id])
+        XCTAssertEqual(store.items(for: targetDate).map(\.id), [existing.id])
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testCompletionReordersOnlyTheCurrentLongTermGroup() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 2, day: 15)
+        let alreadyCompleted = store.createItem(
+            title: "old completed", isCompleted: true, dayDate: day, containerKind: .longTermImportant
+        )
+        let nowCompleting = store.createItem(title: "A", dayDate: day, containerKind: .longTermImportant)
+        let pending = store.createItem(title: "B", dayDate: day, containerKind: .longTermImportant)
+        let urgent = store.createItem(title: "urgent", dayDate: day, containerKind: .longTermUrgent)
+        let scheduled = store.createItem(title: "scheduled", dayDate: day)
+
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [alreadyCompleted.id, nowCompleting.id, pending.id])
+        store.toggleComplete(nowCompleting)
+        XCTAssertEqual(store.longTermItems(isUrgent: false).map(\.id), [pending.id, alreadyCompleted.id, nowCompleting.id])
+        XCTAssertEqual(store.longTermItems(isUrgent: true).map(\.id), [urgent.id])
+        XCTAssertEqual(store.items(for: day).map(\.id), [scheduled.id])
     }
 
     func testUpdateSectionDateUpdatesSectionWhenTargetMissing() {
@@ -1241,7 +1284,7 @@ final class TodoStoreTests: XCTestCase {
         let day = date(year: 2026, month: 5, day: 24)
         let parent = store.createItem(title: "parent", dayDate: day, indentLevel: 3)
         let child = store.createItem(title: "child", dayDate: day, afterItem: parent, indentLevel: 2)
-        _ = store.createItem(title: "tail", dayDate: day, indentLevel: 0)
+        let tail = store.createItem(title: "tail", dayDate: day, indentLevel: 0)
         child.isCompleted = true
         store.undoManager.clear()
 
@@ -1249,11 +1292,12 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertTrue(parent.isCompleted)
         XCTAssertTrue(child.isCompleted)
-        XCTAssertEqual(parent.indentLevel, 3)
-        XCTAssertEqual(child.indentLevel, 2)
+        XCTAssertEqual(store.items(for: day).map(\.id), [tail.id, parent.id, child.id])
+        XCTAssertEqual([parent.indentLevel, child.indentLevel], [0, 1])
         XCTAssertTrue(store.undo())
         XCTAssertFalse(parent.isCompleted)
         XCTAssertTrue(child.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.id), [parent.id, child.id, tail.id])
         XCTAssertEqual(parent.indentLevel, 3)
         XCTAssertEqual(child.indentLevel, 2)
     }

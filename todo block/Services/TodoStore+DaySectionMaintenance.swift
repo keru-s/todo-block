@@ -6,9 +6,40 @@
 import Foundation
 import SwiftData
 
+enum TodoSectionDateUpdateResult {
+    case changed
+    case noChange
+    case targetDateOccupied
+}
+
 /// DaySection 生命周期：创建 / 落实 / 清理。
 /// 与 TodoStore CRUD 解耦，让"item 写路径触发 section 维护"的逻辑集中在一处。
 extension TodoStore {
+    func canChangeSectionDate(from sourceDate: Date, to targetDate: Date) -> Bool {
+        let calendar = Calendar.current
+        return calendar.isDate(sourceDate, inSameDayAs: targetDate) || items(for: targetDate).isEmpty
+    }
+
+    @discardableResult
+    func updateSectionDate(_ section: DaySection, to newDate: Date) -> TodoSectionDateUpdateResult {
+        let calendar = Calendar.current
+        let oldDate = calendar.startOfDay(for: section.date)
+        let targetDate = calendar.startOfDay(for: newDate)
+        guard oldDate != targetDate else { return .noChange }
+        guard canChangeSectionDate(from: oldDate, to: targetDate) else { return .targetDateOccupied }
+
+        let transitions = items(for: oldDate).map { item in
+            let before = TodoItemSnapshot(from: item)
+            return TodoItemTransition(before: before, after: before.replacing(dayDate: targetDate))
+        }
+        guard !transitions.isEmpty else { return .noChange }
+        let performed = undoManager.perform(
+            TodoOperationUnit(actionName: "更改日期", itemTransitions: transitions),
+            store: self
+        )
+        return performed ? .changed : .noChange
+    }
+
     /// 获取或创建今日的 DaySection
     func getOrCreateTodaySection() -> DaySection {
         getOrCreateSection(for: Date())
