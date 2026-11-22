@@ -158,6 +158,16 @@ struct TodoOperationUnit {
     func snapshots(for target: TodoOperationValueTarget) -> [TodoItemSnapshot] {
         itemTransitions.compactMap { $0.snapshot(for: target) }
     }
+
+    func recordingDaySections(_ transitions: [TodoDaySectionTransition]) -> TodoOperationUnit {
+        TodoOperationUnit(
+            actionName: actionName,
+            itemTransitions: itemTransitions,
+            daySectionTransitions: transitions,
+            selectionTransitions: selectionTransitions,
+            attention: attention
+        )
+    }
 }
 
 // MARK: - TodoItem 快照
@@ -287,8 +297,21 @@ final class TodoUndoManager {
         store.flushPendingTextEdit()
         guard unit.isEmpty == false, unit.isValid else { return false }
         guard canApply(unit, target: .after, store: store) else { return false }
+        let affectedDates = unit.daySectionTransitions.isEmpty ? changedScheduledDates(in: unit) : []
+        let previousSections = affectedDates.compactMap { date in
+            store.daySection(on: date).map { (date, TodoDaySectionSnapshot($0)) }
+        }
+        let emptyDates = Set(affectedDates.filter { store.items(for: $0).isEmpty })
         guard apply(unit, target: .after, store: store) else { return false }
-        appendNewHistory(unit)
+        let previousByDate = Dictionary(uniqueKeysWithValues: previousSections)
+        let sectionChanges = affectedDates.compactMap { date -> TodoDaySectionTransition? in
+            let before = previousByDate[date]
+            let after = store.daySection(on: date).map(TodoDaySectionSnapshot.init)
+            guard (before == nil) != (after == nil) || (before != nil && emptyDates.contains(date))
+            else { return nil }
+            return TodoDaySectionTransition(date: date, before: before, after: after)
+        }
+        appendNewHistory(sectionChanges.isEmpty ? unit : unit.recordingDaySections(sectionChanges))
         store.scheduleSave()
         return true
     }
@@ -369,6 +392,24 @@ final class TodoUndoManager {
             undoHistory.removeFirst(undoHistory.count - maxUndoSteps)
         }
         redoHistory.removeAll()
+    }
+
+    private func changedScheduledDates(in unit: TodoOperationUnit) -> Set<Date> {
+        func scheduledDate(_ snapshot: TodoItemSnapshot?) -> Date? {
+            guard let snapshot,
+                  (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
+            else { return nil }
+            return Calendar.current.startOfDay(for: snapshot.dayDate)
+        }
+        var dates = Set<Date>()
+        for transition in unit.itemTransitions {
+            let before = scheduledDate(transition.before)
+            let after = scheduledDate(transition.after)
+            guard before != after else { continue }
+            if let before { dates.insert(before) }
+            if let after { dates.insert(after) }
+        }
+        return dates
     }
 
     private func canApply(

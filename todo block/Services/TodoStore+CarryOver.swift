@@ -19,9 +19,7 @@ extension TodoStore {
             .max(by: { $0.date < $1.date })
     }
 
-    /// 将前一天未完成的 item 继承到今天。
-    /// - 子项全部未完成（或无子项）：整块直接移动到今天
-    /// - 子项中有已完成的：复制一级 item，移动未完成子项，已完成子项留原位
+    /// 结转未完成项。两边各自保留子项所需的父项，避免拆组后改变归属。
     @discardableResult
     func carryOverIncompleteItems(
         trigger: TodoCarryOverTrigger = .userInitiated
@@ -34,61 +32,55 @@ extension TodoStore {
         let previousItems = items(for: previousSection.date)
         guard previousItems.isEmpty == false else { return nil }
 
-        let blocks = TodoHierarchyBlockEngine.topLevelBlocks(in: previousItems)
-        let incompleteBlocks = blocks.filter { block in
-            previousItems[block.range].contains { !$0.isCompleted }
-        }
-        guard incompleteBlocks.isEmpty == false else { return nil }
-
         let todayDate = Calendar.current.startOfDay(for: .now)
         var currentSortOrder = (items(for: todayDate).last?.sortOrder ?? 0) + 1000
         var transitions: [TodoItemTransition] = []
 
-        for block in incompleteBlocks {
-            let blockItems = Array(previousItems[block.range])
-            guard let parent = blockItems.first else { continue }
-            let descendants = Array(blockItems.dropFirst())
-            let hasCompletedDescendants = descendants.contains { $0.isCompleted }
-            let itemsToMove: [TodoItem]
-            let normalizedIndentLevels: [Int]
-
-            if !parent.isCompleted && !hasCompletedDescendants {
-                itemsToMove = blockItems
-                normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
-                    in: itemsToMove
-                )
-            } else {
-                let copiedParent = TodoItemSnapshot(
-                    title: parent.title,
-                    isCompleted: parent.isCompleted,
-                    indentLevel: 0,
-                    sortOrder: currentSortOrder,
-                    containerKindRaw: TodoContainerKind.scheduled.rawValue,
-                    dayDate: todayDate
-                )
-                transitions.append(TodoItemTransition(before: nil, after: copiedParent))
-                currentSortOrder += 1000
-
-                itemsToMove = descendants.filter { $0.isCompleted == false }
-                normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
-                    itemsToMove.map(\.indentLevel),
-                    baseIndentLevel: 1
-                )
+        for block in TodoHierarchyBlockEngine.topLevelBlocks(in: previousItems) {
+            let items = Array(previousItems[block.range])
+            let levels = TodoHierarchyBlockEngine.normalizedIndentLevels(in: items)
+            var ancestors: [Int] = []
+            let parents = levels.enumerated().map { index, level -> Int? in
+                ancestors.removeLast(ancestors.count - level)
+                let parent = ancestors.last
+                ancestors.append(index)
+                return parent
+            }
+            var stays = items.map(\.isCompleted)
+            var carried = stays.map { !$0 }
+            for index in items.indices.reversed() {
+                guard let parent = parents[index] else { continue }
+                stays[parent] = stays[parent] || stays[index]
+                carried[parent] = carried[parent] || carried[index]
             }
 
-            for (item, indentLevel) in zip(itemsToMove, normalizedIndentLevels) {
+            for index in items.indices where carried[index] {
+                let item = items[index]
                 let before = TodoItemSnapshot(from: item)
-                let after = before.replacing(
-                    indentLevel: indentLevel,
-                    sortOrder: currentSortOrder,
-                    containerKindRaw: TodoContainerKind.scheduled.rawValue,
-                    dayDate: todayDate
-                )
-                transitions.append(TodoItemTransition(before: before, after: after))
+                let after: TodoItemSnapshot
+                if stays[index] {
+                    after = TodoItemSnapshot(
+                        title: item.title,
+                        isCompleted: item.isCompleted,
+                        indentLevel: levels[index],
+                        sortOrder: currentSortOrder,
+                        containerKindRaw: TodoContainerKind.scheduled.rawValue,
+                        dayDate: todayDate
+                    )
+                } else {
+                    after = before.replacing(
+                        indentLevel: levels[index],
+                        sortOrder: currentSortOrder,
+                        containerKindRaw: TodoContainerKind.scheduled.rawValue,
+                        dayDate: todayDate
+                    )
+                }
+                transitions.append(TodoItemTransition(before: stays[index] ? nil : before, after: after))
                 currentSortOrder += 1000
             }
         }
 
+        guard !transitions.isEmpty else { return nil }
         let operation = TodoOperationUnit(
             actionName: "继承昨日待办",
             itemTransitions: transitions,

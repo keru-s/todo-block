@@ -488,7 +488,7 @@ extension TodoStore {
         })
         for snapshot in snapshots
         where (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
-            && !explicitlyManagedDates.contains(snapshot.dayDate) {
+            && !explicitlyManagedDates.contains(Calendar.current.startOfDay(for: snapshot.dayDate)) {
             _ = ensureSectionMaterialized(for: snapshot.dayDate)
         }
 

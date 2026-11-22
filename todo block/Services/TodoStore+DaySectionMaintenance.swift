@@ -30,8 +30,10 @@ struct TodoDaySectionSnapshot: Equatable {
     }
 
     func makeSection() -> DaySection {
-        DaySection(id: id, date: date, title: title, sortOrder: sortOrder,
-                   createdAt: createdAt, updatedAt: updatedAt)
+        let section = DaySection(id: id, date: date, title: title, sortOrder: sortOrder,
+                                 createdAt: createdAt, updatedAt: updatedAt)
+        section.date = date
+        return section
     }
 }
 
@@ -102,7 +104,11 @@ extension TodoStore {
         for transition in transitions {
             let current = daySection(on: transition.date)
             if let snapshot = transition.snapshot(for: target) {
-                guard current == nil else { continue }
+                if current.map(TodoDaySectionSnapshot.init) == snapshot { continue }
+                if let current {
+                    daySectionsCache.removeValue(forKey: current.id)
+                    modelContext?.delete(current)
+                }
                 let section = snapshot.makeSection()
                 daySectionsCache[section.id] = section
                 modelContext?.insert(section)

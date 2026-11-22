@@ -63,7 +63,7 @@ struct TodoEditorDatePicker: View {
                         isCurrentMonth: calendar.isDate(date, equalTo: visibleMonth, toGranularity: .month),
                         isToday: calendar.isDateInToday(date),
                         isSelected: date == selection,
-                        showsKeyboardFocus: isCalendarFocused && date == selection,
+                        showsKeyboardFocus: isCalendarFocused && date == keyboardFocusDate,
                         action: { select(date) }
                     )
                 }
@@ -128,6 +128,11 @@ struct TodoEditorDatePicker: View {
         visibleMonth = selection
     }
 
+    private var keyboardFocusDate: Date {
+        calendar.isDate(selection, equalTo: visibleMonth, toGranularity: .month)
+            ? selection : calendar.startOfDay(for: visibleMonth)
+    }
+
     private func moveSelection(_ direction: MoveCommandDirection) {
         let offset: Int
         switch direction {
@@ -137,7 +142,7 @@ struct TodoEditorDatePicker: View {
         case .down: offset = 7
         @unknown default: return
         }
-        guard let nextDay = calendar.date(byAdding: .day, value: offset, to: selection) else { return }
+        guard let nextDay = calendar.date(byAdding: .day, value: offset, to: keyboardFocusDate) else { return }
         select(nextDay)
     }
 }
@@ -187,7 +192,7 @@ private struct TodoEditorCalendarButtonStyle: ButtonStyle {
         configuration.label
             .background(isHighlighted ? TodoDesignTokens.selectionTint : Color.clear, in: shape)
             .overlay {
-                if isSelected {
+                if isSelected || showsKeyboardFocus {
                     shape.strokeBorder(
                         Color.accentColor.opacity(showsKeyboardFocus ? 1 : 0.6),
                         lineWidth: showsKeyboardFocus ? 2 : 1
