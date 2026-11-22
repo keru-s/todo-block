@@ -422,8 +422,11 @@ final class TodoUndoManager {
             let itemIds = Set(unit.itemTransitions.compactMap(\.itemId))
             guard unit.daySectionTransitions.allSatisfy({ transition in
                 let current = store.daySection(on: transition.date).map(TodoDaySectionSnapshot.init)
-                return current == transition.snapshot(for: sourceTarget)
-                    && store.items(for: transition.date).allSatisfy { itemIds.contains($0.id) }
+                let expected = transition.snapshot(for: sourceTarget)
+                let items = store.items(for: transition.date)
+                // 添加今日待办可在历史之外建立空白分组，它不会占用待恢复的日期。
+                if expected == nil, items.isEmpty { return true }
+                return current == expected && items.allSatisfy { itemIds.contains($0.id) }
             }) else { return false }
         }
         return unit.itemTransitions.allSatisfy { transition in

@@ -827,6 +827,29 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(store.daySection(on: sourceDate).map(TodoDaySectionSnapshot.init), sourceSnapshot)
     }
 
+    func testEmptyPlaceholderDoesNotBlockUndoOrRedoOfDateChange() throws {
+        let store = TodoStore.shared
+        let sourceDate = date(year: 2026, month: 2, day: 15)
+        let targetDate = date(year: 2026, month: 2, day: 18)
+        let item = store.createItem(title: "to-move", dayDate: sourceDate)
+        let source = try XCTUnwrap(store.daySection(on: sourceDate))
+        let sourceSnapshot = TodoDaySectionSnapshot(source)
+        store.undoManager.clear()
+
+        XCTAssertEqual(store.updateSectionDate(source, to: targetDate), .changed)
+        let target = try XCTUnwrap(store.daySection(on: targetDate))
+        let targetSnapshot = TodoDaySectionSnapshot(target)
+        _ = store.getOrCreateSection(for: sourceDate)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.items(for: sourceDate).map(\.id), [item.id])
+        XCTAssertEqual(store.daySection(on: sourceDate).map(TodoDaySectionSnapshot.init), sourceSnapshot)
+
+        _ = store.getOrCreateSection(for: targetDate)
+        XCTAssertTrue(store.redo())
+        XCTAssertEqual(store.items(for: targetDate).map(\.id), [item.id])
+        XCTAssertEqual(store.daySection(on: targetDate).map(TodoDaySectionSnapshot.init), targetSnapshot)
+    }
+
     func testUpdateSectionDateRejectsOccupiedDateEvenWhenItsItemsAreCompleted() {
         let store = TodoStore.shared
         let sourceDate = date(year: 2026, month: 2, day: 15)
