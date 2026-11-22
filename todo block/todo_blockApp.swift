@@ -195,7 +195,7 @@ private enum BackupRecoveryUITestHook {
     }
 }
 
-/// UI 测试专用钩子：仅当带 `-UITestSeedContent` 启动时生效。
+/// UI 测试专用的数据播种钩子。
 /// 实际的播种入口在 TodoStore+UITestSeeding.swift（store 内部字段的直写
 /// 必须留在 friendship 边界内，见 docs/agents/architecture.md），这里只负责转发。
 @MainActor

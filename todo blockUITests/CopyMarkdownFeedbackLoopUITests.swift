@@ -19,13 +19,7 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
     private lazy var app: XCUIApplication = {
         let app = XCUIApplication()
         // -UITestInMemoryStore：内存容器，不读写用户真实数据。
-        // -addTodayMode blank：固定底栏按钮为空白分组模式，避免依赖用户本机偏好。
-        // 注意：无值 flag 必须放在最后——它若紧跟另一个 -key，参数解析会
-        // 把下一个 key 吞成自己的值，剩余 token 会导致主窗口不显示（实测）。
-        app.launchArguments = [
-            "-addTodayMode", "blank",
-            "-UITestInMemoryStore",
-        ]
+        app.launchArguments = ["-UITestSeedCopyMarkdown", "-UITestInMemoryStore"]
         return app
     }()
 
@@ -55,16 +49,6 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
         )
 
         NSPasteboard.general.clearContents()
-
-        // 清除窗口恢复状态：此前若有实例在「窗口已关闭」状态下退出，
-        // 保存的恢复状态会让主窗口在下次启动时不再出现。
-        // 注意：沙盒 UI 测试 runner 对用户容器只有只读权限，这个删除实际是
-        // 静默 no-op；真正的保证来自 app 侧——UI 测试模式下 todo_blockApp
-        // 对主窗口设置了 .restorationBehavior(.disabled)（忽略 savedState）。
-        let savedState = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Containers/com.insight.to-do-block/Data/tmp/com.insight.to-do-block.savedState")
-        try? FileManager.default.removeItem(at: savedState)
-
         app.launch()
     }
 
@@ -92,7 +76,7 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
     /// 期望（修复后）：剪贴板写入包含三条 todo 的 Markdown checklist。
     @MainActor
     func testShiftClickMultiSelectThenCopyWritesMarkdown() throws {
-        let titles = try seedThreeTodos()
+        let titles = seededTitles()
         let first = titles.element(boundBy: 0)
         let third = titles.element(boundBy: 2)
 
@@ -122,7 +106,7 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
     /// 本测试用于暴露第三个断点（菜单 disabled 状态过期 / perform 早退）。
     @MainActor
     func testDragFromTitleMultiSelectThenCopyWritesMarkdown() throws {
-        let titles = try seedThreeTodos()
+        let titles = seededTitles()
         let first = titles.element(boundBy: 0)
         let third = titles.element(boundBy: 2)
 
@@ -148,64 +132,16 @@ final class CopyMarkdownFeedbackLoopUITests: XCTestCase {
 
     // MARK: - 数据准备
 
-    /// 通过 UI 创建三条 todo：Alpha / Beta / Gamma，返回标题文本框查询。
     @MainActor
-    private func seedThreeTodos() throws -> XCUIElementQuery {
-        let window = mainWindow()
-
-        let titles = window.descendants(matching: .textView)
+    private func seededTitles() -> XCUIElementQuery {
+        let titles = mainWindow().descendants(matching: .textView)
             .matching(identifier: "todo-title")
 
-        // 空库时没有今日分组：底栏按钮是「添加空白待办」，第一次点击只创建分组
-        // （TodoListActionModule.addToday 的 .blank 分支不建条目）；分组出现后
-        // 按钮变为「添加一个今日待办」，再点一次才会创建首行并聚焦标题。
-        for _ in 0..<3 where titles.element(boundBy: 0).exists == false {
-            // 窗口刚出现时底栏按钮可能尚未布局完成，用短等待代替即时 exists。
-            let addButton = [
-                "添加一个今日待办",
-                "添加待办",
-                "添加空白待办",
-                "添加今日待办",
-            ].map { window.buttons[$0] }.first { $0.waitForExistence(timeout: 1) }
-            guard let addButton else {
-                XCTFail("找不到添加待办按钮")
-                throw XCTSkip("无法准备测试数据")
-            }
-            addButton.click()
-            _ = titles.element(boundBy: 0).waitForExistence(timeout: 2)
-        }
-
-        XCTAssertTrue(
-            titles.element(boundBy: 0).waitForExistence(timeout: 5),
-            "点击添加按钮后没有出现待办行"
-        )
-        // 新建行的标题焦点是异步 apply 的（TodoEditorRowView.apply 里的 Task），
-        // 稍等再开始打字。
-        usleep(500_000)
-
-        // 回车创建新行后焦点是异步移动的（冷启动时可能超过 1s），
-        // 直接 typeText 会把文字打进上一行（实测出现过 "AlphaBeta" 粘连）。
-        // 每条新行都先显式 click 聚焦再输入，保证确定性。
-        app.typeText("Alpha")
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
-        XCTAssertTrue(titles.element(boundBy: 1).waitForExistence(timeout: 5), "回车后未出现第 2 行")
-        titles.element(boundBy: 1).click()
-        usleep(300_000)
-        app.typeText("Beta")
-        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
-        XCTAssertTrue(titles.element(boundBy: 2).waitForExistence(timeout: 5), "回车后未出现第 3 行")
-        titles.element(boundBy: 2).click()
-        usleep(300_000)
-        app.typeText("Gamma")
-        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-
-        XCTAssertEqual(titles.count, 3, "应创建 3 条 todo（Alpha/Beta/Gamma）")
+        XCTAssertTrue(titles.element(boundBy: 2).waitForExistence(timeout: 5))
+        XCTAssertEqual(titles.count, 3)
         XCTAssertEqual(titles.element(boundBy: 0).value as? String, "Alpha")
         XCTAssertEqual(titles.element(boundBy: 1).value as? String, "Beta")
         XCTAssertEqual(titles.element(boundBy: 2).value as? String, "Gamma")
-
-        // 确保 Escape 之后没有文字选区残留影响后续操作。
-        usleep(300_000)
         return titles
     }
 
