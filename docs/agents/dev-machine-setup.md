@@ -99,9 +99,7 @@ xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
   -destination 'platform=macOS' -parallel-testing-enabled NO \
   -only-testing:"todo blockTests"        # 单元测试（场景 A）
 
-xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
-  -destination 'platform=macOS' \
-  -only-testing:"todo blockUITests"      # UI 测试（场景 B），会短暂接管键鼠
+./scripts/run-ui-tests.sh                # UI 测试（场景 B），会短暂接管键鼠
 ```
 
 两次全程无弹框即配置完成。

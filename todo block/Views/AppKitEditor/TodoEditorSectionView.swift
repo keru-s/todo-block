@@ -87,8 +87,15 @@ final class TodoEditorSectionView: NSView {
         self.snapshot = snapshot
 
         titleButton.title = snapshot.title
-        titleButton.isEnabled = snapshot.editableDate != nil && editorEntry.access.isEditable
-        titleButton.toolTip = editorEntry.access.isEditable ? nil : "只读列表"
+        titleButton.isEnabled = snapshot.editableDate != nil
+            && editorEntry.access.isEditable && !snapshot.items.isEmpty
+        titleButton.toolTip = if !editorEntry.access.isEditable {
+            "只读列表"
+        } else if snapshot.editableDate != nil && snapshot.items.isEmpty {
+            "添加待办后即可更改日期"
+        } else {
+            nil
+        }
 
         if snapshot.items.isEmpty {
             removeRows(except: [])
@@ -185,6 +192,7 @@ final class TodoEditorSectionView: NSView {
     @objc private func showDatePicker() {
         guard editorEntry.access.isEditable,
               let snapshot,
+              !snapshot.items.isEmpty,
               let editableDate = snapshot.editableDate
         else { return }
         guard editorEntry.claimCurrentList() else { return }

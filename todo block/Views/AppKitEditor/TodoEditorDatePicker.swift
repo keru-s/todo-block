@@ -63,6 +63,7 @@ struct TodoEditorDatePicker: View {
                         isCurrentMonth: calendar.isDate(date, equalTo: visibleMonth, toGranularity: .month),
                         isToday: calendar.isDateInToday(date),
                         isSelected: date == selection,
+                        showsKeyboardFocus: isCalendarFocused && date == selection,
                         action: { select(date) }
                     )
                 }
@@ -147,6 +148,7 @@ private struct TodoEditorCalendarDay: View {
     let isCurrentMonth: Bool
     let isToday: Bool
     let isSelected: Bool
+    let showsKeyboardFocus: Bool
     let action: () -> Void
 
     var body: some View {
@@ -165,7 +167,9 @@ private struct TodoEditorCalendarDay: View {
                     }
                 }
         }
-        .buttonStyle(TodoEditorCalendarButtonStyle(isSelected: isSelected))
+        .buttonStyle(TodoEditorCalendarButtonStyle(
+            isSelected: isSelected, showsKeyboardFocus: showsKeyboardFocus
+        ))
         .accessibilityLabel(Text(date, format: .dateTime.weekday(.wide).year().month().day()))
         .accessibilityValue(isToday ? "今天" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -174,16 +178,20 @@ private struct TodoEditorCalendarDay: View {
 
 private struct TodoEditorCalendarButtonStyle: ButtonStyle {
     var isSelected = false
+    var showsKeyboardFocus = false
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: TodoDesignTokens.dragPreviewCornerRadius)
+        let shape = RoundedRectangle(cornerRadius: 6)
         let isHighlighted = isSelected || configuration.isPressed || isHovered
         configuration.label
             .background(isHighlighted ? TodoDesignTokens.selectionTint : Color.clear, in: shape)
             .overlay {
                 if isSelected {
-                    shape.strokeBorder(Color.accentColor.opacity(0.75))
+                    shape.strokeBorder(
+                        Color.accentColor.opacity(showsKeyboardFocus ? 1 : 0.6),
+                        lineWidth: showsKeyboardFocus ? 2 : 1
+                    )
                 }
             }
             .contentShape(shape)

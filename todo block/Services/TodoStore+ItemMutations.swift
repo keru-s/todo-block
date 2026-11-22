@@ -474,7 +474,10 @@ extension TodoStore {
 
     /// 把一组已有待办一次改到记录好的状态，并把日期维护并入同一步。
     @discardableResult
-    func applyExistingItemSnapshots(_ snapshots: [TodoItemSnapshot]) -> Bool {
+    func applyExistingItemSnapshots(
+        _ snapshots: [TodoItemSnapshot],
+        explicitlyManagedDates: Set<Date> = []
+    ) -> Bool {
         guard snapshots.isEmpty == false else { return true }
         let items = snapshots.compactMap { todoItemsCache[$0.id] }
         guard items.count == snapshots.count else { return false }
@@ -484,7 +487,8 @@ extension TodoStore {
             return Calendar.current.startOfDay(for: item.dayDate)
         })
         for snapshot in snapshots
-        where snapshot.containerKindRaw == TodoContainerKind.scheduled.rawValue {
+        where (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
+            && !explicitlyManagedDates.contains(snapshot.dayDate) {
             _ = ensureSectionMaterialized(for: snapshot.dayDate)
         }
 
@@ -498,7 +502,7 @@ extension TodoStore {
             item.updatedAt = .now
         }
 
-        for date in sourceScheduledDates {
+        for date in sourceScheduledDates.subtracting(explicitlyManagedDates) {
             cleanupSectionIfEmpty(scheduledDate: date)
         }
         refreshTrigger += 1

@@ -12,9 +12,54 @@ enum TodoSectionDateUpdateResult {
     case targetDateOccupied
 }
 
+struct TodoDaySectionSnapshot: Equatable {
+    let id: UUID
+    let date: Date
+    let title: String
+    let sortOrder: Double
+    let createdAt: Date
+    let updatedAt: Date
+
+    init(_ section: DaySection) {
+        id = section.id
+        date = section.date
+        title = section.title
+        sortOrder = section.sortOrder
+        createdAt = section.createdAt
+        updatedAt = section.updatedAt
+    }
+
+    func makeSection() -> DaySection {
+        DaySection(id: id, date: date, title: title, sortOrder: sortOrder,
+                   createdAt: createdAt, updatedAt: updatedAt)
+    }
+}
+
+struct TodoDaySectionTransition {
+    let date: Date
+    let before: TodoDaySectionSnapshot?
+    let after: TodoDaySectionSnapshot?
+
+    var isValid: Bool {
+        guard before != nil || after != nil else { return false }
+        if let before, let after, before != after { return false }
+        return [before, after].compactMap { $0 }.allSatisfy {
+            Calendar.current.isDate($0.date, inSameDayAs: date)
+        }
+    }
+
+    func snapshot(for target: TodoOperationValueTarget) -> TodoDaySectionSnapshot? {
+        target == .before ? before : after
+    }
+}
+
 /// DaySection 生命周期：创建 / 落实 / 清理。
 /// 与 TodoStore CRUD 解耦，让"item 写路径触发 section 维护"的逻辑集中在一处。
 extension TodoStore {
+    func daySection(on date: Date) -> DaySection? {
+        validDaySections.first { Calendar.current.isDate($0.date, inSameDayAs: date) }
+    }
+
     func canChangeSectionDate(from sourceDate: Date, to targetDate: Date) -> Bool {
         let calendar = Calendar.current
         return calendar.isDate(sourceDate, inSameDayAs: targetDate) || items(for: targetDate).isEmpty
@@ -32,12 +77,41 @@ extension TodoStore {
             let before = TodoItemSnapshot(from: item)
             return TodoItemTransition(before: before, after: before.replacing(dayDate: targetDate))
         }
-        guard !transitions.isEmpty else { return .noChange }
+        guard !transitions.isEmpty, daySection(on: oldDate)?.id == section.id else { return .noChange }
+        let targetBefore = daySection(on: targetDate).map(TodoDaySectionSnapshot.init)
+        let targetAfter = targetBefore ?? TodoDaySectionSnapshot(
+            DaySection(date: targetDate, sortOrder: Date.now.timeIntervalSince1970)
+        )
         let performed = undoManager.perform(
-            TodoOperationUnit(actionName: "更改日期", itemTransitions: transitions),
+            TodoOperationUnit(
+                actionName: "更改日期",
+                itemTransitions: transitions,
+                daySectionTransitions: [
+                    TodoDaySectionTransition(date: oldDate, before: TodoDaySectionSnapshot(section), after: nil),
+                    TodoDaySectionTransition(date: targetDate, before: targetBefore, after: targetAfter)
+                ]
+            ),
             store: self
         )
         return performed ? .changed : .noChange
+    }
+
+    /// 统一操作单元已验证分组前态。只有显式记录的日期由这条路径维护。
+    func applyDaySectionTransitions(_ transitions: [TodoDaySectionTransition], target: TodoOperationValueTarget) {
+        guard !transitions.isEmpty else { return }
+        for transition in transitions {
+            let current = daySection(on: transition.date)
+            if let snapshot = transition.snapshot(for: target) {
+                guard current == nil else { continue }
+                let section = snapshot.makeSection()
+                daySectionsCache[section.id] = section
+                modelContext?.insert(section)
+            } else if let current {
+                daySectionsCache.removeValue(forKey: current.id)
+                modelContext?.delete(current)
+            }
+        }
+        refreshTrigger += 1
     }
 
     /// 获取或创建今日的 DaySection
@@ -65,9 +139,7 @@ extension TodoStore {
     func ensureSectionMaterialized(for date: Date) -> (section: DaySection, didCreate: Bool) {
         let targetDate = Calendar.current.startOfDay(for: date)
 
-        if let existing = validDaySections.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
-        }) {
+        if let existing = daySection(on: targetDate) {
             return (existing, false)
         }
 
@@ -81,9 +153,7 @@ extension TodoStore {
     /// 调用方负责后续的 refreshTrigger / scheduleSave，避免重复触发。
     func cleanupSectionIfEmpty(scheduledDate: Date) {
         let targetDate = Calendar.current.startOfDay(for: scheduledDate)
-        guard let section = validDaySections.first(where: {
-            Calendar.current.isDate($0.date, inSameDayAs: targetDate)
-        }) else { return }
+        guard let section = daySection(on: targetDate) else { return }
 
         let hasItems = validTodoItems.contains { item in
             item.containerKind == .scheduled

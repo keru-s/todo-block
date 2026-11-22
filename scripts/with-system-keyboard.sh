@@ -15,11 +15,15 @@ child_pid=""
 
 cleanup() {
   local result=$?
+  local current
   trap - EXIT
   if [[ -n "$original" && -n "$layout" && "$original" != "$layout" ]]; then
     # 测试期间手动选择了别的输入法时，保留这个选择。
-    if [[ "$("$keyboard" current)" == "$layout" ]]; then
-      if ! "$keyboard" select "$original"; then
+    if ! current="$("$keyboard" current)"; then
+      echo "无法确认测试后的输入法，可能需要手动切回。" >&2
+      if [[ "$result" == 0 ]]; then result=1; fi
+    elif [[ "$current" == "$layout" ]]; then
+      if ! "$keyboard" select "$original" || [[ "$("$keyboard" current)" != "$original" ]]; then
         echo "未能恢复测试前的输入法。" >&2
         if [[ "$result" == 0 ]]; then result=1; fi
       fi
@@ -39,6 +43,7 @@ stop_test() {
 }
 
 trap cleanup EXIT
+trap 'stop_test 129' HUP
 trap 'stop_test 130' INT
 trap 'stop_test 143' TERM
 

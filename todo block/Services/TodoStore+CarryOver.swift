@@ -36,7 +36,7 @@ extension TodoStore {
 
         let blocks = TodoHierarchyBlockEngine.topLevelBlocks(in: previousItems)
         let incompleteBlocks = blocks.filter { block in
-            previousItems[block.range.lowerBound].isCompleted == false
+            previousItems[block.range].contains { !$0.isCompleted }
         }
         guard incompleteBlocks.isEmpty == false else { return nil }
 
@@ -52,7 +52,7 @@ extension TodoStore {
             let itemsToMove: [TodoItem]
             let normalizedIndentLevels: [Int]
 
-            if hasCompletedDescendants == false {
+            if !parent.isCompleted && !hasCompletedDescendants {
                 itemsToMove = blockItems
                 normalizedIndentLevels = TodoHierarchyBlockEngine.normalizedIndentLevels(
                     in: itemsToMove
@@ -60,6 +60,7 @@ extension TodoStore {
             } else {
                 let copiedParent = TodoItemSnapshot(
                     title: parent.title,
+                    isCompleted: parent.isCompleted,
                     indentLevel: 0,
                     sortOrder: currentSortOrder,
                     containerKindRaw: TodoContainerKind.scheduled.rawValue,

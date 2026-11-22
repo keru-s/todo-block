@@ -125,17 +125,20 @@ struct TodoSelectionTransition {
 struct TodoOperationUnit {
     let actionName: String
     let itemTransitions: [TodoItemTransition]
+    let daySectionTransitions: [TodoDaySectionTransition]
     let selectionTransitions: [TodoSelectionTransition]
     let attention: TodoOperationAttention?
 
     init(
         actionName: String,
         itemTransitions: [TodoItemTransition] = [],
+        daySectionTransitions: [TodoDaySectionTransition] = [],
         selectionTransitions: [TodoSelectionTransition] = [],
         attention: TodoOperationAttention? = nil
     ) {
         self.actionName = actionName
         self.itemTransitions = itemTransitions.filter(\.changesUserState)
+        self.daySectionTransitions = daySectionTransitions
         self.selectionTransitions = selectionTransitions
         self.attention = attention
     }
@@ -146,7 +149,10 @@ struct TodoOperationUnit {
 
     var isValid: Bool {
         let ids = itemTransitions.compactMap(\.itemId)
+        let dates = daySectionTransitions.map(\.date)
         return itemTransitions.allSatisfy(\.isValid) && Set(ids).count == ids.count
+            && Set(dates).count == dates.count
+            && daySectionTransitions.allSatisfy(\.isValid)
     }
 
     func snapshots(for target: TodoOperationValueTarget) -> [TodoItemSnapshot] {
@@ -371,6 +377,14 @@ final class TodoUndoManager {
         store: TodoStore
     ) -> Bool {
         let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
+        if !unit.daySectionTransitions.isEmpty {
+            let itemIds = Set(unit.itemTransitions.compactMap(\.itemId))
+            guard unit.daySectionTransitions.allSatisfy({ transition in
+                let current = store.daySection(on: transition.date).map(TodoDaySectionSnapshot.init)
+                return current == transition.snapshot(for: sourceTarget)
+                    && store.items(for: transition.date).allSatisfy { itemIds.contains($0.id) }
+            }) else { return false }
+        }
         return unit.itemTransitions.allSatisfy { transition in
             switch transition.snapshot(for: sourceTarget) {
             case let snapshot?:
@@ -406,11 +420,14 @@ final class TodoUndoManager {
 
         // `canApply` 已完整验证全部前态；以下三个存储调用在此前提下不会留下半个操作。
         guard store.restoreItems(from: createSnapshots) else { return false }
-        guard store.applyExistingItemSnapshots(updateSnapshots) else { return false }
+        guard store.applyExistingItemSnapshots(
+            updateSnapshots, explicitlyManagedDates: Set(unit.daySectionTransitions.map(\.date))
+        ) else { return false }
         for itemId in deleteIds {
             guard let item = store.todoItemsCache[itemId] else { return false }
             store.deleteItemForOperationApplication(item)
         }
+        store.applyDaySectionTransitions(unit.daySectionTransitions, target: target)
         unit.selectionTransitions.forEach { $0.apply(for: target) }
         return true
     }
@@ -519,7 +536,7 @@ private extension TodoHistoryDisplayScope {
             unit.itemTransitions.contains { transition in
                 [transition.before, transition.after].contains(where: { snapshot in
                     guard let snapshot,
-                          TodoContainerKind(rawValue: snapshot.containerKindRaw) == .scheduled
+                          (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
                     else { return false }
                     return Calendar.current.isDate(snapshot.dayDate, inSameDayAs: date)
                 })
