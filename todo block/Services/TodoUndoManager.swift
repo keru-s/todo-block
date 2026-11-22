@@ -125,17 +125,20 @@ struct TodoSelectionTransition {
 struct TodoOperationUnit {
     let actionName: String
     let itemTransitions: [TodoItemTransition]
+    let daySectionTransitions: [TodoDaySectionTransition]
     let selectionTransitions: [TodoSelectionTransition]
     let attention: TodoOperationAttention?
 
     init(
         actionName: String,
         itemTransitions: [TodoItemTransition] = [],
+        daySectionTransitions: [TodoDaySectionTransition] = [],
         selectionTransitions: [TodoSelectionTransition] = [],
         attention: TodoOperationAttention? = nil
     ) {
         self.actionName = actionName
         self.itemTransitions = itemTransitions.filter(\.changesUserState)
+        self.daySectionTransitions = daySectionTransitions
         self.selectionTransitions = selectionTransitions
         self.attention = attention
     }
@@ -146,11 +149,24 @@ struct TodoOperationUnit {
 
     var isValid: Bool {
         let ids = itemTransitions.compactMap(\.itemId)
+        let dates = daySectionTransitions.map(\.date)
         return itemTransitions.allSatisfy(\.isValid) && Set(ids).count == ids.count
+            && Set(dates).count == dates.count
+            && daySectionTransitions.allSatisfy(\.isValid)
     }
 
     func snapshots(for target: TodoOperationValueTarget) -> [TodoItemSnapshot] {
         itemTransitions.compactMap { $0.snapshot(for: target) }
+    }
+
+    func recordingDaySections(_ transitions: [TodoDaySectionTransition]) -> TodoOperationUnit {
+        TodoOperationUnit(
+            actionName: actionName,
+            itemTransitions: itemTransitions,
+            daySectionTransitions: transitions,
+            selectionTransitions: selectionTransitions,
+            attention: attention
+        )
     }
 }
 
@@ -281,8 +297,21 @@ final class TodoUndoManager {
         store.flushPendingTextEdit()
         guard unit.isEmpty == false, unit.isValid else { return false }
         guard canApply(unit, target: .after, store: store) else { return false }
+        let affectedDates = unit.daySectionTransitions.isEmpty ? changedScheduledDates(in: unit) : []
+        let previousSections = affectedDates.compactMap { date in
+            store.daySection(on: date).map { (date, TodoDaySectionSnapshot($0)) }
+        }
+        let emptyDates = Set(affectedDates.filter { store.items(for: $0).isEmpty })
         guard apply(unit, target: .after, store: store) else { return false }
-        appendNewHistory(unit)
+        let previousByDate = Dictionary(uniqueKeysWithValues: previousSections)
+        let sectionChanges = affectedDates.compactMap { date -> TodoDaySectionTransition? in
+            let before = previousByDate[date]
+            let after = store.daySection(on: date).map(TodoDaySectionSnapshot.init)
+            guard (before == nil) != (after == nil) || (before != nil && emptyDates.contains(date))
+            else { return nil }
+            return TodoDaySectionTransition(date: date, before: before, after: after)
+        }
+        appendNewHistory(sectionChanges.isEmpty ? unit : unit.recordingDaySections(sectionChanges))
         store.scheduleSave()
         return true
     }
@@ -365,12 +394,41 @@ final class TodoUndoManager {
         redoHistory.removeAll()
     }
 
+    private func changedScheduledDates(in unit: TodoOperationUnit) -> Set<Date> {
+        func scheduledDate(_ snapshot: TodoItemSnapshot?) -> Date? {
+            guard let snapshot,
+                  (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
+            else { return nil }
+            return Calendar.current.startOfDay(for: snapshot.dayDate)
+        }
+        var dates = Set<Date>()
+        for transition in unit.itemTransitions {
+            let before = scheduledDate(transition.before)
+            let after = scheduledDate(transition.after)
+            guard before != after else { continue }
+            if let before { dates.insert(before) }
+            if let after { dates.insert(after) }
+        }
+        return dates
+    }
+
     private func canApply(
         _ unit: TodoOperationUnit,
         target: TodoOperationValueTarget,
         store: TodoStore
     ) -> Bool {
         let sourceTarget: TodoOperationValueTarget = target == .before ? .after : .before
+        if !unit.daySectionTransitions.isEmpty {
+            let itemIds = Set(unit.itemTransitions.compactMap(\.itemId))
+            guard unit.daySectionTransitions.allSatisfy({ transition in
+                let current = store.daySection(on: transition.date).map(TodoDaySectionSnapshot.init)
+                let expected = transition.snapshot(for: sourceTarget)
+                let items = store.items(for: transition.date)
+                // 添加今日待办可在历史之外建立空白分组，它不会占用待恢复的日期。
+                if expected == nil, items.isEmpty { return true }
+                return current == expected && items.allSatisfy { itemIds.contains($0.id) }
+            }) else { return false }
+        }
         return unit.itemTransitions.allSatisfy { transition in
             switch transition.snapshot(for: sourceTarget) {
             case let snapshot?:
@@ -406,11 +464,14 @@ final class TodoUndoManager {
 
         // `canApply` 已完整验证全部前态；以下三个存储调用在此前提下不会留下半个操作。
         guard store.restoreItems(from: createSnapshots) else { return false }
-        guard store.applyExistingItemSnapshots(updateSnapshots) else { return false }
+        guard store.applyExistingItemSnapshots(
+            updateSnapshots, explicitlyManagedDates: Set(unit.daySectionTransitions.map(\.date))
+        ) else { return false }
         for itemId in deleteIds {
             guard let item = store.todoItemsCache[itemId] else { return false }
             store.deleteItemForOperationApplication(item)
         }
+        store.applyDaySectionTransitions(unit.daySectionTransitions, target: target)
         unit.selectionTransitions.forEach { $0.apply(for: target) }
         return true
     }
@@ -519,7 +580,7 @@ private extension TodoHistoryDisplayScope {
             unit.itemTransitions.contains { transition in
                 [transition.before, transition.after].contains(where: { snapshot in
                     guard let snapshot,
-                          TodoContainerKind(rawValue: snapshot.containerKindRaw) == .scheduled
+                          (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
                     else { return false }
                     return Calendar.current.isDate(snapshot.dayDate, inSameDayAs: date)
                 })

@@ -90,21 +90,6 @@ extension TodoStore {
         )
     }
 
-    func updateSectionDate(_ section: DaySection, to newDate: Date) {
-        let oldDate = section.date
-        let newDateStart = Calendar.current.startOfDay(for: newDate)
-        guard newDateStart != oldDate else { return }
-        let oldSnapshots = items(for: oldDate).map { TodoItemSnapshot(from: $0) }
-        guard oldSnapshots.isEmpty == false else { return }
-        let transitions = oldSnapshots.map { snapshot in
-            TodoItemTransition(before: snapshot, after: snapshot.replacing(dayDate: newDateStart))
-        }
-        undoManager.perform(
-            TodoOperationUnit(actionName: "更改日期", itemTransitions: transitions),
-            store: self
-        )
-    }
-
     func commandItems(in scope: TodoClipboardScope) -> [TodoItem] {
         items(inClipboardScope: scope)
     }

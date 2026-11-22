@@ -68,6 +68,8 @@ final class TodoListFeedbackPresenter {
             "请在主窗口撤销或恢复上一次操作"
         case .itemNoLongerAvailable:
             "这项待办已不存在"
+        case .sectionDateOccupied:
+            "该日期已有待办"
         }
     }
 

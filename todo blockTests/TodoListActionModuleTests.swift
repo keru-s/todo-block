@@ -47,6 +47,56 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertFalse(child.isCompleted)
     }
 
+    func testReopeningManuallyMovedItemKeepsItsPositionUntilNextCompletion() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let a = store.createItem(title: "A", dayDate: day)
+        let b = store.createItem(title: "B", dayDate: day)
+        _ = store.createItem(title: "C", dayDate: day)
+        let module = TodoListActionModule(store: store, selectionManager: selectionManager)
+
+        XCTAssertEqual(module.toggleCompleted(itemId: a.id), .performed)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["B", "C", "A"])
+        XCTAssertEqual(module.moveItemByKeyboard(itemId: a.id, direction: .up), .performed)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["B", "A", "C"])
+
+        XCTAssertEqual(module.toggleCompleted(itemId: a.id), .performed)
+        XCTAssertFalse(a.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["B", "A", "C"])
+
+        XCTAssertEqual(module.toggleCompleted(itemId: b.id), .performed)
+        XCTAssertTrue(b.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["A", "C", "B"])
+        XCTAssertTrue(store.undo())
+        XCTAssertFalse(b.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["B", "A", "C"])
+        XCTAssertTrue(store.redo())
+        XCTAssertTrue(b.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["A", "C", "B"])
+    }
+
+    func testChildCompletionOnlyReordersAncestorsWhenTheirWholeGroupIsComplete() {
+        let store = TodoStore.shared
+        let day = date(year: 2026, month: 5, day: 31)
+        let parent = store.createItem(title: "parent", isCompleted: true, dayDate: day)
+        let child = store.createItem(title: "child", dayDate: day, indentLevel: 1)
+        let grandchild = store.createItem(title: "grandchild", dayDate: day, indentLevel: 2)
+        let sibling = store.createItem(title: "sibling", dayDate: day, indentLevel: 1)
+        _ = store.createItem(title: "other", dayDate: day)
+        let module = TodoListActionModule(store: store, selectionManager: selectionManager)
+
+        XCTAssertEqual(module.toggleCompleted(itemId: grandchild.id), .performed)
+        XCTAssertFalse(child.isCompleted)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["parent", "child", "grandchild", "sibling", "other"])
+
+        XCTAssertEqual(module.toggleCompleted(itemId: child.id), .performed)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["parent", "sibling", "child", "grandchild", "other"])
+
+        XCTAssertEqual(module.toggleCompleted(itemId: sibling.id), .performed)
+        XCTAssertEqual(store.items(for: day).map(\.title), ["other", "parent", "sibling", "child", "grandchild"])
+        XCTAssertEqual(store.items(for: day).map(\.indentLevel), [0, 0, 1, 1, 2])
+    }
+
     func testAddingTodayThroughModuleCreatesAndFocusesItemWhenTodayAlreadyExists() {
         let store = TodoStore.shared
         let today = Calendar.current.startOfDay(for: .now)
@@ -71,6 +121,25 @@ final class TodoListActionModuleTests: XCTestCase {
         XCTAssertTrue(store.undo())
         XCTAssertEqual(store.todayItems().map(\.title), ["existing"])
         XCTAssertEqual(selectionManager.focusedItemId, existing.id)
+    }
+
+    func testAddingTodayWithOnlyCompletedItemsYesterdayCreatesEmptyTodaySection() throws {
+        let store = TodoStore.shared
+        let today = Calendar.current.startOfDay(for: .now)
+        let yesterday = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -1, to: today))
+        let completed = store.createItem(title: "completed", isCompleted: true, dayDate: yesterday)
+        let module = TodoListActionModule(store: store, selectionManager: selectionManager)
+
+        XCTAssertEqual(module.addToday(mode: .carryOver), .performed)
+        XCTAssertTrue(store.validDaySections.contains { $0.date == today })
+        XCTAssertTrue(store.todayItems().isEmpty)
+        XCTAssertEqual(store.items(for: yesterday).map(\.id), [completed.id])
+        XCTAssertTrue(completed.isCompleted)
+
+        XCTAssertEqual(module.addToday(mode: .carryOver), .performed)
+        let newItem = try XCTUnwrap(store.todayItems().first)
+        XCTAssertEqual(store.todayItems().map(\.title), [""])
+        XCTAssertEqual(selectionManager.focusedItemId, newItem.id)
     }
 
     func testCarryingOverYesterdayThroughModuleMovesIncompleteParentChildGroupAndCanUndo() throws {

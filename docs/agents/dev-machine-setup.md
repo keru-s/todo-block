@@ -17,6 +17,7 @@ UI 测试无弹框却全体失败（app 无窗口、launch 超时）时，先查
 | 调试器/开发者工具授权（要密码） | Developer Mode | 单元测试 |
 | 「XCTest is trying to Enable UI Automation. Enter the password…」（要密码） | Authorization Services | UI 测试 |
 | 「XX 想要控制这台电脑」（允许/不允许，不要密码） | TCC 辅助功能 | UI 测试 |
+| 「允许 testmanagerd 启用微信输入法？」 | 第三方输入法的启用提示 | UI 测试 |
 | 「codesign 想要使用钥匙串中的密钥」（要密码） | 钥匙串私钥分区列表 | 仅 `./run.sh` 签名构建 |
 
 ## 场景 A：单元测试
@@ -61,6 +62,19 @@ sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
 
 会触发重新授权的边界：改 UI 测试 target 的 bundle ID、`tccutil reset Accessibility`、runner 签名 requirement 失配（未签名/ad-hoc 构建的 requirement 跟踪具体二进制，重编译即失效）。
 
+### 第三方输入法提示
+
+当前选中微信输入法等第三方输入法时，测试输入可能触发系统提示。用以下入口运行 XCUITest。它统一处理开发签名和用例筛选，启动前临时选择已启用的系统键盘布局，退出后恢复原输入法。启动前请退出正常使用的 todo block。
+
+```bash
+./scripts/run-ui-tests.sh CopyMarkdownFeedbackLoopUITests
+./scripts/run-ui-tests.sh BackupMenuUITests/testImportBackupOpensPanelAndCancelKeepsStateUnchanged
+```
+
+可传入多个类名或测试方法。无参数时运行整个 UI 测试 target。用 `TODO_DEV_TEAM` 覆盖默认签名团队。专门验收输入法时，在类名之前加 `--keep-input-source`。单元测试继续使用常规命令。
+
+复制用例从内存库加载测试待办，实际执行多选和 Cmd+C。运行这些用例时会清空并使用系统剪贴板。
+
 ## 场景 C：`./run.sh` 团队签名构建
 
 只需**钥匙串私钥分区列表**（预防配置：配置时未观察到实际 codesign 弹框，与跑测试无关）：
@@ -85,9 +99,7 @@ xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
   -destination 'platform=macOS' -parallel-testing-enabled NO \
   -only-testing:"todo blockTests"        # 单元测试（场景 A）
 
-xcodebuild test -project "todo block.xcodeproj" -scheme "todo block" \
-  -destination 'platform=macOS' \
-  -only-testing:"todo blockUITests"      # UI 测试（场景 B），会短暂接管键鼠
+./scripts/run-ui-tests.sh                # UI 测试（场景 B），会短暂接管键鼠
 ```
 
 两次全程无弹框即配置完成。

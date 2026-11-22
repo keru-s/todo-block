@@ -5,6 +5,7 @@ enum TodoListActionRejection: Equatable {
     case finishCurrentInput
     case openMainWindowForHistory
     case itemNoLongerAvailable
+    case sectionDateOccupied
 }
 
 enum TodoListActionResult: Equatable {
@@ -230,7 +231,12 @@ final class TodoListActionModule {
                       let section = sectionById(sectionId)
                 else { return }
                 prepareForExternalAction()
-                store.updateSectionDate(section, to: newDate)
+                if store.updateSectionDate(section, to: newDate) == .targetDateOccupied {
+                    feedbackPresenter.consume(.rejected(.sectionDateOccupied))
+                }
+            },
+            canChangeSectionDate: { [self] sourceDate, targetDate in
+                store.canChangeSectionDate(from: sourceDate, to: targetDate)
             }
         )
     }
@@ -629,15 +635,11 @@ final class TodoListActionModule {
             return .performed
         }
 
-        switch mode {
-        case .carryOver:
-            return store.carryOverIncompleteItems(trigger: .userInitiated) == nil
-                ? .noChange
-                : .performed
-        case .blank:
-            _ = store.getOrCreateTodaySection()
+        if mode == .carryOver, store.carryOverIncompleteItems(trigger: .userInitiated) != nil {
             return .performed
         }
+        _ = store.getOrCreateTodaySection()
+        return .performed
     }
 
     private func addItem(to destination: TodoDropDestination) {

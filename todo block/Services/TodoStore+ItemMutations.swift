@@ -474,7 +474,10 @@ extension TodoStore {
 
     /// 把一组已有待办一次改到记录好的状态，并把日期维护并入同一步。
     @discardableResult
-    func applyExistingItemSnapshots(_ snapshots: [TodoItemSnapshot]) -> Bool {
+    func applyExistingItemSnapshots(
+        _ snapshots: [TodoItemSnapshot],
+        explicitlyManagedDates: Set<Date> = []
+    ) -> Bool {
         guard snapshots.isEmpty == false else { return true }
         let items = snapshots.compactMap { todoItemsCache[$0.id] }
         guard items.count == snapshots.count else { return false }
@@ -484,7 +487,8 @@ extension TodoStore {
             return Calendar.current.startOfDay(for: item.dayDate)
         })
         for snapshot in snapshots
-        where snapshot.containerKindRaw == TodoContainerKind.scheduled.rawValue {
+        where (TodoContainerKind(rawValue: snapshot.containerKindRaw) ?? .scheduled) == .scheduled
+            && !explicitlyManagedDates.contains(Calendar.current.startOfDay(for: snapshot.dayDate)) {
             _ = ensureSectionMaterialized(for: snapshot.dayDate)
         }
 
@@ -498,7 +502,7 @@ extension TodoStore {
             item.updatedAt = .now
         }
 
-        for date in sourceScheduledDates {
+        for date in sourceScheduledDates.subtracting(explicitlyManagedDates) {
             cleanupSectionIfEmpty(scheduledDate: date)
         }
         refreshTrigger += 1
@@ -508,23 +512,10 @@ extension TodoStore {
 
     /// 标记完成（包括子任务）
     func toggleComplete(_ item: TodoItem) {
-        let allItems = items(in: destination(for: item))
-        let newState = item.isCompleted == false
-
-        guard
-            let itemIndex = allItems.firstIndex(where: { $0.id == item.id }),
-            let block = TodoHierarchyBlockEngine.block(startingAt: itemIndex, in: allItems)
-        else { return }
-
-        let transitions = block.range.compactMap { index -> TodoItemTransition? in
-            let blockItem = allItems[index]
-            guard blockItem.isCompleted != newState else { return nil }
-            let before = TodoItemSnapshot(from: blockItem)
-            return TodoItemTransition(before: before, after: before.replacing(isCompleted: newState))
-        }
-        undoManager.perform(
-            TodoOperationUnit(actionName: "勾选", itemTransitions: transitions),
-            store: self
+        setCompletion(
+            of: [item.id],
+            in: destination(for: item),
+            isCompleted: !item.isCompleted
         )
     }
 
@@ -533,23 +524,13 @@ extension TodoStore {
         in destination: TodoDropDestination,
         isCompleted: Bool
     ) {
-        let allItems = items(in: destination)
-        let rootIds = TodoHierarchyBlockEngine.blockRootIds(
-            selectedFrom: itemIds,
-            in: allItems
+        let snapshots = items(in: destination).map(TodoItemSnapshot.init(from:))
+        let transitions = TodoCompletionRule.transitions(
+            in: snapshots,
+            for: itemIds,
+            isCompleted: isCompleted
         )
-        let coveredIds = TodoHierarchyBlockEngine.itemIdsCoveredByBlocks(
-            rootedAt: Set(rootIds),
-            in: allItems
-        )
-        let transitions = allItems.compactMap { candidate -> TodoItemTransition? in
-            guard coveredIds.contains(candidate.id), candidate.isCompleted != isCompleted else {
-                return nil
-            }
-            let before = TodoItemSnapshot(from: candidate)
-            return TodoItemTransition(before: before, after: before.replacing(isCompleted: isCompleted))
-        }
-        guard transitions.isEmpty == false else { return }
+        guard !transitions.isEmpty else { return }
         undoManager.perform(
             TodoOperationUnit(actionName: "勾选", itemTransitions: transitions),
             store: self
