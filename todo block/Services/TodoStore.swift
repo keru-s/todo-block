@@ -82,7 +82,18 @@ final class TodoStore {
 
     /// 初始化并从数据库加载数据到缓存
     func initialize(with modelContext: ModelContext) {
-        if let existingContext = self.modelContext, existingContext !== modelContext {
+        if self.modelContext === modelContext {
+            // 备份流程回滚后也会重载同一上下文。只有确实没有待保存修改时才清除保存状态。
+            if !modelContext.hasChanges {
+                saveTask?.cancel()
+                saveTask = nil
+                lastSaveError = nil
+                saveStatus = .saved
+            }
+            loadFromDatabase()
+            return
+        }
+        if self.modelContext != nil {
             clearCachesAndState(clearUndo: true)
         }
         saveTask?.cancel()

@@ -771,6 +771,8 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(Set(persisted.map(\.id)), [originalSource.id, originalTarget.id])
         XCTAssertEqual(persisted.first { $0.id == originalSource.id }.map(TodoDaySectionSnapshot.init), originalSource)
         XCTAssertEqual(persisted.first { $0.id == originalTarget.id }.map(TodoDaySectionSnapshot.init), originalTarget)
+        store.initialize(with: container.mainContext)
+        XCTAssertEqual(store.daySection(on: targetDate).map(TodoDaySectionSnapshot.init), originalTarget)
         XCTAssertTrue(store.redo())
         XCTAssertEqual(store.items(for: targetDate).map(\.id), [moved.id])
         XCTAssertTrue(store.flushPendingChangesSync())
